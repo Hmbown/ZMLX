@@ -29,7 +29,7 @@ mypy src
 1. Pick the right module under `src/zmlx/kernels/` or add a new one.
 2. Follow existing patterns:
    - cache kernels with `@cache` and validate shapes early
-   - accept `threadgroup` and `compute_dtype` when relevant
+   - accept `threadgroup` when relevant (all kernels compute in float32 internally)
    - use `DEFAULT_HEADER` for shared helpers (sigmoid/silu/gelu_tanh)
 3. Add or update `__all__` in the module.
 4. Add a correctness test in `tests/` (compare against MLX reference ops).

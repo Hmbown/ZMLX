@@ -33,7 +33,7 @@ User-facing layers:
 
 - Low-level:
   - `zmlx/metal.py`: cached kernel wrapper
-  - `zmlx/jit.py`: Python AST to Metal compiler
+  - `zmlx/jit_compiler.py`: Python AST to Metal compiler
 - Mid-level:
   - `zmlx/elementwise.py`: elementwise generators
   - `zmlx/autograd.py`: `unary_from_expr`, `binary_from_expr`

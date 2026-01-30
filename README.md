@@ -191,10 +191,12 @@ Full reference: [`docs/KERNELS.md`](docs/KERNELS.md).
 | `transformer` | `swiglu`, `geglu`, `rmsnorm_residual` (with full weight gradients), `dropout` — genuine fusions |
 | `bits` | `pack_bits`, `unpack_bits` — no MLX equivalent |
 | `moe` | `top2_gating_softmax`, `moe_dispatch`, `moe_combine` — fused expert routing (+36% decode on 30B MoE) |
+| `quant` | FP8 (E4M3/E5M2), NF4, int8, int4 dequantization — real bit-manipulation kernels |
+| `optimizers` | `adamw_step` — fused AdamW parameter update in a single kernel |
 | `scan` | `cumsum_lastdim` — differentiable prefix sum |
-| `norms` | `rmsnorm`, `layernorm` — parallel reduction showcase. All norms compute in float32 internally |
+| `norms` | `rmsnorm`, `layernorm` — parallel reduction. All norms compute in float32 internally |
 | `softmax` | `softmax_lastdim` — map-reduce codegen showcase |
-| `rope` | `apply_rope` — elementwise codegen showcase |
+| `rope` | `apply_rope`, `apply_rope_interleaved`, `apply_gqa_rope` |
 | `linear` | Reference fused-linear patterns (naive matmul, not for production) |
 
 ---
@@ -333,7 +335,7 @@ my_softmax = map_reduce(..., threadgroup="auto")  # autotunes per-shape
 - **Custom ops that MLX doesn't have** — SwiGLU, GeGLU, fused dropout, fused MoE gating, bit packing
 - **Training** — fused `softmax_cross_entropy` loss, correct weight gradients for `rmsnorm_residual`
 - **Authoring new kernels** — the `elementwise()`, `reduce()`, and `map_reduce()` APIs let you go from math formula to compiled Metal kernel in one line
-- **Quantization** — FP8 (E4M3/E5M2) and NF4 dequantization kernels with real bit-manipulation
+- **Quantization** — FP8 (E4M3/E5M2), NF4, int8, int4 dequantization with real bit-manipulation kernels
 
 ---
 

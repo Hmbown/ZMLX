@@ -6,16 +6,18 @@ This document lists the custom Metal kernels available in the `zmlx.kernels` pac
 >
 > 1. **Genuinely useful ops** that have no direct MLX equivalent or provide real
 >    fusion benefits (e.g. `softmax_cross_entropy`, `swiglu`, `pack_bits`,
->    `top2_gating_softmax`, `cumsum_lastdim`).
+>    `top2_gating_softmax`, `moe_dispatch`, `moe_combine`, `cumsum_lastdim`).
 >
 > 2. **Reference implementations** that demonstrate ZMLX codegen patterns
 >    (parallel reduction, map-reduce, elementwise with VJP). These are correct
->    but typically **not faster** than MLX built-ins for standard transformer
->    shapes, due to `mx.fast.metal_kernel` dispatch overhead.
+>    and serve as starting points for custom ops.
 >
-> For standard ops like RMSNorm, softmax, and RoPE at typical transformer
-> dimensions, prefer `mx.fast.rms_norm`, `mx.softmax`, and MLX's built-in RoPE.
-> Use ZMLX catalog kernels as starting points for your own custom ops.
+> **At the op level**, MLX built-ins like `mx.fast.rms_norm` and `mx.softmax`
+> are faster than standalone ZMLX equivalents due to lower dispatch overhead.
+> **At the model level**, fusing operations (e.g. `rmsnorm_residual` fuses
+> residual-add + RMSNorm into one pass) saves memory bandwidth and delivers
+> +33% decode on large dense models and +36% on MoE models.
+> Use `zmlx.patch.patch(model)` to apply these fusions automatically.
 
 ## Activations (`zmlx.kernels.activations`)
 
