@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-01-30
+
+### Fixed
+
+- Resolve 3 mypy errors: `no-any-return` in callbacks and transformer, missing `autotune_threadgroup` function
+- Add `autotune_threadgroup()` convenience wrapper and `AutotuneResult.best_threadgroup` property
+- Fix all ruff lint errors (unused imports, import sorting, unused variables in optimizers)
+- Fix 14 repo audit issues: broken doc references, stale claims, inconsistent messaging
+
 ## [0.4.1] - 2026-01-30
 
 ### Added
@@ -183,6 +192,7 @@ First public release.
 - **Benchmarks** (`benchmarks/microbench.py`) with timing comparisons vs MLX reference ops.
 
 [Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.4.1...HEAD
+[0.4.2]: https://github.com/Hmbown/ZMLX/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Hmbown/ZMLX/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Hmbown/ZMLX/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Hmbown/ZMLX/compare/v0.2.1...v0.3.1
