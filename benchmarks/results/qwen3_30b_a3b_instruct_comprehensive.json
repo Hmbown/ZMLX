@@ -1,0 +1,102 @@
+{
+  "benchmark_metadata": {
+    "model": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+    "model_name": "Qwen3-30B-A3B-Instruct",
+    "model_type": "Mixture of Experts (MoE)",
+    "model_specs": {
+      "total_parameters": "30B",
+      "active_parameters": "3B",
+      "routing": "top-2",
+      "quantization": "4-bit"
+    },
+    "hardware": "Apple M4 Max 36GB",
+    "os": "macOS 15.1 (Darwin 25.1.0)",
+    "software_versions": {
+      "mlx": "0.30.0",
+      "mlx_lm": "0.30.0",
+      "zmlx": "0.6.3",
+      "python": "3.14.2"
+    },
+    "timestamp": "2025-01-30",
+    "benchmark_version": "1.0"
+  },
+  "sequence_length_306_tokens": {
+    "num_runs": 3,
+    "max_tokens": 150,
+    "baseline": {
+      "median_prompt_tps": 1090.44,
+      "median_gen_tps": 115.15,
+      "median_ttft_sec": 0.323,
+      "peak_memory_gb": 17.55,
+      "runs": [
+        {"prompt_tps": 1090.44, "gen_tps": 115.19, "peak_memory_gb": 17.55},
+        {"prompt_tps": 1098.23, "gen_tps": 113.66, "peak_memory_gb": 17.55},
+        {"prompt_tps": 1076.27, "gen_tps": 115.15, "peak_memory_gb": 17.55}
+      ]
+    },
+    "zmlx_patched": {
+      "median_prompt_tps": 1096.15,
+      "median_gen_tps": 113.89,
+      "median_ttft_sec": 0.322,
+      "peak_memory_gb": 17.55,
+      "runs": [
+        {"prompt_tps": 1096.54, "gen_tps": 113.57, "peak_memory_gb": 17.55},
+        {"prompt_tps": 1096.15, "gen_tps": 113.89, "peak_memory_gb": 17.55},
+        {"prompt_tps": 1094.41, "gen_tps": 114.21, "peak_memory_gb": 17.55}
+      ]
+    },
+    "comparison": {
+      "prompt_speedup_x": 1.005,
+      "gen_speedup_x": 0.989,
+      "ttft_delta_sec": -0.0004,
+      "memory_delta_gb": 0.0,
+      "prompt_speedup_pct": 0.5,
+      "gen_speedup_pct": -1.1
+    }
+  },
+  "historical_comparison": {
+    "previous_qwen3_30b_a3b_test": {
+      "date": "2025-01-30",
+      "baseline_prompt_tps": 67.13,
+      "baseline_gen_tps": 116.33,
+      "patched_prompt_tps": 73.51,
+      "patched_gen_tps": 117.64,
+      "prompt_speedup": 1.095,
+      "gen_speedup": 1.011,
+      "notes": "Used very short prompt (8 tokens), different test conditions"
+    },
+    "readme_claims": {
+      "date": "Prior to 2025-01-30",
+      "claimed_prompt_speedup": 1.60,
+      "claimed_gen_speedup": 1.31,
+      "claimed_prompt_pct": 60,
+      "claimed_gen_pct": 31,
+      "notes": "Results from M4 Max 36GB, potentially different MLX/ZMLX versions"
+    }
+  },
+  "analysis": {
+    "findings": [
+      "ZMLX-patched model shows neutral performance on this configuration",
+      "Prompt processing: +0.5% (within measurement noise)",
+      "Token generation: -1.1% (within measurement noise)",
+      "Memory usage: unchanged at 17.55 GB",
+      "No regressions observed, patches are safe to apply"
+    ],
+    "discrepancy_analysis": {
+      "readme_claims_vs_actual": "README claims 1.6x/1.31x speedup, but current test shows 1.0x/0.99x",
+      "possible_causes": [
+        "Different MLX version optimizations (current: 0.30.0)",
+        "Different macOS version with Metal improvements",
+        "Different ZMLX version with changed patch behavior",
+        "Longer prompt in current test (306 vs ~8 tokens) may mask MoE routing benefits",
+        "Model may have different gating mechanism (Instruct vs base)"
+      ]
+    },
+    "recommendations": [
+      "Patches are safe - no regressions observed",
+      "Benefits may be more pronounced with specific prompt patterns or batch sizes",
+      "Further testing with different sequence lengths recommended",
+      "Consider testing with shorter prompts (< 50 tokens) where MoE routing overhead is proportionally larger"
+    ]
+  }
+}

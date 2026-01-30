@@ -49,7 +49,7 @@ def __getattr__(name: str):
     if name in {
         "autograd", "elementwise", "kernels", "metal", "registry", "rowwise", "msl",
         "patch", "codegen", "autotune", "optimizers", "nn",
-        "testing", "bench", "profile",
+        "testing", "bench", "profile", "device_profile",
     }:
         import importlib
         return importlib.import_module(f"{__name__}.{name}")
@@ -88,6 +88,9 @@ __all__ = [
     "optimizers",
     "jit",
     "nn",
+    "device_profile",
+    # Backend compatibility
+    "_compat",
     # Kernel authoring (from zmlx.api)
     "reduce",
     "map_reduce",
