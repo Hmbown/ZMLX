@@ -13,7 +13,7 @@ Extras:
 - codegen/msl: small building blocks for generating Metal source strings
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 from ._compat import is_supported_host
 
