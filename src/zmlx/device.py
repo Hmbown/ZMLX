@@ -53,6 +53,33 @@ _FAMILY_PATTERNS: dict[str, tuple[str, str]] = {
 }
 
 
+def _get_gpu_cores_for_chip(family: str, variant: str) -> int:
+    """Return the GPU core count for a given Apple Silicon chip variant.
+    
+    This uses known specifications since sysctl doesn't directly expose GPU cores.
+    """
+    _GPU_CORES: dict[str, int] = {
+        "M1": 8,
+        "M1_Pro": 16,
+        "M1_Max": 32,
+        "M1_Ultra": 64,
+        "M2": 10,
+        "M2_Pro": 19,
+        "M2_Max": 38,
+        "M2_Ultra": 76,
+        "M3": 10,
+        "M3_Pro": 18,
+        "M3_Max": 40,
+        "M3_Ultra": 80,
+        "M4": 10,
+        "M4_Pro": 20,
+        "M4_Max": 40,
+        "M4_Ultra": 80,  # Projected
+    }
+    key = f"{family}_{variant}".rstrip("_")
+    return _GPU_CORES.get(key, 8)  # Conservative default
+
+
 def _sysctl(key: str) -> str:
     """Read a sysctl value."""
     try:
@@ -93,12 +120,9 @@ def detect_device() -> DeviceProfile:
             variant = var
             break
 
-    # GPU cores
-    gpu_cores_str = _sysctl("hw.perflevel0.logicalcpu")
-    try:
-        gpu_cores = int(gpu_cores_str)
-    except (ValueError, TypeError):
-        gpu_cores = 8  # Conservative default
+    # GPU cores - use hw.ncpu as fallback since we can't directly query GPU cores
+    # The GPU core count varies by chip family and variant
+    gpu_cores = _get_gpu_cores_for_chip(family, variant)
 
     # Memory
     mem_str = _sysctl("hw.memsize")
