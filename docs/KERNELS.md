@@ -2,6 +2,21 @@
 
 This document lists the custom Metal kernels available in the `zmlx.kernels` package.
 
+> **Note on performance**: These catalog kernels serve two purposes:
+>
+> 1. **Genuinely useful ops** that have no direct MLX equivalent or provide real
+>    fusion benefits (e.g. `softmax_cross_entropy`, `swiglu`, `pack_bits`,
+>    `top2_gating_softmax`, `cumsum_lastdim`).
+>
+> 2. **Reference implementations** that demonstrate ZMLX codegen patterns
+>    (parallel reduction, map-reduce, elementwise with VJP). These are correct
+>    but typically **not faster** than MLX built-ins for standard transformer
+>    shapes, due to `mx.fast.metal_kernel` dispatch overhead.
+>
+> For standard ops like RMSNorm, softmax, and RoPE at typical transformer
+> dimensions, prefer `mx.fast.rms_norm`, `mx.softmax`, and MLX's built-in RoPE.
+> Use ZMLX catalog kernels as starting points for your own custom ops.
+
 ## Activations (`zmlx.kernels.activations`)
 
 | Kernel | Description | Gradient Support |
@@ -67,6 +82,7 @@ This document lists the custom Metal kernels available in the `zmlx.kernels` pac
 | `logsumexp_lastdim(x)` | Numerically stable LogSumExp |
 | `masked_softmax(x, mask)` | Softmax with boolean masking |
 | `scale_mask_softmax(x, mask, scale)` | Fused (x * scale) + mask gating -> Softmax |
+| `paged_attention(...)` | vLLM-style paged attention for high-throughput serving |
 | `attention_tile_proto(q, k)` | 16x16 attention tile prototype (experimental) |
 
 ## RoPE (`zmlx.kernels.rope`)
@@ -76,6 +92,8 @@ This document lists the custom Metal kernels available in the `zmlx.kernels` pac
 | `apply_rope(x, cos, sin)` | Rotary Positional Embedding (half-rot) |
 | `apply_rope_interleaved(x, cos, sin)` | Rotary Positional Embedding (interleaved) |
 | `apply_gqa_rope(x, cos, sin, n_kv_heads)` | RoPE for Grouped Query Attention |
+| `rope_and_cache_update(...)` | Fused RoPE application + KV cache update (contiguous) |
+| `paged_rope_and_cache_update(...)` | Fused RoPE application + KV cache update (paged) |
 
 ## Reductions (`zmlx.kernels.reductions`)
 
@@ -102,14 +120,17 @@ All reductions operate over the **last dimension**.
 | `bias_silu(x, bias)` | Fused bias-add + SiLU |
 | `silu_mul_grad(a, b)` | Fused SiLU(a) * b with custom VJP |
 
-## Linear (`zmlx.kernels.linear`)
+## Linear (`zmlx.kernels.linear`) — Reference Implementations
+
+> These use naive dot-product matmul (one thread per output element) and are
+> **not competitive** with MPS-accelerated `mx.matmul`. They demonstrate how to
+> fuse post-linear operations into a single Metal kernel.
 
 | Kernel | Description |
 |:--- |:--- |
-| `fused_linear_bias_silu(x, w, b)` | Linear + Bias + SiLU |
-| `fused_linear_bias_gelu(x, w, b)` | Linear + Bias + GeLU |
-| `fused_linear_rmsnorm(x, w, g)` | Linear + RMSNorm (no bias) |
-| `dequantize_int4_matmul(x, w_int4, scales)` | Fused int4 dequantize + matmul |
+| `fused_linear_bias_silu(x, w, b)` | Linear + Bias + SiLU (reference) |
+| `fused_linear_bias_gelu(x, w, b)` | Linear + Bias + GeLU (reference) |
+| `fused_linear_rmsnorm(x, w, g)` | Linear + RMSNorm (reference) |
 
 ## Loss Functions (`zmlx.kernels.loss`)
 
@@ -137,6 +158,8 @@ All reductions operate over the **last dimension**.
 | Kernel | Description |
 |:--- |:--- |
 | `top2_gating_softmax(x)` | Select top 2 experts and return weights + indices |
+| `moe_dispatch(x, indices)` | Fused token-to-expert dispatch |
+| `moe_combine(experts, weights)` | Fused expert-output combination and weighting |
 
 ## Image (`zmlx.kernels.image`)
 
@@ -151,6 +174,12 @@ All reductions operate over the **last dimension**.
 |:--- |:--- |
 | `fused_gather_add(src, idx, other)` | Gather rows from src and add elementwise other |
 | `fused_scatter_add(idx, updates, shape)` | Scatter updates into a zero-init array with atomics |
+
+## Optimizers (`zmlx.kernels.optimizers`)
+
+| Kernel | Description |
+|:--- |:--- |
+| `adamw_step(...)` | Fused AdamW update (p, m, v update in one pass) |
 
 ## Scan (`zmlx.kernels.scan`)
 

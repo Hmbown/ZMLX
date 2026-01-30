@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from functools import cache
 from typing import Any
 
@@ -8,6 +9,11 @@ import mlx.core as mx
 from ..metal import kernel as metal_kernel
 from ..msl import DEFAULT_HEADER
 from .softmax import _validate_tg
+
+_COMPUTE_DTYPE_DEPRECATION = (
+    "compute_dtype is deprecated and will be removed in a future release. "
+    "All ZMLX kernels compute internally in float32 regardless of this parameter."
+)
 
 
 @cache
@@ -80,6 +86,8 @@ def rmsnorm(
       - x: (..., D)
       - weight: (D,)
     """
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     if x.ndim < 1:
         raise ValueError("rmsnorm: x must have rank >= 1")
     D = int(x.shape[-1])
@@ -88,7 +96,6 @@ def rmsnorm(
 
     TG = _validate_tg(threadgroup)
     rows = x.size // D
-    cd = compute_dtype or mx.float32
     k_fwd = _rmsnorm_kernel(D, TG, float(eps))
 
     @mx.custom_function
@@ -96,7 +103,7 @@ def rmsnorm(
         return k_fwd(
             x_in,
             w_in,
-            template=[("T", cd)],
+            template=[("T", x.dtype)],
             grid=(rows * TG, 1, 1),
             threadgroup=(TG, 1, 1),
             output_shapes=[x.shape],
@@ -107,7 +114,7 @@ def rmsnorm(
     def op_vjp(primals, cotangents, outputs):
         x_in, w_in = primals
         cotan = cotangents[0] if isinstance(cotangents, (list, tuple)) else cotangents
-        dx = rmsnorm_grad(x_in, w_in, cotan, eps=eps, threadgroup=TG, compute_dtype=cd)
+        dx = rmsnorm_grad(x_in, w_in, cotan, eps=eps, threadgroup=TG)
         return (dx, None)
 
     return op(x, weight)
@@ -203,14 +210,15 @@ def rmsnorm_grad(
     compute_dtype: Any | None = None,
 ) -> Any:
     """Gradient of RMSNorm with respect to input x."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D = int(x.shape[-1])
     TG = _validate_tg(threadgroup)
     rows = x.size // D
-    cd = compute_dtype or mx.float32
     k = _rmsnorm_bwd_kernel(D, TG, float(eps))
     return k(
         x, weight, cotan,
-        template=[("T", cd)],
+        template=[("T", x.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[x.shape],
@@ -274,14 +282,15 @@ def _rmsnorm_no_weight_kernel(d: int, tg: int, eps: float) -> Any:
 
 def rms_norm_no_weight(x: Any, *, eps: float = 1e-6, threadgroup: int = 256, compute_dtype: Any | None = None) -> Any:
     """Pure RMSNorm without weights."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D = x.shape[-1]
     TG = _validate_tg(threadgroup)
     rows = x.size // D
-    cd = compute_dtype or mx.float32
     k = _rmsnorm_no_weight_kernel(D, TG, float(eps))
     return k(
         x,
-        template=[("T", cd)],
+        template=[("T", x.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[x.shape],
@@ -352,14 +361,15 @@ def _layernorm_no_weight_kernel(d: int, tg: int, eps: float) -> Any:
 
 def layer_norm_no_weight(x: Any, *, eps: float = 1e-5, threadgroup: int = 256, compute_dtype: Any | None = None) -> Any:
     """Pure LayerNorm without weights."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D = x.shape[-1]
     TG = _validate_tg(threadgroup)
     rows = x.size // D
-    cd = compute_dtype or mx.float32
     k = _layernorm_no_weight_kernel(D, TG, float(eps))
     return k(
         x,
-        template=[("T", cd)],
+        template=[("T", x.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[x.shape],
@@ -456,14 +466,15 @@ def layer_norm_dropout(
     compute_dtype: Any | None = None,
 ) -> Any:
     """Fused LayerNorm + Dropout."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D = int(x.shape[-1])
     TG = _validate_tg(threadgroup)
     rows = x.size // D
-    cd = compute_dtype or mx.float32
     k = _layernorm_dropout_kernel(D, TG, float(eps), float(p), int(seed))
     return k(
         x, gamma, beta,
-        template=[("T", cd)],
+        template=[("T", x.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[x.shape],
@@ -552,6 +563,8 @@ def layernorm(
       - gamma: (D,)
       - beta: (D,)
     """
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     if x.ndim < 1:
         raise ValueError("layernorm: x must have rank >= 1")
     D = int(x.shape[-1])
@@ -565,19 +578,98 @@ def layernorm(
     for s in x.shape[:-1]:
         rows *= int(s)
 
-    cd = compute_dtype or mx.float32
     k = _layernorm_kernel(D, TG, float(eps))
     out = k(
         x,
         gamma,
         beta,
-        template=[("T", cd)],
+        template=[("T", x.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[x.shape],
         output_dtypes=[x.dtype],
     )[0]
     return out
+
+@cache
+def _residual_rmsnorm_kernel(d: int, tg: int, eps: float) -> Any:
+    D = int(d)
+    TG = _validate_tg(tg)
+    eps_f = float(eps)
+    eps_str = str(eps_f).replace(".", "_").replace("-", "_")
+
+    src = f"""
+        constexpr uint D = {D};
+        constexpr uint TG = {TG};
+        constexpr float EPS = {eps_f}f;
+
+        uint gid = thread_position_in_grid.x;
+        uint tid = thread_position_in_threadgroup.x;
+        uint row = gid / TG;
+        uint base = row * D;
+
+        threadgroup float buf[TG];
+
+        float sumsq = 0.0f;
+        for (uint j = tid; j < D; j += TG) {{
+            float v = (float)inp[base + j] + (float)residual[base + j];
+            sumsq += v * v;
+        }}
+        buf[tid] = sumsq;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (uint stride = TG / 2; stride > 0; stride >>= 1) {{
+            if (tid < stride) {{
+                buf[tid] += buf[tid + stride];
+            }}
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }}
+
+        float inv = metal::rsqrt(buf[0] / (float)D + EPS);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (uint j = tid; j < D; j += TG) {{
+            float v = (float)inp[base + j] + (float)residual[base + j];
+            float w = (float)weight[j];
+            out[base + j] = (T)(v * inv * w);
+        }}
+    """
+
+    return metal_kernel(
+        name=f"kk_res_rmsnorm_D{D}_TG{TG}_E{eps_str}",
+        input_names=["inp", "residual", "weight"],
+        output_names=["out"],
+        source=src,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def residual_rmsnorm(
+    x: Any,
+    residual: Any,
+    weight: Any,
+    *,
+    eps: float = 1e-6,
+    threadgroup: int = 256,
+) -> Any:
+    """Fused Add + RMSNorm: out = RMSNorm(x + residual, weight)."""
+    if x.ndim < 1:
+        raise ValueError("residual_rmsnorm: x must have rank >= 1")
+    D = int(x.shape[-1])
+    TG = _validate_tg(threadgroup)
+    rows = x.size // D
+    k = _residual_rmsnorm_kernel(D, TG, float(eps))
+    return k(
+        x, residual, weight,
+        template=[("T", x.dtype)],
+        grid=(rows * TG, 1, 1),
+        threadgroup=(TG, 1, 1),
+        output_shapes=[x.shape],
+        output_dtypes=[x.dtype],
+    )[0]
+
 
 __all__ = [
     "rmsnorm",
@@ -586,4 +678,5 @@ __all__ = [
     "layer_norm_no_weight",
     "layer_norm_dropout",
     "layernorm",
+    "residual_rmsnorm",
 ]

@@ -53,6 +53,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # ZMLX
     train_p.add_argument("--no-patch", action="store_true", help="Disable ZMLX patching")
+    train_p.add_argument("--no-fused-loss", action="store_true", help="Disable fused cross-entropy")
     train_p.add_argument("--patch-verbose", action="store_true")
 
     # Config file
@@ -71,6 +72,13 @@ def _build_parser() -> argparse.ArgumentParser:
     export_p.add_argument("--output-path", type=str, default=None)
     export_p.add_argument("--verbose", action="store_true")
 
+    # --- profile ---
+    profile_p = sub.add_parser("profile", help="Profile a model or kernel")
+    profile_p.add_argument("--model", type=str, help="Model path to profile")
+    profile_p.add_argument("--analyze", action="store_true", help="Run bottleneck analysis")
+    profile_p.add_argument("--iters", type=int, default=10, help="Number of iterations")
+    profile_p.add_argument("--patch", action="store_true", help="Apply ZMLX patching before profiling")
+
     return parser
 
 
@@ -87,9 +95,36 @@ def main(argv: list[str] | None = None) -> None:
         _run_train(args)
     elif args.command == "export":
         _run_export(args)
+    elif args.command == "profile":
+        _run_profile(args)
     else:
         parser.print_help()
         sys.exit(1)
+
+
+def _run_profile(args: argparse.Namespace) -> None:
+    import mlx.core as mx
+    from zmlx import load
+    from zmlx.profile import analyze_bottlenecks, time_kernel
+
+    if not args.model:
+        print("Error: --model is required for profiling.")
+        sys.exit(1)
+
+    print(f"[zmlx] Loading model for profiling: {args.model}")
+    model, tokenizer = load(args.model, patch=args.patch)
+
+    # Dummy input
+    input_ids = mx.array([[1, 2, 3, 4, 5]])
+    
+    if args.analyze:
+        print("[zmlx] Running bottleneck analysis...")
+        analyze_bottlenecks(model, input_ids)
+    else:
+        print(f"[zmlx] Timing {args.iters} iterations...")
+        stats = time_kernel(model, input_ids, iters=args.iters)
+        print(f"Median time: {stats['median_us']/1000:.2f} ms")
+        print(f"Mean time:   {stats['mean_us']/1000:.2f} ms")
 
 
 def _run_train(args: argparse.Namespace) -> None:
@@ -128,6 +163,7 @@ def _run_train(args: argparse.Namespace) -> None:
         "output_dir": args.output_dir,
         "seed": args.seed,
         "patch": not args.no_patch,
+        "use_fused_loss": not args.no_fused_loss,
         "patch_verbose": args.patch_verbose,
         "resume_from": args.resume_from,
         "verbose": args.verbose,

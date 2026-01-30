@@ -373,9 +373,162 @@ def attention_tile_proto(q: Any, k: Any) -> Any:
         output_dtypes=[mx.float32],
     )[0]
 
+@cache
+def _paged_attention_kernel(
+    h: int,
+    h_kv: int,
+    d: int,
+    block_size: int,
+    max_blocks: int,
+    tg: int,
+    max_context: int = 4096,
+) -> Any:
+    H = int(h)
+    HKV = int(h_kv)
+    D = int(d)
+    BS = int(block_size)
+    MB = int(max_blocks)
+    TG = _validate_tg(tg)
+    G = H // HKV
+    MC = int(max_context)
+
+    source = f"""
+        constexpr uint H = {H};
+        constexpr uint HKV = {HKV};
+        constexpr uint D = {D};
+        constexpr uint BS = {BS};
+        constexpr uint MB = {MB};
+        constexpr uint TG = {TG};
+        constexpr uint G = {G};
+        constexpr uint MC = {MC};
+
+        uint tid = thread_position_in_threadgroup.x;
+        uint batch_idx = thread_position_in_grid.y;
+        uint head_idx = thread_position_in_grid.z;
+        uint kv_head_idx = head_idx / G;
+
+        uint context_len = (uint)context_lens[batch_idx];
+        float scale_val = (float)scale[0];
+
+        threadgroup float m_buf[TG];
+        threadgroup float s_buf[TG];
+        threadgroup float scores[MC]; // Store scores to avoid recomputing
+
+        // 1. Compute scores
+        float m = -INFINITY;
+        for (uint i = tid; i < context_len; i += TG) {{
+            uint block_logical_idx = i / BS;
+            uint token_block_idx = i % BS;
+            uint physical_block = (uint)block_table[batch_idx * MB + block_logical_idx];
+            
+            float score = 0.0f;
+            uint q_off = (batch_idx * H + head_idx) * D;
+            uint k_off = ((physical_block * BS + token_block_idx) * HKV + kv_head_idx) * D;
+            
+            for (uint d = 0; d < D; ++d) {{
+                score += (float)q[q_off + d] * (float)k_cache[k_off + d];
+            }}
+            score *= scale_val;
+            scores[i] = score;
+            m = metal::max(m, score);
+        }}
+
+        // 2. Reduce m across threadgroup
+        m_buf[tid] = m;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint i = TG / 2; i > 0; i >>= 1) {{
+            if (tid < i) m_buf[tid] = metal::max(m_buf[tid], m_buf[tid + i]);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }}
+        float global_m = m_buf[0];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // 3. Compute sum(exp(score - m)) and update scores to exp(score - m)
+        float s = 0.0f;
+        for (uint i = tid; i < context_len; i += TG) {{
+            float weight = metal::exp(scores[i] - global_m);
+            scores[i] = weight;
+            s += weight;
+        }}
+        s_buf[tid] = s;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint i = TG / 2; i > 0; i >>= 1) {{
+            if (tid < i) s_buf[tid] += s_buf[tid + i];
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }}
+        float global_s = s_buf[0];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // 4. Compute weighted sum of V
+        for (uint d = tid; d < D; d += TG) {{
+            float acc = 0.0f;
+            for (uint i = 0; i < context_len; ++i) {{
+                uint block_logical_idx = i / BS;
+                uint token_block_idx = i % BS;
+                uint physical_block = (uint)block_table[batch_idx * MB + block_logical_idx];
+                uint v_off = ((physical_block * BS + token_block_idx) * HKV + kv_head_idx) * D;
+                
+                acc += (scores[i] / global_s) * (float)v_cache[v_off + d];
+            }}
+            out[(batch_idx * H + head_idx) * D + d] = (T)acc;
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_paged_attention_H{H}_HKV{HKV}_D{D}_BS{BS}_MC{MC}",
+        input_names=["q", "k_cache", "v_cache", "block_table", "context_lens", "scale"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def paged_attention(
+    q: Any,
+    k_cache: Any,
+    v_cache: Any,
+    block_table: Any,
+    context_lens: Any,
+    scale: float | None = None,
+    *,
+    threadgroup: int = 256,
+    max_context: int = 4096,
+) -> Any:
+    """Paged Attention kernel for decoding.
+    
+    q: (B, H, D)
+    k_cache: (N_BLOCKS, BS, HKV, D)
+    v_cache: (N_BLOCKS, BS, HKV, D)
+    block_table: (B, MAX_BLOCKS)
+    context_lens: (B,)
+    """
+    B, H, D = q.shape
+    _, BS, HKV, _ = k_cache.shape
+    MB = block_table.shape[1]
+    
+    if scale is None:
+        scale = 1.0 / (D ** 0.5)
+        
+    tg = _validate_tg(threadgroup)
+    k = _paged_attention_kernel(H, HKV, D, BS, MB, tg, max_context=max_context)
+    
+    scale_arr = mx.array([scale], dtype=mx.float32)
+    
+    return k(
+        q, k_cache, v_cache, block_table, context_lens, scale_arr,
+        template=[("T", q.dtype)],
+        grid=(tg, B, H),
+        threadgroup=(tg, 1, 1),
+        output_shapes=[q.shape],
+        output_dtypes=[q.dtype],
+    )[0]
+
+
 __all__ = [
     "logsumexp_lastdim",
     "masked_softmax",
     "scale_mask_softmax",
     "attention_tile_proto",
+    "paged_attention",
 ]

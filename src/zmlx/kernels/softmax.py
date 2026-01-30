@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from functools import cache
 from typing import Any
 
@@ -8,6 +9,11 @@ import mlx.core as mx
 from ..codegen import rowwise_mapreduce_source
 from ..metal import kernel as metal_kernel
 from ..msl import DEFAULT_HEADER
+
+_COMPUTE_DTYPE_DEPRECATION = (
+    "compute_dtype is deprecated and will be removed in a future release. "
+    "All ZMLX kernels compute internally in float32 regardless of this parameter."
+)
 
 
 def _validate_tg(tg: int) -> int:
@@ -55,6 +61,8 @@ def softmax_lastdim(x: Any, *, threadgroup: int = 256, compute_dtype: Any | None
 
     This kernel assumes `x` is row-contiguous (or will be made so by MLX if possible).
     """
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     if x.ndim < 1:
         raise ValueError("softmax_lastdim: x must have rank >= 1")
     D = int(x.shape[-1])
@@ -63,14 +71,13 @@ def softmax_lastdim(x: Any, *, threadgroup: int = 256, compute_dtype: Any | None
 
     TG = _validate_tg(threadgroup)
     rows = x.size // D
-    cd = compute_dtype or mx.float32
     k_fwd = _softmax_kernel(D, TG)
 
     @mx.custom_function
     def op(x_in):
         return k_fwd(
             x_in,
-            template=[("T", cd)],
+            template=[("T", x.dtype)],
             grid=(rows * TG, 1, 1),
             threadgroup=(TG, 1, 1),
             output_shapes=[x.shape],
@@ -81,7 +88,7 @@ def softmax_lastdim(x: Any, *, threadgroup: int = 256, compute_dtype: Any | None
     def op_vjp(primals, cotangents, outputs):
         y = outputs[0] if isinstance(outputs, (list, tuple)) else outputs
         cotan = cotangents[0] if isinstance(cotangents, (list, tuple)) else cotangents
-        dx = softmax_grad(y, cotan, threadgroup=TG, compute_dtype=cd)
+        dx = softmax_grad(y, cotan, threadgroup=TG)
         return (dx,)
 
     return op(x)
@@ -119,6 +126,8 @@ def _log_softmax_kernel(d: int, tg: int) -> Any:
 
 def log_softmax_lastdim(x: Any, *, threadgroup: int = 256, compute_dtype: Any | None = None) -> Any:
     """Rowwise log-softmax over the last dimension."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     if x.ndim < 1:
         raise ValueError("log_softmax_lastdim: x must have rank >= 1")
     D = int(x.shape[-1])
@@ -127,12 +136,11 @@ def log_softmax_lastdim(x: Any, *, threadgroup: int = 256, compute_dtype: Any | 
 
     TG = _validate_tg(threadgroup)
     rows = x.size // D
-    cd = compute_dtype or mx.float32
     k = _log_softmax_kernel(D, TG)
 
     return k(
         x,
-        template=[("T", cd)],
+        template=[("T", x.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[x.shape],
@@ -189,14 +197,15 @@ def _softmax_bwd_kernel(d: int, tg: int) -> Any:
 
 def softmax_grad(y: Any, cotan: Any, *, threadgroup: int = 256, compute_dtype: Any | None = None) -> Any:
     """Gradient of Softmax with respect to its input."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D = int(y.shape[-1])
     TG = _validate_tg(threadgroup)
     rows = y.size // D
-    cd = compute_dtype or mx.float32
     k = _softmax_bwd_kernel(D, TG)
     return k(
         y, cotan,
-        template=[("T", cd)],
+        template=[("T", y.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[y.shape],

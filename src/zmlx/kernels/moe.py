@@ -138,6 +138,104 @@ def top2_gating_softmax(x: Any, *, threadgroup: int = 256, compute_dtype: Any | 
     )
     return weights, indices
 
+@cache
+def _moe_dispatch_kernel(d: int, k: int) -> Any:
+    D = int(d)
+    K = int(k)
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint K = {K};
+        uint token_idx = thread_position_in_grid.y;
+        uint d_idx = thread_position_in_grid.x;
+        uint k_idx = thread_position_in_grid.z;
+        
+        // This is a simple gather-like dispatch
+        // x: (B, D)
+        // indices: (B, K)
+        // out: (B, K, D)
+        out[(token_idx * K + k_idx) * D + d_idx] = x[token_idx * D + d_idx];
+    """
+    return metal_kernel(
+        name=f"kk_moe_dispatch_D{D}_K{K}",
+        input_names=["x", "indices"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def moe_dispatch(x: Any, indices: Any) -> Any:
+    """Dispatch tokens to expert slots.
+    
+    x: (B, D)
+    indices: (B, K)
+    Returns: (B, K, D)
+    """
+    B, D = x.shape
+    K = indices.shape[1]
+    k = _moe_dispatch_kernel(D, K)
+    return k(
+        x, indices,
+        template=[("T", x.dtype)],
+        grid=(D, B, K),
+        threadgroup=(min(D, 256), 1, 1),
+        output_shapes=[(B, K, D)],
+        output_dtypes=[x.dtype],
+    )[0]
+
+
+@cache
+def _moe_combine_kernel(d: int, k: int) -> Any:
+    D = int(d)
+    K = int(k)
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint K = {K};
+        uint token_idx = thread_position_in_grid.y;
+        uint d_idx = thread_position_in_grid.x;
+        
+        float acc = 0.0f;
+        for (uint i = 0; i < K; ++i) {{
+            float w = (float)weights[token_idx * K + i];
+            float v = (float)expert_outputs[(token_idx * K + i) * D + d_idx];
+            acc += w * v;
+        }}
+        out[token_idx * D + d_idx] = (T)acc;
+    """
+    return metal_kernel(
+        name=f"kk_moe_combine_D{D}_K{K}",
+        input_names=["expert_outputs", "weights"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def moe_combine(expert_outputs: Any, weights: Any) -> Any:
+    """Combine expert outputs using gating weights.
+    
+    expert_outputs: (B, K, D)
+    weights: (B, K)
+    Returns: (B, D)
+    """
+    B, K, D = expert_outputs.shape
+    k = _moe_combine_kernel(D, K)
+    return k(
+        expert_outputs, weights,
+        template=[("T", expert_outputs.dtype)],
+        grid=(D, B, 1),
+        threadgroup=(min(D, 256), 1, 1),
+        output_shapes=[(B, D)],
+        output_dtypes=[expert_outputs.dtype],
+    )[0]
+
+
 __all__ = [
     "top2_gating_softmax",
+    "moe_dispatch",
+    "moe_combine",
 ]

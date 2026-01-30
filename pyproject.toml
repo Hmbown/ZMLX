@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zmlx"
-version = "0.2.1"
-description = "ZMLX: Numba-for-MLX. Ergonomic helpers for authoring and autotuning MLX custom Metal kernels from Python."
+version = "0.4.0"
+description = "ZMLX: Triton for Apple Silicon. Write custom Metal GPU kernels for MLX with one-line ergonomics, automatic gradients, and built-in autotuning."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

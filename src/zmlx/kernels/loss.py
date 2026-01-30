@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from functools import cache
 from typing import Any
 
@@ -8,6 +9,11 @@ import mlx.core as mx
 from ..metal import kernel as metal_kernel
 from ..msl import DEFAULT_HEADER
 from .softmax import _validate_tg
+
+_COMPUTE_DTYPE_DEPRECATION = (
+    "compute_dtype is deprecated and will be removed in a future release. "
+    "All ZMLX kernels compute internally in float32 regardless of this parameter."
+)
 
 
 @cache
@@ -147,6 +153,8 @@ def softmax_cross_entropy(
     logits: (..., D)
     targets: (...) - indices (uint32)
     """
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D = logits.shape[-1]
     TG = _validate_tg(threadgroup)
     rows = logits.size // D
@@ -175,7 +183,6 @@ def softmax_cross_entropy(
             targets_in,
             cotan,
             threadgroup=TG,
-            compute_dtype=cd,
         )
         return (dlogits, None)
 
@@ -191,16 +198,17 @@ def softmax_cross_entropy_grad(
     compute_dtype: Any | None = None,
 ) -> Any:
     """Gradient of softmax cross-entropy with respect to logits."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D = logits.shape[-1]
     TG = _validate_tg(threadgroup)
     rows = logits.size // D
-    cd = compute_dtype or mx.float32
     k = _softmax_ce_bwd_kernel(D, TG)
     return k(
         logits,
         targets,
         cotan,
-        template=[("T", cd)],
+        template=[("T", logits.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[logits.shape],

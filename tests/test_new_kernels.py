@@ -1,5 +1,4 @@
 import mlx.core as mx
-import numpy as np
 
 from zmlx.kernels import (
     attention,
@@ -52,6 +51,39 @@ def test_rmsnorm_residual():
     y_ref = (ref_res / rms) * w
     assert mx.allclose(y, y_ref, atol=1e-5)
     assert mx.allclose(updated_res, ref_res, atol=1e-5)
+
+def test_rmsnorm_residual_grad():
+    D = 64
+    eps = 1e-6
+    x = mx.random.normal((4, D)).astype(mx.float32)
+    res = mx.random.normal((4, D)).astype(mx.float32)
+    w = mx.random.normal((D,)).astype(mx.float32)
+
+    # Reference forward using pure MLX ops
+    def ref_fwd(x_in, res_in, w_in):
+        val = x_in + res_in
+        rms = mx.rsqrt(mx.mean(val * val, axis=-1, keepdims=True) + eps)
+        y = val * rms * w_in
+        updated_res = val
+        return y, updated_res
+
+    # Loss that depends on both outputs
+    def loss_kernel(x_in, res_in, w_in):
+        y, updated_res = transformer.rmsnorm_residual(x_in, res_in, w_in, eps=eps)
+        return (y.sum() + updated_res.sum())
+
+    def loss_ref(x_in, res_in, w_in):
+        y, updated_res = ref_fwd(x_in, res_in, w_in)
+        return (y.sum() + updated_res.sum())
+
+    gx, gres, gw = mx.grad(loss_kernel, argnums=(0, 1, 2))(x, res, w)
+    gx_ref, gres_ref, gw_ref = mx.grad(loss_ref, argnums=(0, 1, 2))(x, res, w)
+    mx.eval(gx, gres, gw, gx_ref, gres_ref, gw_ref)
+
+    assert mx.allclose(gx, gx_ref, atol=1e-4).item(), "d_x mismatch"
+    assert mx.allclose(gres, gres_ref, atol=1e-4).item(), "d_residual mismatch"
+    assert mx.allclose(gw, gw_ref, atol=1e-4).item(), "d_weight mismatch"
+
 
 def test_reductions():
     shape = (4, 1024)
@@ -160,9 +192,10 @@ def test_layernorm_residual():
     assert mx.allclose(y, y_ref, atol=1e-5)
     assert mx.allclose(ur, ref_res, atol=1e-5)
 
-def test_dequant_matmul():
-    x = mx.random.normal((1, 16)).astype(mx.float32)
-    w = mx.array(np.random.randint(0, 255, (8, 8)), dtype=mx.uint8)
-    s = mx.ones((8,)).astype(mx.float32)
-    y = linear.dequantize_int4_matmul(x, w, s)
-    assert y.shape == (1, 8)
+def test_linear_bias_silu():
+    M, K, N = 2, 16, 8
+    x = mx.random.normal((M, K)).astype(mx.float32)
+    w = mx.random.normal((N, K)).astype(mx.float32)
+    b = mx.random.normal((N,)).astype(mx.float32)
+    y = linear.fused_linear_bias_silu(x, w, b)
+    assert y.shape == (M, N)

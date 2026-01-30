@@ -6,6 +6,7 @@ import json
 
 from zmlx.autotune import (
     GLOBAL_AUTOTUNE_CACHE,
+    AutotuneConfig,
     AutotuneKey,
     load_autotune_cache,
     save_autotune_cache,
@@ -30,8 +31,8 @@ def test_save_and_load(tmp_path):
         grid=(1024, 1, 1),
     )
 
-    GLOBAL_AUTOTUNE_CACHE[key1] = (256, 1, 1)
-    GLOBAL_AUTOTUNE_CACHE[key2] = (128, 1, 1)
+    GLOBAL_AUTOTUNE_CACHE[key1] = AutotuneConfig(threadgroup=(256, 1, 1))
+    GLOBAL_AUTOTUNE_CACHE[key2] = AutotuneConfig(threadgroup=(128, 1, 1))
 
     # Save
     save_autotune_cache(path)
@@ -49,9 +50,9 @@ def test_save_and_load(tmp_path):
     assert count >= 2
 
     assert key1 in GLOBAL_AUTOTUNE_CACHE
-    assert GLOBAL_AUTOTUNE_CACHE[key1] == (256, 1, 1)
+    assert GLOBAL_AUTOTUNE_CACHE[key1].threadgroup == (256, 1, 1)
     assert key2 in GLOBAL_AUTOTUNE_CACHE
-    assert GLOBAL_AUTOTUNE_CACHE[key2] == (128, 1, 1)
+    assert GLOBAL_AUTOTUNE_CACHE[key2].threadgroup == (128, 1, 1)
 
     # Cleanup
     del GLOBAL_AUTOTUNE_CACHE[key1]
