@@ -6,7 +6,8 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from .kernels.attention import paged_attention as _paged_attention_kernel
-from .kernels.moe import moe_dispatch, moe_combine
+from .kernels.moe import moe_combine, moe_dispatch
+
 
 class PagedAttention(nn.Module):
     """Paged Attention layer for high-throughput serving.
