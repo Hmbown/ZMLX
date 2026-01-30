@@ -13,11 +13,23 @@
 pip install zmlx
 ```
 
+**Speed up your model in 3 lines:**
+
+```python
+import mlx_lm
+from zmlx.patch import patch
+
+model, tokenizer = mlx_lm.load("mlx-community/Qwen3-30B-A3B-4bit")
+patch(model)  # +51% prompt, +36% decode — done
+```
+
+**Or write custom GPU kernels in one line:**
+
 ```python
 from zmlx.api import elementwise
 import mlx.core as mx
 
-# Math formula → compiled Metal kernel → runs on GPU. One line.
+# Math formula → compiled Metal kernel → runs on GPU
 mish = elementwise("x * tanh(log(1 + exp(x)))", name="mish")
 y = mish(mx.random.normal((1024,)))
 ```
