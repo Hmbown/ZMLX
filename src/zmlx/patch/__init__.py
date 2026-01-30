@@ -39,7 +39,7 @@ from ._types import PatchConfig, PatchResult
 #: Fused activation patterns only.  Safe for inference: these replace multi-op
 #: activation sequences (split → silu → mul) with a single fused Metal kernel.
 #: Neutral-to-positive on throughput, no regressions observed.
-FUSED_ACTIVATIONS: list[str] = ["swiglu_mlp", "geglu_mlp"]
+FUSED_ACTIVATIONS: list[str] = ["swiglu_mlp", "geglu_mlp", "moe_mlp"]
 
 #: Recommended for training workloads.  Includes fused activations plus norm
 #: replacements and residual-norm fusion, which benefit training (weight
@@ -145,7 +145,7 @@ def unpatch(model: nn.Module) -> nn.Module:
 # Module-replacement patterns (rmsnorm, layernorm) swap the nn.Module and
 # cannot be cheaply reverted — we only test those if the user explicitly
 # includes them.
-_REVERTIBLE_PATTERNS = {"swiglu_mlp", "geglu_mlp", "residual_norm", "softmax"}
+_REVERTIBLE_PATTERNS = {"swiglu_mlp", "geglu_mlp", "residual_norm", "softmax", "moe_mlp"}
 
 
 def _time_forward(
