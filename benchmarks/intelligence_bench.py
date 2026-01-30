@@ -1,8 +1,10 @@
 import time
+
 import mlx.core as mx
-import numpy as np
+
 import zmlx
-from zmlx.kernels import norms, quant, transformer
+from zmlx.kernels import quant, transformer
+
 
 def benchmark(name, fn, inputs, iters=50):
     # warmup

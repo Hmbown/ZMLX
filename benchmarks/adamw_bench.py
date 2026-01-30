@@ -1,7 +1,10 @@
 import time
+
 import mlx.core as mx
 import mlx.optimizers as optim
+
 from zmlx.optimizers import AdamW as FusedAdamW
+
 
 def benchmark_adamw(n_params=100, size_per_param=1024*1024, iters=50):
     print(f"Benchmarking AdamW update on {n_params} parameters of size {size_per_param} each...")

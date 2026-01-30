@@ -3,9 +3,8 @@ from __future__ import annotations
 import ast
 import inspect
 import textwrap
-from typing import Any, Callable
-
-import mlx.core as mx
+from collections.abc import Callable
+from typing import Any
 
 from .metal import kernel as metal_kernel
 from .msl import DEFAULT_HEADER
