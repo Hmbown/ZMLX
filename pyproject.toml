@@ -44,6 +44,8 @@ dev = [
   "ruff>=0.5.0",
   "mypy>=1.10.0",
   "numpy>=1.24.0",
+  "pyyaml>=6.0",
+  "types-PyYAML>=6.0",
 ]
 train = [
   "mlx-lm>=0.25.0",

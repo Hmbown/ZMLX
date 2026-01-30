@@ -315,13 +315,14 @@ def generate(
     from mlx_lm.sample_utils import make_sampler
 
     sampler = make_sampler(temp=float(temp))
-    return mlx_lm.generate(
+    result: str = mlx_lm.generate(
         model,
         tokenizer,
         prompt,
         max_tokens=max_tokens,
         sampler=sampler,
     )
+    return result
 
 
 __all__ = [
