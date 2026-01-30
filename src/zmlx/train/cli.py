@@ -104,6 +104,7 @@ def main(argv: list[str] | None = None) -> None:
 
 def _run_profile(args: argparse.Namespace) -> None:
     import mlx.core as mx
+
     from zmlx import load
     from zmlx.profile import analyze_bottlenecks, time_kernel
 

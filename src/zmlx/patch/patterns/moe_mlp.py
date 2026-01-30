@@ -16,6 +16,7 @@ from ...kernels import moe
 from .._registry import register
 from .._types import PatchConfig
 
+
 class _MoEMLPPattern:
     @property
     def name(self) -> str:

@@ -3,8 +3,6 @@ from __future__ import annotations
 from functools import cache
 from typing import Any
 
-import mlx.core as mx
-
 from ..metal import kernel as metal_kernel
 from ..msl import DEFAULT_HEADER
 

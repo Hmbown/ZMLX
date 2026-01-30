@@ -8,8 +8,6 @@ import mlx.optimizers as optim
 from .kernels.optimizers import adamw_step
 
 
-from mlx.utils import tree_flatten, tree_unflatten
-
 class AdamW(optim.AdamW):
     """Fused AdamW optimizer.
     
@@ -32,17 +30,6 @@ class AdamW(optim.AdamW):
             lr = lr(self.state["step"])
         self._current_lr = lr
 
-        # Flatten the tree to process parameters in batches (by dtype)
-        flat_grads = tree_flatten(gradients)
-        flat_params = tree_flatten(model)
-        
-        # We need to find the state for each parameter.
-        # optim.Optimizer manages self.state which is keyed by parameter id (usually)
-        # But mlx-lm models often have nested dicts.
-        # This is getting complex for a generic drop-in.
-        # Let's stick to the _update_single but make it faster if possible,
-        # OR implement a faster loop.
-        
         return super().apply_gradients(gradients, model)
 
     def _update_single(self, p: Any, g: Any, state: dict[str, Any]):

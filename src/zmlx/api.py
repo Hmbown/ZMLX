@@ -21,7 +21,6 @@ import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_map, tree_unflatten
 
-
 from .jit_compiler import jit
 
 
@@ -234,10 +233,10 @@ def map_reduce(
         )
         y = my_softmax(mx.random.normal((8, 1024)))
     """
+    from .autotune import get_autotuned_config
     from .codegen import rowwise_mapreduce_source
     from .metal import kernel as metal_kernel
     from .msl import DEFAULT_HEADER
-    from .autotune import get_autotuned_config
 
     cd = compute_dtype or mx.float32
     hdr = header if header is not None else DEFAULT_HEADER
