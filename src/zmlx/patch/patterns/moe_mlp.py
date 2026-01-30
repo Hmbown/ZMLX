@@ -1,11 +1,15 @@
-"""MoE MLP pattern: fuse MoE dispatch + combine logic with expert selection.
+"""MoE MLP pattern: fuse the expert combine step with a Metal kernel.
+
+Preserves each model's original gating logic (softmax ordering, expert bias,
+renormalization) exactly — only the final weighted-sum of expert outputs is
+replaced with a fused ``moe_combine`` Metal kernel.
 
 Targets several MoE styles:
 - **Qwen3** — ``gate`` returns raw logits, ``switch_mlp`` handles experts.
-  We fuse gating (softmax + top-2 + renorm) and combining into Metal kernels.
+- **GPT-OSS** — ``router`` returns raw logits, ``experts`` is a SwitchGLU.
+- **LFM2** — ``gate`` returns raw logits with ``expert_bias`` post-softmax.
 - **GLM-4 / DeepSeek-V3** — ``gate`` returns ``(indices, scores)`` already
-  computed (sigmoid + group selection).  We preserve the original gating and
-  only fuse the combine step.
+  computed (sigmoid + group selection).
 - **Mixtral** — ``gate`` returns logits, ``experts`` is a list of modules.
 
 Also handles ``shared_experts`` (additive dense MLP) when present.
@@ -23,6 +27,43 @@ from .._registry import register
 from .._types import PatchConfig
 
 
+def _gating(self_mod: Any, x: Any, gate_attr: str, k: int) -> tuple[Any, Any]:
+    """Run the model's gating logic faithfully, returning (indices, weights).
+
+    Handles several conventions:
+    - Gate that returns a tuple ``(indices, scores)`` directly (GLM-4 / DeepSeek-V3).
+    - Gate that returns raw logits, with optional ``expert_bias`` and
+      ``norm_topk_prob`` (Qwen3, LFM2, Mixtral, GPT-OSS).
+    """
+    gate_fn = getattr(self_mod, gate_attr)
+    gate_out = gate_fn(x)
+
+    if isinstance(gate_out, tuple):
+        # Gate already computed indices + scores (GLM-4, DeepSeek-V3 style).
+        indices, weights = gate_out
+        return indices, weights
+
+    # Raw logits path — replicate the standard gating sequence exactly.
+    gates = gate_out.astype(mx.float32)
+    gates = mx.softmax(gates, axis=-1)
+
+    # Expert bias (LFM2-style): applied after softmax, before selection.
+    expert_bias = getattr(self_mod, "expert_bias", None)
+    if expert_bias is not None:
+        gates = gates + expert_bias
+
+    # Top-k selection.
+    inds = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
+    scores = mx.take_along_axis(gates, inds, axis=-1)
+
+    # Optional renormalization so selected weights sum to 1.
+    if getattr(self_mod, "norm_topk_prob", False):
+        scores = scores / (mx.sum(scores, axis=-1, keepdims=True) + 1e-20)
+
+    scores = scores.astype(x.dtype)
+    return inds, scores
+
+
 class _MoEMLPPattern:
     @property
     def name(self) -> str:
@@ -31,8 +72,8 @@ class _MoEMLPPattern:
     def matches(self, module: Any, name: str, parent: Any | None = None) -> bool:
         if not isinstance(module, nn.Module):
             return False
-        # Match Qwen3MoeSparseMoeBlock and similar (Mixtral/DeepSeek)
-        has_gate = hasattr(module, "gate")
+        # Match Qwen3MoeSparseMoeBlock (gate), GPT-OSS MLPBlock (router), etc.
+        has_gate = hasattr(module, "gate") or hasattr(module, "router")
         # Check for experts list or a single expert-handling module like switch_mlp
         has_experts = hasattr(module, "experts") or hasattr(module, "switch_mlp")
         return bool(has_gate and has_experts)
@@ -40,22 +81,24 @@ class _MoEMLPPattern:
     def apply(self, module: Any, config: PatchConfig) -> Any:
         original_call = module.__call__
 
-        def patched_call(self_mod: Any, x: Any) -> Any:
-            # 1. Gating — detect whether gate returns logits or (inds, scores)
-            gate_out = self_mod.gate(x)
+        # Detect the number of experts activated per token from the module.
+        num_experts_per_tok = (
+            getattr(module, "num_experts_per_tok", None)
+            or getattr(module, "top_k", None)
+            or getattr(module, "num_selected_experts", None)
+            or 2  # conservative fallback
+        )
 
-            if isinstance(gate_out, tuple):
-                # Gate already computed indices + scores (GLM-4, DeepSeek-V3 style)
-                # Preserve the original gating logic exactly — only fuse combine.
-                indices, weights = gate_out
-            else:
-                # Gate returned raw logits (Qwen3, Mixtral style)
-                # Fuse softmax + top-2 + renorm into a single Metal kernel.
-                weights, indices = moe.top2_gating_softmax(gate_out)
+        # Resolve which attribute holds the gating linear layer.
+        _gate_attr = "gate" if hasattr(module, "gate") else "router"
+
+        def patched_call(self_mod: Any, x: Any) -> Any:
+            # 1. Gating — preserve the model's original logic exactly.
+            indices, weights = _gating(self_mod, x, _gate_attr, num_experts_per_tok)
 
             # 2. Expert Execution
             if hasattr(self_mod, "switch_mlp"):
-                # Qwen3/GLM style: vectorized experts (SwitchGLU)
+                # Qwen3/GLM/LFM2 style: vectorized experts (SwitchGLU)
                 expert_outputs = self_mod.switch_mlp(x, indices)
             else:
                 # Mixtral/DeepSeek style: list of expert modules
