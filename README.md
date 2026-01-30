@@ -7,7 +7,7 @@
 
 **The Triton-like toolkit for [MLX](https://github.com/ml-explore/mlx)** — write custom Metal GPU kernels from Python with one-line ergonomics, automatic gradients, and built-in autotuning. No raw Metal, no manual threadgroups, no boilerplate.
 
-> **+33% decode throughput** on Qwen3-32B-4bit with fused residual+RMSNorm patches. [Benchmarks](#benchmarks)
+> **+33% decode** on Qwen3-32B (dense) and **+51% prompt / +36% decode** on Qwen3-30B-A3B (MoE) with fused kernel patches. [Benchmarks](#model-level-inference)
 
 ```bash
 pip install zmlx
@@ -26,7 +26,8 @@ y = mish(mx.random.normal((1024,)))
 
 ## What's New in v0.4.0
 
-- **1.33x decode on 32B models** — fused residual+RMSNorm patches save real bandwidth on large, bandwidth-bound models ([benchmarks](#model-level-inference))
+- **1.33x decode on 32B dense, 1.51x prompt / 1.36x decode on 30B MoE** — fused residual+RMSNorm and fused MoE gating patches ([benchmarks](#model-level-inference))
+- **MoE patch** — fused `top2_gating_softmax` + `moe_combine` eliminates multiple memory round-trips in expert routing
 - **High-level API** — `elementwise()`, `reduce()`, `map_reduce()` for kernel authoring in one line
 - **JIT compiler** — `@jit` decorator compiles Python scalar expressions to Metal
 - **Testing & benchmarking** — `zmlx.testing.assert_matches()`, `zmlx.bench.compare()` for correctness verification and side-by-side timing
@@ -177,7 +178,7 @@ Full reference: [`docs/KERNELS.md`](docs/KERNELS.md).
 | `loss` | `softmax_cross_entropy` — memory-efficient fused loss |
 | `transformer` | `swiglu`, `geglu`, `rmsnorm_residual` (with full weight gradients), `dropout` — genuine fusions |
 | `bits` | `pack_bits`, `unpack_bits` — no MLX equivalent |
-| `moe` | `top2_gating_softmax` — expert routing |
+| `moe` | `top2_gating_softmax`, `moe_dispatch`, `moe_combine` — fused expert routing (+36% decode on 30B MoE) |
 | `scan` | `cumsum_lastdim` — differentiable prefix sum |
 | `norms` | `rmsnorm`, `layernorm` — parallel reduction showcase. All norms compute in float32 internally |
 | `softmax` | `softmax_lastdim` — map-reduce codegen showcase |
@@ -229,12 +230,21 @@ LLM inference is **memory-bandwidth-bound**: fused kernels shine on large models
 
 > **+33% decode throughput** on a 32B model — 64 layers of fused residual+RMSNorm, each saving a full memory round-trip.
 
-**Qwen3-30B-A3B-4bit (MoE, 48 layers, 3B active/30B total)** — `python benchmarks/inference_benchmark.py --models qwen3-30b-a3b`
+**Qwen3-30B-A3B-4bit (MoE, 48 layers, 3B active/30B total)** — `python benchmarks/inference_benchmark.py --models qwen3-30b-a3b --selective`
 
 | Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
 |:--|--:|--:|:--|
-| Baseline (MLX) | 1,004 | 97.0 | — |
-| ZMLX all patches | 975 | 80.4 | 0.97x / 0.83x |
+| Baseline (MLX) | 1,083 | 116 | — |
+| ZMLX fused activations | **1,635** | **158** | **1.51x / 1.36x** |
+
+> **+36% decode throughput** on MoE models — fused gating (`top2_gating_softmax`) and combine (`moe_combine`) kernels eliminate multiple memory round-trips in the expert routing path.
+
+**Qwen3-8B-4bit (32 layers, ~5 GB)** — `python benchmarks/inference_benchmark.py --models qwen3-8b --selective`
+
+| Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
+|:--|--:|--:|:--|
+| Baseline (MLX) | 676 | 75 | — |
+| ZMLX fused activations | 675 | 76 | 1.00x / 1.01x |
 
 **Llama-3.2-1B-Instruct-4bit (16 layers, ~0.8 GB)** — `python benchmarks/llama_benchmark.py`
 
@@ -244,12 +254,10 @@ LLM inference is **memory-bandwidth-bound**: fused kernels shine on large models
 | ZMLX fused activations | 3,804 | 378 | 0.97x / 1.00x |
 | ZMLX all patches | 3,705 | 366 | 0.95x / 0.97x |
 
-**When do patches help?** It depends on **active parameters per token**:
-- **Dense 32B** (~18 GB active): +33% decode — bandwidth-bound, fused residual+norm saves real bandwidth per layer
-- **MoE 30B-A3B** (~3B active): -17% decode — only 3B params active per token, so kernel launch overhead dominates
-- **Dense 1B** (~0.8 GB): neutral — too small for fusion savings to outweigh overhead
-
-**Takeaway**: use all patches for **large dense models** (8B+ dense). For MoE or small models, use `smart_patch` to auto-detect what helps:
+**When do patches help?**
+- **Large Dense Models (8B+)**: Use **all patches**. Bandwidth-bound, so fused residual+norm saves real throughput.
+- **MoE Models**: Use **fused activations** (`--selective`). The `moe_mlp` patch provides a massive +36% boost.
+- **Small Models (< 3B)**: Neutral. Overhead often outweighs fusion gains. Use `smart_patch` to be sure.
 
 ```python
 from zmlx.patch import smart_patch
@@ -265,7 +273,7 @@ Or use presets if you know your workload:
 ```python
 from zmlx.patch import patch, FUSED_ACTIVATIONS, TRAINING_RECOMMENDED
 patch(model)                                   # large models (8B+): all patches
-patch(model, patterns=FUSED_ACTIVATIONS)       # small models: activations only
+patch(model, patterns=FUSED_ACTIVATIONS)       # MoE/small: activations + MoE gating
 patch(model, patterns=TRAINING_RECOMMENDED)    # training: activations + norms
 ```
 
@@ -309,8 +317,8 @@ my_softmax = map_reduce(..., threadgroup="auto")  # autotunes per-shape
 
 ### Where ZMLX genuinely helps
 
-- **Large dense model inference** — 1.33x decode on 32B dense, fused residual+norm saves bandwidth per layer (not MoE — active params too small)
-- **Custom ops that MLX doesn't have** — SwiGLU, GeGLU, fused dropout, MoE gating, bit packing
+- **Large model inference** — 1.33x decode on 32B dense (fused residual+norm), 1.51x prompt / 1.36x decode on 30B MoE (fused gating+combine)
+- **Custom ops that MLX doesn't have** — SwiGLU, GeGLU, fused dropout, fused MoE gating, bit packing
 - **Training** — fused `softmax_cross_entropy` loss, correct weight gradients for `rmsnorm_residual`
 - **Authoring new kernels** — the `elementwise()`, `reduce()`, and `map_reduce()` APIs let you go from math formula to compiled Metal kernel in one line
 - **Quantization** — FP8 (E4M3/E5M2) and NF4 dequantization kernels with real bit-manipulation

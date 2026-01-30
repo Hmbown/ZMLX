@@ -169,21 +169,28 @@ def _moe_dispatch_kernel(d: int, k: int) -> Any:
 def moe_dispatch(x: Any, indices: Any) -> Any:
     """Dispatch tokens to expert slots.
     
-    x: (B, D)
-    indices: (B, K)
-    Returns: (B, K, D)
+    x: (..., D)
+    indices: (..., K)
+    Returns: (..., K, D)
     """
-    B, D = x.shape
-    K = indices.shape[1]
+    original_shape = x.shape[:-1]
+    D = x.shape[-1]
+    K = indices.shape[-1]
+    
+    x_flat = x.reshape(-1, D)
+    indices_flat = indices.reshape(-1, K)
+    B = x_flat.shape[0]
+    
     k = _moe_dispatch_kernel(D, K)
-    return k(
-        x, indices,
+    out = k(
+        x_flat, indices_flat,
         template=[("T", x.dtype)],
         grid=(D, B, K),
         threadgroup=(min(D, 256), 1, 1),
         output_shapes=[(B, K, D)],
         output_dtypes=[x.dtype],
     )[0]
+    return out.reshape((*original_shape, K, D))
 
 
 @cache
@@ -218,20 +225,28 @@ def _moe_combine_kernel(d: int, k: int) -> Any:
 def moe_combine(expert_outputs: Any, weights: Any) -> Any:
     """Combine expert outputs using gating weights.
     
-    expert_outputs: (B, K, D)
-    weights: (B, K)
-    Returns: (B, D)
+    expert_outputs: (..., K, D)
+    weights: (..., K)
+    Returns: (..., D)
     """
-    B, K, D = expert_outputs.shape
+    original_shape = weights.shape[:-1]
+    K = weights.shape[-1]
+    D = expert_outputs.shape[-1]
+    
+    expert_outputs_flat = expert_outputs.reshape(-1, K, D)
+    weights_flat = weights.reshape(-1, K)
+    B = weights_flat.shape[0]
+    
     k = _moe_combine_kernel(D, K)
-    return k(
-        expert_outputs, weights,
+    out = k(
+        expert_outputs_flat, weights_flat,
         template=[("T", expert_outputs.dtype)],
         grid=(D, B, 1),
         threadgroup=(min(D, 256), 1, 1),
         output_shapes=[(B, D)],
         output_dtypes=[expert_outputs.dtype],
     )[0]
+    return out.reshape((*original_shape, D))
 
 
 __all__ = [

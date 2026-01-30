@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MoE patch pattern** (`zmlx.patch.patterns.moe_mlp`): fused
+  `top2_gating_softmax` + `moe_combine` for Mixture of Experts models.
+  +51% prompt / +36% decode on Qwen3-30B-A3B-4bit. Included in
+  `FUSED_ACTIVATIONS` preset.
+- **Multi-dimensional MoE kernel support**: `moe.py` kernels now handle
+  batched (B, N, D) shapes used during prefill.
+- **Qwen3-30B-A3B and Qwen3-8B benchmarks** in README, completing the
+  scaling story across dense and MoE architectures.
+
+### Fixed
+
+- **SwiGLU patch MoE compatibility**: patch now correctly skips MoE
+  `switch_mlp` modules that take routing indices as extra arguments.
+
 ## [0.4.0] - 2026-01-30
 
 ### Added
