@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-01-30
+
+### Added
+
+- **`mode` parameter for `patch()`**: `patch(model, mode="inference")` (default) selects
+  `FUSED_ACTIVATIONS`; `patch(model, mode="training")` selects `TRAINING_RECOMMENDED`.
+  Explicit `patterns=` overrides `mode` when both are given.
+- **GLM-4.7-Flash benchmark**: validated on `mlx-community/GLM-4.7-Flash-4bit` (MoE, 30B-A3B).
+  Neutral result (1.01x/0.99x) — GLM's `@mx.compile` gating is already optimized.
+
+### Fixed
+
+- **MoE pattern compatibility**: `moe_mlp` now handles models where `gate()` returns
+  `(indices, scores)` tuple (GLM-4, DeepSeek-V3) instead of raw logits. Previously
+  would crash on these models. Also handles `shared_experts` (additive dense MLP).
+
+### Changed
+
+- **`ALL_PATTERNS` docstring**: now explicitly warns that it causes 3–5% decode regression
+  on ALL tested models (dense 8B/32B and MoE 30B), not just "smaller or MoE models".
+- **Module docstring**: updated with validated benchmark findings — MoE routing fusion is
+  the killer feature (1.3–1.6x), dense models are bandwidth-bound and neutral, norm/softmax
+  kernels are slower than MLX built-ins for inference.
+- **README**: reframed positioning around MoE speedup as the primary value proposition.
+  Added "Where ZMLX won't help" section for honest guidance. Updated preset examples
+  to use `mode` parameter.
+- **Project description**: updated to highlight MoE inference speedup.
+
+### Removed
+
+- **Bogus Qwen3-32B benchmark**: deleted `benchmarks/results/qwen32b_results.json` which
+  contained cold-cache artifact results (baseline ran without shader warmup, making it
+  artificially slow). Corrected CHANGELOG v0.4.0 entry that cited the invalid 1.33x number.
+
+## [0.5.0] - 2026-01-30
+
+### Changed
+
+- **BREAKING**: `patch(model)` default changed from all patterns to `FUSED_ACTIVATIONS`
+  (SwiGLU/GeGLU/MoE fusions only). This eliminates the decode regression reported
+  on MoE models (e.g. Qwen3-30B-A3B-Instruct: 115→111 tok/s with all patterns).
+  Use `patch(model, patterns=ALL_PATTERNS)` to opt in to all 7 patterns.
+
+### Added
+
+- `ALL_PATTERNS` preset constant listing all 7 patterns for explicit opt-in.
+- `qwen3-30b-a3b-instruct` model variant in inference benchmarks.
+
 ## [0.4.2] - 2026-01-30
 
 ### Fixed
@@ -60,8 +108,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that fuses m/v/parameter updates to reduce memory bandwidth.
 - **New kernels**: paged attention, MoE dispatch/combine, FP8/NF4 dequantization,
   extended RoPE variants (interleaved, GQA), additional fused transformer ops.
-- **Qwen3-32B-4bit benchmark**: 1.33x decode throughput, 1.19x prompt throughput
-  on M4 Max 36GB with full patching — demonstrates scaling benefit on large models.
+- **Qwen3-32B-4bit benchmark**: initial results (later invalidated — see v0.6.0).
+  Properly-warmed benchmarks show dense models are neutral with ZMLX patches.
 - **Documentation**: quickstart guide (`docs/QUICKSTART.md`), cookbook
   (`docs/COOKBOOK.md`), new examples (custom activation, custom loss, custom
   reduction, Qwen fine-tuning).
@@ -191,7 +239,9 @@ First public release.
 - **Release workflow** (`.github/workflows/release.yml`) for PyPI trusted publishing.
 - **Benchmarks** (`benchmarks/microbench.py`) with timing comparisons vs MLX reference ops.
 
-[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Hmbown/ZMLX/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/Hmbown/ZMLX/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Hmbown/ZMLX/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Hmbown/ZMLX/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Hmbown/ZMLX/compare/v0.3.1...v0.4.0

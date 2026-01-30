@@ -32,7 +32,9 @@ MODELS = {
     "qwen3-8b": "mlx-community/Qwen3-8B-4bit",
     "qwen3-8b-bf16": "mlx-community/Qwen3-8B-bf16",
     "qwen3-30b-a3b": "mlx-community/Qwen3-30B-A3B-4bit",
+    "qwen3-30b-a3b-instruct": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
     "qwen3-32b": "mlx-community/Qwen3-32B-4bit",
+    "glm-4.7-flash": "mlx-community/GLM-4.7-Flash-4bit",
     "gemma3-27b": "mlx-community/gemma-3-27b-it-qat-4bit",
     "deepseek-r1-32b": "mlx-community/DeepSeek-R1-Distill-Qwen-32B-4bit",
 }
@@ -164,19 +166,20 @@ def apply_patches(model, selective: bool = False):
     """Apply ZMLX kernel patches.
 
     Args:
-        selective: If True, only apply fused-activation patterns (SwiGLU/GeGLU)
-            which are neutral-to-positive for inference.  If False, apply all
-            patterns (including norms, which are slower than MLX built-ins).
+        selective: If True (or default patch()), only apply fused-activation
+            patterns (SwiGLU/GeGLU/MoE) which are neutral-to-positive for
+            inference.  If False, apply ALL patterns (including norms, which
+            may be slower than MLX built-ins on some models).
     """
-    from zmlx.patch import FUSED_ACTIVATIONS
+    from zmlx.patch import ALL_PATTERNS
     from zmlx.patch import patch as zmlx_patch
 
     if selective:
-        print("  Applying ZMLX patches (selective: fused activations only) ...")
-        zmlx_patch(model, patterns=FUSED_ACTIVATIONS, verbose=True)
+        print("  Applying ZMLX patches (default: fused activations only) ...")
+        zmlx_patch(model, verbose=True)  # default is FUSED_ACTIVATIONS
     else:
-        print("  Applying ZMLX patches (all) ...")
-        zmlx_patch(model, verbose=True)
+        print("  Applying ZMLX patches (all patterns) ...")
+        zmlx_patch(model, patterns=ALL_PATTERNS, verbose=True)
 
 
 # ---------------------------------------------------------------------------

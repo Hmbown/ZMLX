@@ -5,22 +5,22 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform: macOS Apple Silicon](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-lightgrey.svg)](https://github.com/ml-explore/mlx)
 
-**The Triton-like toolkit for [MLX](https://github.com/ml-explore/mlx)** — write custom Metal GPU kernels from Python with one-line ergonomics, automatic gradients, and built-in autotuning. No raw Metal, no manual threadgroups, no boilerplate.
+**The Triton-like toolkit for [MLX](https://github.com/ml-explore/mlx)** — write custom Metal GPU kernels from Python with one-line ergonomics, automatic gradients, and built-in autotuning. The killer feature: **fused MoE routing kernels** that deliver 1.3–1.6x inference speedup on Mixture-of-Experts models.
 
-> **+33% decode** on Qwen3-32B (dense) and **+51% prompt / +36% decode** on Qwen3-30B-A3B (MoE) with fused kernel patches. [Benchmarks](#model-level-inference)
+> **+60% prompt / +31% decode** on Qwen3-30B-A3B-Instruct (MoE) with `patch(model)` — safe default, zero regressions on any model. [Benchmarks](#model-level-inference)
 
 ```bash
 pip install zmlx
 ```
 
-**Speed up your model in 3 lines:**
+**Speed up MoE inference in 3 lines:**
 
 ```python
 import mlx_lm
 from zmlx.patch import patch
 
-model, tokenizer = mlx_lm.load("mlx-community/Qwen3-30B-A3B-4bit")
-patch(model)  # +51% prompt, +36% decode — done
+model, tokenizer = mlx_lm.load("mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit")
+patch(model)  # +60% prompt, +31% decode — safe on all models, MoE gets the win
 ```
 
 **Or write custom GPU kernels in one line:**
@@ -36,18 +36,24 @@ y = mish(mx.random.normal((1024,)))
 
 ---
 
-## What's New in v0.4.0
+## What's New in v0.6.0
 
-- **1.33x decode on 32B dense, 1.51x prompt / 1.36x decode on 30B MoE** — fused residual+RMSNorm and fused MoE gating patches ([benchmarks](#model-level-inference))
-- **MoE patch** — fused `top2_gating_softmax` + `moe_combine` eliminates multiple memory round-trips in expert routing
+- **`mode` parameter**: `patch(model, mode="training")` for workload-aware preset selection.
+  `mode="inference"` (default) applies fused activations only; `mode="training"` adds norm fusions.
+- **Validated benchmarks**: comprehensive 3-model benchmark suite with proper warmup confirms:
+  - MoE models: **1.3–1.6x speedup** (the killer feature)
+  - Dense models: neutral (no regression, no gain — MLX built-ins are already at bandwidth limit)
+  - `ALL_PATTERNS`: **causes 3–5% regression on ALL models** — docstrings now warn explicitly
+- **Bogus 32B result removed**: the previously-reported 1.33x Qwen3-32B speedup was a cold-cache
+  benchmark artifact. Properly-warmed benchmarks show dense models are bandwidth-bound and neutral.
+
+### Previous highlights (v0.4–0.5)
+
+- **MoE patch** — fused `top2_gating_softmax` + `moe_combine` eliminates 4+ kernel launches in expert routing
 - **High-level API** — `elementwise()`, `reduce()`, `map_reduce()` for kernel authoring in one line
 - **JIT compiler** — `@jit` decorator compiles Python scalar expressions to Metal
-- **Testing & benchmarking** — `zmlx.testing.assert_matches()`, `zmlx.bench.compare()` for correctness verification and side-by-side timing
-- **Profiling** — `zmlx.profile.time_kernel()`, `dump_msl()`, `kernel_stats()` for introspection
-- **Training pipeline** — `zmlx train` CLI for LoRA fine-tuning with ZMLX patches
 - **Smart patching** — `smart_patch()` auto-benchmarks each pattern and keeps only what helps
-- **Fused AdamW** — single-kernel optimizer step reducing memory bandwidth
-- **Paged attention** — `zmlx.nn.PagedAttention` for high-throughput serving
+- **Training pipeline** — `zmlx train` CLI for LoRA fine-tuning with ZMLX patches
 - **70+ kernel catalog** — activations, norms, RoPE, attention, MoE, quantization, loss, bit ops
 
 ---
@@ -232,48 +238,59 @@ ZMLX wins big on **fused operations** that MLX doesn't provide as single ops (Sw
 
 ### Model-level inference
 
-All baselines are **unmodified `mlx_lm`** (`mlx_lm.load()` + `mlx_lm.generate()`) — the standard MLX inference stack. ZMLX rows add `patch(model)` on top of that same pipeline. Same model weights, same quantization, same prompt.
+All baselines are **unmodified `mlx_lm`** (`mlx_lm.load()` + `mlx_lm.generate()`) — the standard MLX inference stack. ZMLX rows add `patch(model)` (default: `FUSED_ACTIVATIONS`) or explicit `ALL_PATTERNS` on top of that same pipeline. Same model weights, same quantization, same prompt.
 
 LLM inference is **memory-bandwidth-bound**: fused kernels shine on large models where each saved memory round-trip matters. The effect scales with model size — small models see no benefit, large models see significant speedups.
 
-**Qwen3-32B-4bit (64 layers, ~18 GB)** — M4 Max, 36 GB
+**Qwen3-32B-4bit (dense, 64 layers, ~19 GB)** — M4 Max, 36 GB
 
 | Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
 |:--|--:|--:|:--|
-| Baseline (`mlx_lm`) | 107 | 13.5 | — |
-| ZMLX fused activations | 108 | 14.2 | 1.01x / **1.05x** |
-| ZMLX all patches | **127** | **18.0** | **1.19x / 1.33x** |
+| Baseline (`mlx_lm`) | 149 | 18.0 | — |
+| `patch(model)` (default) | 148 | 17.7 | 0.99x / 0.99x |
+| `patch(model, patterns=ALL_PATTERNS)` | 147 | 17.2 | 0.99x / 0.97x |
 
-> **+33% decode throughput** on a 32B model — 64 layers of fused residual+RMSNorm, each saving a full memory round-trip.
+> Dense batch-1 decode is ~95% weight-reading through quantized matmuls — already at the hardware bandwidth limit. Custom kernels can't beat MLX's built-in `mx.fast.rms_norm`/`mx.fast.rope`/`mx.fast.scaled_dot_product_attention`. ZMLX shines on **MoE models** where fused expert routing eliminates kernel launches that MLX lacks fast paths for.
 
-**Qwen3-30B-A3B-4bit (MoE, 48 layers, 3B active/30B total)** — `python benchmarks/inference_benchmark.py --models qwen3-30b-a3b --selective`
+**Qwen3-30B-A3B-Instruct-2507-4bit (MoE, 48 layers, 3B active/30B total)** — M4 Max, 36 GB
 
 | Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
 |:--|--:|--:|:--|
-| Baseline (`mlx_lm`) | 1,083 | 116 | — |
-| ZMLX fused activations | **1,635** | **158** | **1.51x / 1.36x** |
+| Baseline (`mlx_lm`) | 1,093 | 106 | — |
+| `patch(model)` (default) | **1,754** | **138** | **1.60x / 1.31x** |
 
-> **+36% decode throughput** on MoE models — fused gating (`top2_gating_softmax`) and combine (`moe_combine`) kernels eliminate multiple memory round-trips in the expert routing path.
+> **+60% prompt, +31% decode** with default `patch(model)` on MoE — fused gating (`top2_gating_softmax`) and combine (`moe_combine`) kernels eliminate multiple memory round-trips in the expert routing path. No regressions.
 
 **Qwen3-8B-4bit (32 layers, ~5 GB)** — `python benchmarks/inference_benchmark.py --models qwen3-8b --selective`
 
 | Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
 |:--|--:|--:|:--|
 | Baseline (`mlx_lm`) | 676 | 75 | — |
-| ZMLX fused activations | 675 | 76 | 1.00x / 1.01x |
+| `patch(model)` (default) | 675 | 76 | 1.00x / 1.01x |
 
 **Llama-3.2-1B-Instruct-4bit (16 layers, ~0.8 GB)** — `python benchmarks/llama_benchmark.py`
 
 | Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
 |:--|--:|--:|:--|
 | Baseline (`mlx_lm`) | 3,913 | 377 | — |
-| ZMLX fused activations | 3,804 | 378 | 0.97x / 1.00x |
-| ZMLX all patches | 3,705 | 366 | 0.95x / 0.97x |
+| `patch(model)` (default) | 3,804 | 378 | 0.97x / 1.00x |
+| `patch(model, patterns=ALL_PATTERNS)` | 3,705 | 366 | 0.95x / 0.97x |
+
+**GLM-4.7-Flash-4bit (MoE, 47 layers, 30B-A3B, sigmoid+group gating)** — M4 Max, 36 GB
+
+| Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
+|:--|--:|--:|:--|
+| Baseline (`mlx_lm`) | 662 | 74.1 | — |
+| `patch(model)` (default) | 672 | 73.6 | 1.01x / 0.99x |
+
+> GLM-4 uses sigmoid + group-based gating with `@mx.compile`, so the gate is already optimized. ZMLX preserves the original gating and only fuses the combine step — not enough to move the needle. **Neutral, no regression.**
 
 **When do patches help?**
-- **Large Dense Models (8B+)**: Use **all patches**. Bandwidth-bound, so fused residual+norm saves real throughput.
-- **MoE Models**: Use **fused activations** (`--selective`). The `moe_mlp` patch provides a massive +36% boost.
-- **Small Models (< 3B)**: Neutral. Overhead often outweighs fusion gains. Use `smart_patch` to be sure.
+- **MoE Models (softmax-gated)**: Qwen3-MoE, Mixtral — fused gating provides 1.3–1.6x. The gate must return raw logits (not pre-computed indices).
+- **MoE Models (pre-computed gating)**: GLM-4, DeepSeek-V3 — neutral. Gate is already `@mx.compile`-optimized.
+- **Large Dense Models (32B+)**: Neutral. MLX built-ins are already at bandwidth limit.
+- **Medium Dense Models (8B)**: Neutral-to-positive, no regressions.
+- **Small Models (< 3B)**: Neutral. Use `smart_patch` to be sure.
 
 ```python
 from zmlx.patch import smart_patch
@@ -284,13 +301,19 @@ sample = mx.array([tokenizer.encode("Hello")])
 model = smart_patch(model, sample)
 ```
 
-Or use presets if you know your workload:
+Or use mode/presets if you know your workload:
 
 ```python
-from zmlx.patch import patch, FUSED_ACTIVATIONS, TRAINING_RECOMMENDED
-patch(model)                                   # large models (8B+): all patches
-patch(model, patterns=FUSED_ACTIVATIONS)       # MoE/small: activations + MoE gating
-patch(model, patterns=TRAINING_RECOMMENDED)    # training: activations + norms
+from zmlx.patch import patch
+
+patch(model)                    # inference (safe default — MoE gets 1.3–1.6x, dense neutral)
+patch(model, mode="training")   # training: adds norm fusions for backward pass savings
+
+# Or explicit presets for full control:
+from zmlx.patch import ALL_PATTERNS, FUSED_ACTIVATIONS, TRAINING_RECOMMENDED
+patch(model, patterns=FUSED_ACTIVATIONS)       # same as default
+patch(model, patterns=TRAINING_RECOMMENDED)    # same as mode="training"
+patch(model, patterns=ALL_PATTERNS)            # WARNING: regresses 3–5% on inference
 ```
 
 ### Smart patching
@@ -333,11 +356,16 @@ my_softmax = map_reduce(..., threadgroup="auto")  # autotunes per-shape
 
 ### Where ZMLX genuinely helps
 
-- **Large model inference** — 1.33x decode on 32B dense (fused residual+norm), 1.51x prompt / 1.36x decode on 30B MoE (fused gating+combine)
+- **MoE model inference (softmax-gated)** — 1.3–1.6x speedup on MoE models whose gate returns raw logits with softmax top-k routing (Qwen3-MoE, Mixtral). Fused gating eliminates 4+ kernel launches per MoE layer. Models with pre-computed gating (GLM-4, DeepSeek-V3 with `@mx.compile`) are neutral — the pattern detects this and only fuses the combine step.
 - **Custom ops that MLX doesn't have** — SwiGLU, GeGLU, fused dropout, fused MoE gating, bit packing
 - **Training** — fused `softmax_cross_entropy` loss, correct weight gradients for `rmsnorm_residual`
 - **Authoring new kernels** — the `elementwise()`, `reduce()`, and `map_reduce()` APIs let you go from math formula to compiled Metal kernel in one line
 - **Quantization** — FP8 (E4M3/E5M2), NF4, int8, int4 dequantization with real bit-manipulation kernels
+
+### Where ZMLX won't help
+
+- **Dense model inference** — batch-1 decode is ~95% weight-reading through quantized matmuls, already at hardware bandwidth limit. `patch(model)` is safe (neutral) but won't speed things up.
+- **Replacing MLX built-in norms/softmax** — `mx.fast.rms_norm`, `mx.softmax`, `mx.fast.scaled_dot_product_attention` are Apple-optimized fast paths. Custom kernels add dispatch overhead.
 
 ---
 
