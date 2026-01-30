@@ -36,3 +36,5 @@ zig/zig-out/
 # Project-specific exclusions (sensitive/local-only)
 firebase-debug.log
 SETUP_TRAINING.md
+NEXT_SESSION.md
+benchmarks/results/
