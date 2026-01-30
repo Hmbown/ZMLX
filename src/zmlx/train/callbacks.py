@@ -47,7 +47,7 @@ def _get_training_callback_base() -> type:
     try:
         from mlx_lm.tuner.callbacks import TrainingCallback
 
-        return TrainingCallback
+        return TrainingCallback  # type: ignore[no-any-return]
     except ImportError:
         return object
 
