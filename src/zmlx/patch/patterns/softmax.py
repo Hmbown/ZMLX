@@ -37,22 +37,16 @@ class _SoftmaxPattern:
         if softmax_fn is None or not callable(softmax_fn):
             return module
 
-        cd = (
-            getattr(mx, config.compute_dtype)
-            if isinstance(config.compute_dtype, str)
-            else config.compute_dtype
-        )
-
         from ...kernels import softmax as zmlx_softmax
 
         def _zmlx_softmax(x: Any, axis: int = -1, precise: bool = False) -> Any:
             # Only replace last-dim softmax when precision requirements allow.
             if axis not in (-1, x.ndim - 1) or precise:
                 return mx.softmax(x, axis=axis, precise=precise)
+            tg = config.threadgroup if isinstance(config.threadgroup, int) else 256
             return zmlx_softmax.softmax_lastdim(
                 x,
-                threadgroup=config.threadgroup,
-                compute_dtype=cd,
+                threadgroup=tg,
             )
 
         module._zmlx_original_softmax = softmax_fn  # type: ignore[attr-defined]

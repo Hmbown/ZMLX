@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -30,8 +31,11 @@ def train(config: Any) -> dict[str, Any]:
     config.validate()
     _check_mlx_lm()
 
+    import mlx.core as mx
+    import mlx.optimizers as optim
     import mlx_lm
-    from mlx_lm.tuner import trainer as mlx_trainer
+    from mlx_lm.tuner import datasets as tuner_datasets
+    from mlx_lm.tuner import trainer
     from mlx_lm.tuner import utils as tuner_utils
 
     # 1. Load model + tokenizer
@@ -59,79 +63,141 @@ def train(config: Any) -> dict[str, Any]:
             verbose=config.patch_verbose or config.verbose,
         )
 
-    # 3. Apply LoRA/DoRA
+    # 3. Freeze base parameters, then apply LoRA/DoRA (so new LoRA params stay unfrozen)
+    model.freeze()
+
     if config.lora or config.dora:
         if config.verbose:
-            print(f"[zmlx.train] Applying {'DoRA' if config.dora else 'LoRA'} "
-                  f"(rank={config.lora_rank})")
+            print(
+                f"[zmlx.train] Applying {'DoRA' if config.dora else 'LoRA'} "
+                f"(rank={config.lora_rank})"
+            )
 
-        lora_config = {
+        num_layers = len(model.layers) if hasattr(model, "layers") else 0
+
+        # Expand leaf target names (e.g. "q_proj") to full dotted paths
+        # (e.g. "self_attn.q_proj") as required by linear_to_lora_layers.
+        targets = config.lora_target_modules
+        if targets and hasattr(model, "layers") and model.layers:
+            full_keys: set[str] = set()
+            for k, _m in model.layers[0].named_modules():
+                if any(k == t or k.endswith(f".{t}") for t in targets):
+                    full_keys.add(k)
+        else:
+            full_keys = None  # type: ignore[assignment]
+
+        lora_config: dict[str, Any] = {
             "rank": config.lora_rank,
             "alpha": config.lora_alpha,
             "dropout": config.lora_dropout,
             "scale": config.lora_alpha / config.lora_rank,
         }
+        if full_keys:
+            lora_config["keys"] = full_keys
 
         tuner_utils.linear_to_lora_layers(
             model,
-            config.lora_target_modules,
+            num_layers,
             lora_config,
+            use_dora=config.dora,
         )
 
-    # 4. Freeze non-trainable parameters
-    model.freeze()
-    if config.lora or config.dora:
-        # LoRA parameters already unfrozen by linear_to_lora_layers
-        pass
+    if config.verbose:
+        tuner_utils.print_trainable_parameters(model)
 
-    # 5. Build training args for mlx_lm trainer
+    # 5. Build output dir
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    training_args = {
-        "model": model,
-        "tokenizer": tokenizer,
-        "args": _build_mlx_lm_args(config),
-    }
+    adapter_file = output_dir / "adapters.safetensors"
 
     # 6. Load dataset
     if config.verbose:
         print(f"[zmlx.train] Loading dataset: {config.dataset}")
 
-    # 7. Run training
+    dataset_args = SimpleNamespace(
+        data=config.dataset,
+        hf_dataset=None,
+        train=True,
+        test=False,
+        mask_prompt=False,
+        max_seq_length=config.max_seq_length,
+    )
+
+    train_set, valid_set, _ = tuner_datasets.load_dataset(dataset_args, tokenizer)
+
+    # 7. Build TrainingArgs
+    training_args = trainer.TrainingArgs(
+        batch_size=config.batch_size,
+        iters=config.iters,
+        val_batches=25,
+        steps_per_report=config.log_interval,
+        steps_per_eval=config.eval_interval,
+        steps_per_save=config.save_interval,
+        max_seq_length=config.max_seq_length,
+        adapter_file=str(adapter_file),
+        grad_checkpoint=False,
+        grad_accumulation_steps=config.grad_accum_steps,
+    )
+
+    # 8. Build optimizer
+    optimizer_name = config.optimizer.lower()
+    lr = config.learning_rate
+    if optimizer_name == "adam":
+        optimizer = optim.Adam(learning_rate=lr)
+    elif optimizer_name == "adamw":
+        optimizer = optim.AdamW(learning_rate=lr)
+    elif optimizer_name == "sgd":
+        optimizer = optim.SGD(learning_rate=lr)
+    elif optimizer_name == "adafactor":
+        optimizer = optim.Adafactor(learning_rate=lr)
+    else:
+        raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+
+    # 9. Build loss function
+    if config.use_fused_loss:
+        from zmlx.train.loss import fused_cross_entropy
+
+        def loss_fn(model_in, batch, lengths):
+            inputs = batch[:, :-1]
+            targets = batch[:, 1:]
+            logits = model_in(inputs)
+            steps = mx.arange(1, targets.shape[1] + 1)
+            mask = mx.logical_and(steps >= lengths[:, 0:1], steps <= lengths[:, 1:])
+            ce = fused_cross_entropy(logits, targets, reduction="none") * mask
+            ntoks = mask.sum()
+            ce = ce.astype(mx.float32).sum() / ntoks
+            return ce, ntoks
+
+    else:
+        loss_fn = trainer.default_loss
+
+    # 10. Build callback
+    training_callback = None
+    if config.use_callbacks:
+        from .callbacks import ZMLXCallback
+
+        training_callback = ZMLXCallback(
+            model=model,
+            log_interval=config.log_interval,
+            verbose=config.verbose,
+        )
+
+    # 11. Run training
     if config.verbose:
         print("[zmlx.train] Starting training...")
 
-    # Use mlx_lm's training infrastructure
-    try:
-        mlx_trainer.train(**training_args)
-    except Exception as e:
-        if config.verbose:
-            print(f"[zmlx.train] Training error: {e}")
-        raise
+    trainer.train(
+        model=model,
+        optimizer=optimizer,
+        train_dataset=tuner_datasets.CacheDataset(train_set),
+        val_dataset=tuner_datasets.CacheDataset(valid_set),
+        args=training_args,
+        loss=loss_fn,
+        training_callback=training_callback,
+    )
 
     return {
         "output_dir": str(output_dir),
+        "adapter_file": str(adapter_file),
         "iters": config.iters,
     }
-
-
-def _build_mlx_lm_args(config: Any) -> Any:
-    """Convert TrainConfig to mlx_lm trainer args format."""
-    from types import SimpleNamespace
-
-    return SimpleNamespace(
-        iters=config.iters,
-        batch_size=config.batch_size,
-        val_batches=25,
-        steps_per_eval=config.eval_interval,
-        steps_per_report=config.log_interval,
-        save_every=config.save_interval,
-        adapter_file=str(Path(config.output_dir) / "adapters.safetensors"),
-        max_seq_length=config.max_seq_length,
-        grad_checkpoint=False,
-        lr=config.learning_rate,
-        seed=config.seed,
-        data=config.dataset,
-        train=True,
-    )

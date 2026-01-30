@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import mlx.core as mx
 import mlx.nn as nn
 
 from ...kernels import transformer
@@ -42,6 +41,11 @@ class _SwiGLUMLPPattern:
     def matches(self, module: Any, name: str, parent: Any | None = None) -> bool:
         if not isinstance(module, nn.Module):
             return False
+        # Skip MoE switch/dispatch modules — they take (x, inds), not just (x)
+        if "switch" in name.lower() or "dispatch" in name.lower():
+            return False
+        if parent is not None and (hasattr(parent, "router") or hasattr(parent, "gate")):
+            return False
         # Pattern 1: gate_proj + up_proj + down_proj (Llama/Mistral/Qwen)
         has_gate_up = hasattr(module, "gate_proj") and hasattr(module, "up_proj")
         has_down = hasattr(module, "down_proj")
@@ -50,16 +54,12 @@ class _SwiGLUMLPPattern:
         return False
 
     def apply(self, module: Any, config: PatchConfig) -> Any:
-        cd = getattr(mx, config.compute_dtype) if isinstance(config.compute_dtype, str) else config.compute_dtype
-
         original_call = module.__call__.__func__ if hasattr(module.__call__, "__func__") else None
 
         def patched_call(self_mod: Any, x: Any) -> Any:
             gate = self_mod.gate_proj(x)
             up = self_mod.up_proj(x)
-            # Concatenate along last dim then apply fused SwiGLU
-            fused_input = mx.concatenate([gate, up], axis=-1)
-            activated = transformer.swiglu(fused_input, compute_dtype=cd)
+            activated = transformer.swiglu2(gate, up)
             return self_mod.down_proj(activated)
 
         # Store original for unpatch

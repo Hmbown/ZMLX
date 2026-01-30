@@ -9,7 +9,7 @@ class PatchConfig:
     """Configuration for model patching."""
 
     compute_dtype: str = "float32"
-    threadgroup: int = 256
+    threadgroup: int | str = 256
     verbose: bool = False
 
 
@@ -20,11 +20,15 @@ class PatchResult:
     patched_count: int = 0
     pattern_counts: dict[str, int] = field(default_factory=dict)
     skipped: list[str] = field(default_factory=list)
+    # Filled by smart_patch: pattern_name -> speedup ratio
+    benchmarks: dict[str, float] = field(default_factory=dict)
 
     def summary(self) -> str:
         lines = [f"Patched {self.patched_count} modules:"]
         for name, count in sorted(self.pattern_counts.items()):
-            lines.append(f"  {name}: {count}")
+            bench = self.benchmarks.get(name)
+            suffix = f" ({bench:.3f}x)" if bench is not None else ""
+            lines.append(f"  {name}: {count}{suffix}")
         if self.skipped:
             lines.append(f"  Skipped: {len(self.skipped)}")
         return "\n".join(lines)

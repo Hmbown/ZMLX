@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from functools import cache
 from typing import Any
 
@@ -8,6 +9,11 @@ import mlx.core as mx
 from ..metal import kernel as metal_kernel
 from ..msl import DEFAULT_HEADER
 from .softmax import _validate_tg
+
+_COMPUTE_DTYPE_DEPRECATION = (
+    "compute_dtype is deprecated and will be removed in a future release. "
+    "All ZMLX kernels compute internally in float32 regardless of this parameter."
+)
 
 
 @cache
@@ -19,9 +25,9 @@ def _swiglu_fwd_kernel(d: int) -> Any:
         uint col = gid % {D};
         uint base = row * {2 * D};
         
-        T a = inp[base + col];
-        T b = inp[base + col + {D}];
-        out[gid] = a * (T(1.0) / (T(1.0) + metal::exp(-a))) * b;
+        float a = (float)inp[base + col];
+        float b = (float)inp[base + col + {D}];
+        out[gid] = (T)(a * (1.0f / (1.0f + metal::exp(-a))) * b);
     """
     return metal_kernel(
         name=f"kk_swiglu_fwd_D{D}",
@@ -43,17 +49,17 @@ def _swiglu_bwd_kernel(d: int) -> Any:
         uint col = gid % {D};
         uint base = row * {2 * D};
         
-        T a = inp[base + col];
-        T b = inp[base + col + {D}];
-        T g = cotan[gid];
-        
-        T s = T(1.0) / (T(1.0) + metal::exp(-a));
-        T swish = a * s;
-        
+        float a = (float)inp[base + col];
+        float b = (float)inp[base + col + {D}];
+        float g = (float)cotan[gid];
+
+        float s = 1.0f / (1.0f + metal::exp(-a));
+        float swish = a * s;
+
         // d/da (a * s * b) = b * (s + a * s * (1 - s))
         // d/db (a * s * b) = a * s
-        dinp[base + col] = g * b * (s + swish * (T(1.0) - s));
-        dinp[base + col + {D}] = g * swish;
+        dinp[base + col] = (T)(g * b * (s + swish * (1.0f - s)));
+        dinp[base + col + {D}] = (T)(g * swish);
     """
     return metal_kernel(
         name=f"kk_swiglu_bwd_D{D}",
@@ -68,12 +74,14 @@ def _swiglu_bwd_kernel(d: int) -> Any:
 
 def swiglu(x: Any, *, compute_dtype: Any | None = None) -> Any:
     """Fused SwiGLU activation.
-    
+
     x: (..., 2*D)
     returns: (..., D)
-    
+
     y = SiLU(x[..., :D]) * x[..., D:]
     """
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     if x.ndim < 1:
         raise ValueError("swiglu: x must have rank >= 1")
     D2 = x.shape[-1]
@@ -82,7 +90,6 @@ def swiglu(x: Any, *, compute_dtype: Any | None = None) -> Any:
     D = D2 // 2
     
     rows = x.size // D2
-    cd = compute_dtype or mx.float32
     
     k_fwd = _swiglu_fwd_kernel(D)
     
@@ -90,7 +97,7 @@ def swiglu(x: Any, *, compute_dtype: Any | None = None) -> Any:
     def op(inputs):
         return k_fwd(
             inputs,
-            template=[("T", cd)],
+            template=[("T", x.dtype)],
             grid=(rows * D, 1, 1),
             output_shapes=[x.shape[:-1] + (D,)],
             output_dtypes=[x.dtype],
@@ -105,7 +112,7 @@ def swiglu(x: Any, *, compute_dtype: Any | None = None) -> Any:
         dx = k_bwd(
             inp,
             cotan,
-            template=[("T", cd)],
+            template=[("T", x.dtype)],
             grid=(rows * D, 1, 1),
             output_shapes=[inp.shape],
             output_dtypes=[inp.dtype],
@@ -124,9 +131,9 @@ def _geglu_fwd_kernel(d: int) -> Any:
         uint col = gid % {D};
         uint base = row * {2 * D};
         
-        T a = inp[base + col];
-        T b = inp[base + col + {D}];
-        out[gid] = kk_gelu_tanh(a) * b;
+        float a = (float)inp[base + col];
+        float b = (float)inp[base + col + {D}];
+        out[gid] = (T)(kk_gelu_tanh(a) * b);
     """
     return metal_kernel(
         name=f"kk_geglu_fwd_D{D}",
@@ -148,24 +155,24 @@ def _geglu_bwd_kernel(d: int) -> Any:
         uint col = gid % {D};
         uint base = row * {2 * D};
         
-        T x = inp[base + col];
-        T b = inp[base + col + {D}];
-        T g = cotan[gid];
-        
+        float xv = (float)inp[base + col];
+        float b = (float)inp[base + col + {D}];
+        float g = (float)cotan[gid];
+
         // Gelu Tanh grad
-        const T k0 = (T)0.7978845608028654;
-        const T k1 = (T)0.044715;
-        T x2 = x * x;
-        T x3 = x2 * x;
-        T u = k0 * (x + k1 * x3);
-        T t = metal::tanh(u);
-        T du = k0 * ((T)1 + (T)3 * k1 * x2);
-        T dy = (T)0.5 * ((T)1 + t) + (T)0.5 * x * ((T)1 - t * t) * du;
-        
-        T gelu = (T)0.5 * x * ((T)1 + t);
-        
-        dinp[base + col] = g * b * dy;
-        dinp[base + col + {D}] = g * gelu;
+        const float k0 = 0.7978845608028654f;
+        const float k1 = 0.044715f;
+        float x2 = xv * xv;
+        float x3 = x2 * xv;
+        float u = k0 * (xv + k1 * x3);
+        float t = metal::tanh(u);
+        float du = k0 * (1.0f + 3.0f * k1 * x2);
+        float dy = 0.5f * (1.0f + t) + 0.5f * xv * (1.0f - t * t) * du;
+
+        float gelu = 0.5f * xv * (1.0f + t);
+
+        dinp[base + col] = (T)(g * b * dy);
+        dinp[base + col + {D}] = (T)(g * gelu);
     """
     return metal_kernel(
         name=f"kk_geglu_bwd_D{D}",
@@ -180,12 +187,14 @@ def _geglu_bwd_kernel(d: int) -> Any:
 
 def geglu(x: Any, *, compute_dtype: Any | None = None) -> Any:
     """Fused GeGLU activation.
-    
+
     x: (..., 2*D)
     returns: (..., D)
-    
+
     y = GeLU(x[..., :D]) * x[..., D:]
     """
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     if x.ndim < 1:
         raise ValueError("geglu: x must have rank >= 1")
     D2 = x.shape[-1]
@@ -194,7 +203,6 @@ def geglu(x: Any, *, compute_dtype: Any | None = None) -> Any:
     D = D2 // 2
     
     rows = x.size // D2
-    cd = compute_dtype or mx.float32
     
     k_fwd = _geglu_fwd_kernel(D)
     
@@ -202,7 +210,7 @@ def geglu(x: Any, *, compute_dtype: Any | None = None) -> Any:
     def op(inputs):
         return k_fwd(
             inputs,
-            template=[("T", cd)],
+            template=[("T", x.dtype)],
             grid=(rows * D, 1, 1),
             output_shapes=[x.shape[:-1] + (D,)],
             output_dtypes=[x.dtype],
@@ -217,7 +225,7 @@ def geglu(x: Any, *, compute_dtype: Any | None = None) -> Any:
         dx = k_bwd(
             inp,
             cotan,
-            template=[("T", cd)],
+            template=[("T", x.dtype)],
             grid=(rows * D, 1, 1),
             output_shapes=[inp.shape],
             output_dtypes=[inp.dtype],
@@ -288,6 +296,81 @@ def _rmsnorm_residual_kernel(d: int, tg: int, eps: float) -> Any:
     )
 
 
+@cache
+def _rmsnorm_residual_bwd_kernel(d: int, tg: int, eps: float) -> Any:
+    D = int(d)
+    TG = _validate_tg(tg)
+    eps_f = float(eps)
+    eps_str = str(eps_f).replace(".", "_").replace("-", "_")
+
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint TG = {TG};
+        constexpr float EPS = {eps_f}f;
+
+        uint gid = thread_position_in_grid.x;
+        uint tid = thread_position_in_threadgroup.x;
+        uint row = gid / TG;
+        uint base = row * D;
+
+        threadgroup float buf[TG];
+
+        // Pass 1: Recompute val = inp + res and its RMS
+        float sumsq = 0.0f;
+        for (uint j = tid; j < D; j += TG) {{
+            float val = (float)inp[base + j] + (float)res[base + j];
+            sumsq += val * val;
+        }}
+        buf[tid] = sumsq;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint s = TG / 2; s > 0; s >>= 1) {{
+            if (tid < s) buf[tid] += buf[tid + s];
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }}
+        float rms = metal::rsqrt(buf[0] / (float)D + EPS);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // Pass 2: mean_dot = sum(d_out * weight * y_raw) / D
+        float m_dot = 0.0f;
+        for (uint j = tid; j < D; j += TG) {{
+            float val = (float)inp[base + j] + (float)res[base + j];
+            float y_raw = val * rms;
+            float g = (float)d_out[base + j];
+            float w = (float)weight[j];
+            m_dot += g * w * y_raw;
+        }}
+        buf[tid] = m_dot;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint s = TG / 2; s > 0; s >>= 1) {{
+            if (tid < s) buf[tid] += buf[tid + s];
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }}
+        float mean_dot = buf[0] / (float)D;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // Pass 3: d_val = rmsnorm_grad(val, weight, d_out) + d_updated_res
+        for (uint j = tid; j < D; j += TG) {{
+            float val = (float)inp[base + j] + (float)res[base + j];
+            float y_raw = val * rms;
+            float g = (float)d_out[base + j];
+            float w = (float)weight[j];
+            float d_norm = rms * (g * w - y_raw * mean_dot);
+            float d_res_j = (float)d_updated_res[base + j];
+            d_val[base + j] = (T)(d_norm + d_res_j);
+        }}
+    """
+
+    return metal_kernel(
+        name=f"kk_rmsnorm_res_bwd_D{D}_TG{TG}_E{eps_str}",
+        input_names=["inp", "res", "weight", "d_out", "d_updated_res"],
+        output_names=["d_val"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
 def rmsnorm_residual(
     x: Any,
     residual: Any,
@@ -298,9 +381,11 @@ def rmsnorm_residual(
     compute_dtype: Any | None = None,
 ) -> tuple[Any, Any]:
     """Fused RMSNorm(x + residual) and updated residual x + residual.
-    
+
     Returns (normed_x, updated_residual).
     """
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     if x.ndim < 1:
         raise ValueError("rmsnorm_residual: x must have rank >= 1")
     D = int(x.shape[-1])
@@ -311,21 +396,59 @@ def rmsnorm_residual(
 
     TG = _validate_tg(threadgroup)
     rows = x.size // D
+    k_fwd = _rmsnorm_residual_kernel(D, TG, float(eps))
 
-    cd = compute_dtype or mx.float32
-    k = _rmsnorm_residual_kernel(D, TG, float(eps))
-    
-    out, updated_res = k(
-        x,
-        residual,
-        weight,
-        template=[("T", cd)],
-        grid=(rows * TG, 1, 1),
-        threadgroup=(TG, 1, 1),
-        output_shapes=[x.shape, x.shape],
-        output_dtypes=[x.dtype, x.dtype],
-    )
-    return out, updated_res
+    @mx.custom_function
+    def op(x_in, res_in, w_in):
+        out, updated_res = k_fwd(
+            x_in,
+            res_in,
+            w_in,
+            template=[("T", x.dtype)],
+            grid=(rows * TG, 1, 1),
+            threadgroup=(TG, 1, 1),
+            output_shapes=[x.shape, x.shape],
+            output_dtypes=[x.dtype, x.dtype],
+        )
+        return out, updated_res
+
+    @op.vjp
+    def op_vjp(primals, cotangents, outputs):
+        x_in, res_in, w_in = primals
+        # Multi-output: cotangents is a tuple/list of 2 arrays
+        if isinstance(cotangents, (list, tuple)):
+            ct_out = cotangents[0]
+            ct_res = cotangents[1]
+        else:
+            ct_out = cotangents
+            ct_res = mx.zeros_like(ct_out)
+
+        k_bwd = _rmsnorm_residual_bwd_kernel(D, TG, float(eps))
+        d_val = k_bwd(
+            x_in,
+            res_in,
+            w_in,
+            ct_out,
+            ct_res,
+            template=[("T", x.dtype)],
+            grid=(rows * TG, 1, 1),
+            threadgroup=(TG, 1, 1),
+            output_shapes=[x.shape],
+            output_dtypes=[x.dtype],
+        )[0]
+
+        # d_weight = sum(ct_out * y_raw, axis=batch_dims)
+        # where y_raw = val * rms, val = x + res
+        val = x_in + res_in
+        rms = mx.rsqrt(mx.mean(val * val, axis=-1, keepdims=True) + eps)
+        y_raw = val * rms
+        batch_axes = tuple(range(x_in.ndim - 1))
+        d_weight = mx.sum(ct_out * y_raw, axis=batch_axes)
+
+        # val = inp + res, so d_inp = d_val and d_res = d_val
+        return (d_val, d_val, d_weight)
+
+    return op(x, residual, weight)  # type: ignore[return-value]
 
 
 @cache
@@ -393,14 +516,15 @@ def fused_add_rmsnorm(
     compute_dtype: Any | None = None,
 ) -> Any:
     """Fused RMSNorm(x1 + x2) returning only the normalized output."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D = int(x1.shape[-1])
     TG = _validate_tg(threadgroup)
     rows = x1.size // D
-    cd = compute_dtype or mx.float32
     k = _fused_add_rmsnorm_kernel(D, TG, float(eps))
     return k(
         x1, x2, weight,
-        template=[("T", cd)],
+        template=[("T", x1.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[x1.shape],
@@ -483,15 +607,16 @@ def layernorm_residual(
     compute_dtype: Any | None = None,
 ) -> tuple[Any, Any]:
     """Fused LayerNorm(x + residual) and updated residual x + residual."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D = int(x.shape[-1])
     TG = _validate_tg(threadgroup)
     rows = x.size // D
-    cd = compute_dtype or mx.float32
     k = _layernorm_residual_kernel(D, TG, float(eps))
     
     out, updated_res = k(
         x, residual, gamma, beta,
-        template=[("T", cd)],
+        template=[("T", x.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[x.shape, x.shape],
@@ -574,14 +699,15 @@ def fused_add_layernorm(
     compute_dtype: Any | None = None,
 ) -> Any:
     """Fused LayerNorm(x1 + x2) returning only the normalized output."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D = int(x1.shape[-1])
     TG = _validate_tg(threadgroup)
     rows = x1.size // D
-    cd = compute_dtype or mx.float32
     k = _fused_add_layernorm_kernel(D, TG, float(eps))
     return k(
         x1, x2, gamma, beta,
-        template=[("T", cd)],
+        template=[("T", x1.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[x1.shape],
@@ -667,14 +793,15 @@ def rms_norm_dropout(
     compute_dtype: Any | None = None,
 ) -> Any:
     """Fused RMSNorm + Dropout."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D = int(x.shape[-1])
     TG = _validate_tg(threadgroup)
     rows = x.size // D
-    cd = compute_dtype or mx.float32
     k = _rmsnorm_dropout_kernel(D, TG, float(eps), float(p), int(seed))
     return k(
         x, weight,
-        template=[("T", cd)],
+        template=[("T", x.dtype)],
         grid=(rows * TG, 1, 1),
         threadgroup=(TG, 1, 1),
         output_shapes=[x.shape],
@@ -694,11 +821,11 @@ def _dropout_kernel(p: float, seed: int) -> Any:
         seed = seed * 1664525u + 1013904223u;
         float r = (float)(seed & 0xFFFFFFu) / 16777216.0f;
         
-        T x = inp[gid];
+        float xv = (float)inp[gid];
         if (r < p) {{
             out[gid] = (T)0;
         }} else {{
-            out[gid] = (T)(x / (1.0f - p));
+            out[gid] = (T)(xv / (1.0f - p));
         }}
     """
     p_str = str(p).replace(".", "_").replace("-", "_")
@@ -715,22 +842,211 @@ def _dropout_kernel(p: float, seed: int) -> Any:
 
 def dropout(x: Any, p: float, seed: int = 0, *, compute_dtype: Any | None = None) -> Any:
     """Dropout with scaling.
-    
+
     p: probability of dropping an element.
     """
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     if p < 0 or p >= 1:
         raise ValueError("dropout: p must be in [0, 1)")
     
-    cd = compute_dtype or mx.float32
     k = _dropout_kernel(float(p), int(seed))
     
     return k(
         x,
-        template=[("T", cd)],
+        template=[("T", x.dtype)],
         grid=(x.size, 1, 1),
         output_shapes=[x.shape],
         output_dtypes=[x.dtype],
     )[0]
+
+
+@cache
+def _swiglu2_fwd_kernel() -> Any:
+    source = """
+        uint gid = thread_position_in_grid.x;
+        float a = (float)gate[gid];
+        float b = (float)up[gid];
+        out[gid] = (T)(a * (1.0f / (1.0f + metal::exp(-a))) * b);
+    """
+    return metal_kernel(
+        name="kk_swiglu2_fwd",
+        input_names=["gate", "up"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+@cache
+def _swiglu2_bwd_kernel() -> Any:
+    source = """
+        uint gid = thread_position_in_grid.x;
+        float a = (float)gate[gid];
+        float b = (float)up[gid];
+        float g = (float)cotan[gid];
+
+        float s = 1.0f / (1.0f + metal::exp(-a));
+        float swish = a * s;
+
+        dgate[gid] = (T)(g * b * (s + swish * (1.0f - s)));
+        dup[gid] = (T)(g * swish);
+    """
+    return metal_kernel(
+        name="kk_swiglu2_bwd",
+        input_names=["gate", "up", "cotan"],
+        output_names=["dgate", "dup"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def swiglu2(gate: Any, up: Any, *, compute_dtype: Any | None = None) -> Any:
+    """Fused SwiGLU activation with two separate inputs.
+
+    gate, up: (..., D) — same shape
+    returns: (..., D)
+
+    y = SiLU(gate) * up
+    """
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
+    if gate.shape != up.shape:
+        raise ValueError("swiglu2: gate and up must have the same shape")
+
+    n = gate.size
+    k_fwd = _swiglu2_fwd_kernel()
+
+    @mx.custom_function
+    def op(g_in, u_in):
+        return k_fwd(
+            g_in,
+            u_in,
+            template=[("T", gate.dtype)],
+            grid=(n, 1, 1),
+            output_shapes=[gate.shape],
+            output_dtypes=[gate.dtype],
+        )[0]
+
+    @op.vjp
+    def op_vjp(primals, cotangents, outputs):
+        g_in, u_in = primals
+        cotan = cotangents[0] if isinstance(cotangents, (list, tuple)) else cotangents
+        k_bwd = _swiglu2_bwd_kernel()
+        dg, du = k_bwd(
+            g_in,
+            u_in,
+            cotan,
+            template=[("T", gate.dtype)],
+            grid=(n, 1, 1),
+            output_shapes=[gate.shape, gate.shape],
+            output_dtypes=[gate.dtype, gate.dtype],
+        )
+        return (dg, du)
+
+    return op(gate, up)
+
+
+@cache
+def _geglu2_fwd_kernel() -> Any:
+    source = """
+        uint gid = thread_position_in_grid.x;
+        float a = (float)gate[gid];
+        float b = (float)up[gid];
+        out[gid] = (T)(kk_gelu_tanh(a) * b);
+    """
+    return metal_kernel(
+        name="kk_geglu2_fwd",
+        input_names=["gate", "up"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+@cache
+def _geglu2_bwd_kernel() -> Any:
+    source = """
+        uint gid = thread_position_in_grid.x;
+        float a = (float)gate[gid];
+        float b = (float)up[gid];
+        float g = (float)cotan[gid];
+
+        const float k0 = 0.7978845608028654f;
+        const float k1 = 0.044715f;
+        float x2 = a * a;
+        float x3 = x2 * a;
+        float u = k0 * (a + k1 * x3);
+        float t = metal::tanh(u);
+        float du = k0 * (1.0f + 3.0f * k1 * x2);
+        float dy = 0.5f * (1.0f + t) + 0.5f * a * (1.0f - t * t) * du;
+
+        float gelu = 0.5f * a * (1.0f + t);
+
+        dgate[gid] = (T)(g * b * dy);
+        dup[gid] = (T)(g * gelu);
+    """
+    return metal_kernel(
+        name="kk_geglu2_bwd",
+        input_names=["gate", "up", "cotan"],
+        output_names=["dgate", "dup"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def geglu2(gate: Any, up: Any, *, compute_dtype: Any | None = None) -> Any:
+    """Fused GeGLU activation with two separate inputs.
+
+    gate, up: (..., D) — same shape
+    returns: (..., D)
+
+    y = GeLU(gate) * up
+    """
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
+    if gate.shape != up.shape:
+        raise ValueError("geglu2: gate and up must have the same shape")
+
+    n = gate.size
+    k_fwd = _geglu2_fwd_kernel()
+
+    @mx.custom_function
+    def op(g_in, u_in):
+        return k_fwd(
+            g_in,
+            u_in,
+            template=[("T", gate.dtype)],
+            grid=(n, 1, 1),
+            output_shapes=[gate.shape],
+            output_dtypes=[gate.dtype],
+        )[0]
+
+    @op.vjp
+    def op_vjp(primals, cotangents, outputs):
+        g_in, u_in = primals
+        cotan = cotangents[0] if isinstance(cotangents, (list, tuple)) else cotangents
+        k_bwd = _geglu2_bwd_kernel()
+        dg, du = k_bwd(
+            g_in,
+            u_in,
+            cotan,
+            template=[("T", gate.dtype)],
+            grid=(n, 1, 1),
+            output_shapes=[gate.shape, gate.shape],
+            output_dtypes=[gate.dtype, gate.dtype],
+        )
+        return (dg, du)
+
+    return op(gate, up)
 
 
 @cache
@@ -742,9 +1058,9 @@ def _bias_swiglu_kernel(d: int) -> Any:
         uint col = gid % {D};
         uint base = row * {2 * D};
         
-        T a = inp[base + col] + bias[col];
-        T b = inp[base + col + {D}] + bias[col + {D}];
-        out[gid] = a * (T(1.0) / (T(1.0) + metal::exp(-a))) * b;
+        float a = (float)inp[base + col] + (float)bias[col];
+        float b = (float)inp[base + col + {D}] + (float)bias[col + {D}];
+        out[gid] = (T)(a * (1.0f / (1.0f + metal::exp(-a))) * b);
     """
     return metal_kernel(
         name=f"kk_bias_swiglu_D{D}",
@@ -766,18 +1082,18 @@ def _bias_swiglu_bwd_kernel(d: int) -> Any:
         uint col = gid % {D};
         uint base = row * {2 * D};
         
-        T a = inp[base + col] + bias[col];
-        T b = inp[base + col + {D}] + bias[col + {D}];
-        T g = cotan[gid];
-        
-        T s = T(1.0) / (T(1.0) + metal::exp(-a));
-        T swish = a * s;
-        
-        T da = g * b * (s + swish * (T(1.0) - s));
-        T db = g * swish;
-        
-        dinp[base + col] = da;
-        dinp[base + col + {D}] = db;
+        float a = (float)inp[base + col] + (float)bias[col];
+        float b = (float)inp[base + col + {D}] + (float)bias[col + {D}];
+        float g = (float)cotan[gid];
+
+        float s = 1.0f / (1.0f + metal::exp(-a));
+        float swish = a * s;
+
+        float da = g * b * (s + swish * (1.0f - s));
+        float db = g * swish;
+
+        dinp[base + col] = (T)da;
+        dinp[base + col + {D}] = (T)db;
     """
     return metal_kernel(
         name=f"kk_bias_swiglu_bwd_D{D}",
@@ -792,17 +1108,18 @@ def _bias_swiglu_bwd_kernel(d: int) -> Any:
 
 def bias_swiglu(x: Any, bias: Any, *, compute_dtype: Any | None = None) -> Any:
     """Fused Bias + SwiGLU (differentiable wrt x)."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D2 = x.shape[-1]
     D = D2 // 2
     rows = x.size // D2
-    cd = compute_dtype or mx.float32
     k_fwd = _bias_swiglu_kernel(D)
     
     @mx.custom_function
     def op(x_in, b_in):
         return k_fwd(
             x_in, b_in,
-            template=[("T", cd)],
+            template=[("T", x.dtype)],
             grid=(rows * D, 1, 1),
             output_shapes=[x.shape[:-1] + (D,)],
             output_dtypes=[x.dtype],
@@ -815,7 +1132,7 @@ def bias_swiglu(x: Any, bias: Any, *, compute_dtype: Any | None = None) -> Any:
         k_bwd = _bias_swiglu_bwd_kernel(D)
         dx = k_bwd(
             x_in, b_in, cotan,
-            template=[("T", cd)],
+            template=[("T", x.dtype)],
             grid=(rows * D, 1, 1),
             output_shapes=[x_in.shape],
             output_dtypes=[x_in.dtype],
@@ -835,9 +1152,9 @@ def _bias_geglu_kernel(d: int) -> Any:
         uint col = gid % {D};
         uint base = row * {2 * D};
         
-        T a = inp[base + col] + bias[col];
-        T b = inp[base + col + {D}] + bias[col + {D}];
-        out[gid] = kk_gelu_tanh(a) * b;
+        float a = (float)inp[base + col] + (float)bias[col];
+        float b = (float)inp[base + col + {D}] + (float)bias[col + {D}];
+        out[gid] = (T)(kk_gelu_tanh(a) * b);
     """
     return metal_kernel(
         name=f"kk_bias_geglu_D{D}",
@@ -859,24 +1176,24 @@ def _bias_geglu_bwd_kernel(d: int) -> Any:
         uint col = gid % {D};
         uint base = row * {2 * D};
         
-        T x_val = inp[base + col] + bias[col];
-        T b_val = inp[base + col + {D}] + bias[col + {D}];
-        T g = cotan[gid];
-        
+        float x_val = (float)inp[base + col] + (float)bias[col];
+        float b_val = (float)inp[base + col + {D}] + (float)bias[col + {D}];
+        float g = (float)cotan[gid];
+
         // Gelu Tanh grad
-        const T k0 = (T)0.7978845608028654;
-        const T k1 = (T)0.044715;
-        T x2 = x_val * x_val;
-        T x3 = x2 * x_val;
-        T u = k0 * (x_val + k1 * x3);
-        T t = metal::tanh(u);
-        T du = k0 * ((T)1 + (T)3 * k1 * x2);
-        T dy = (T)0.5 * ((T)1 + t) + (T)0.5 * x_val * ((T)1 - t * t) * du;
-        
-        T gelu = (T)0.5 * x_val * ((T)1 + t);
-        
-        dinp[base + col] = g * b_val * dy;
-        dinp[base + col + {D}] = g * gelu;
+        const float k0 = 0.7978845608028654f;
+        const float k1 = 0.044715f;
+        float x2 = x_val * x_val;
+        float x3 = x2 * x_val;
+        float u = k0 * (x_val + k1 * x3);
+        float t = metal::tanh(u);
+        float du = k0 * (1.0f + 3.0f * k1 * x2);
+        float dy = 0.5f * (1.0f + t) + 0.5f * x_val * (1.0f - t * t) * du;
+
+        float gelu = 0.5f * x_val * (1.0f + t);
+
+        dinp[base + col] = (T)(g * b_val * dy);
+        dinp[base + col + {D}] = (T)(g * gelu);
     """
     return metal_kernel(
         name=f"kk_bias_geglu_bwd_D{D}",
@@ -891,17 +1208,18 @@ def _bias_geglu_bwd_kernel(d: int) -> Any:
 
 def bias_geglu(x: Any, bias: Any, *, compute_dtype: Any | None = None) -> Any:
     """Fused Bias + GeGLU (differentiable wrt x)."""
+    if compute_dtype is not None:
+        warnings.warn(_COMPUTE_DTYPE_DEPRECATION, DeprecationWarning, stacklevel=2)
     D2 = x.shape[-1]
     D = D2 // 2
     rows = x.size // D2
-    cd = compute_dtype or mx.float32
     k_fwd = _bias_geglu_kernel(D)
     
     @mx.custom_function
     def op(x_in, b_in):
         return k_fwd(
             x_in, b_in,
-            template=[("T", cd)],
+            template=[("T", x.dtype)],
             grid=(rows * D, 1, 1),
             output_shapes=[x.shape[:-1] + (D,)],
             output_dtypes=[x.dtype],
@@ -914,7 +1232,7 @@ def bias_geglu(x: Any, bias: Any, *, compute_dtype: Any | None = None) -> Any:
         k_bwd = _bias_geglu_bwd_kernel(D)
         dx = k_bwd(
             x_in, b_in, cotan,
-            template=[("T", cd)],
+            template=[("T", x.dtype)],
             grid=(rows * D, 1, 1),
             output_shapes=[x_in.shape],
             output_dtypes=[x_in.dtype],
@@ -925,7 +1243,9 @@ def bias_geglu(x: Any, bias: Any, *, compute_dtype: Any | None = None) -> Any:
 
 __all__ = [
     "swiglu",
+    "swiglu2",
     "geglu",
+    "geglu2",
     "rmsnorm_residual",
     "fused_add_rmsnorm",
     "layernorm_residual",

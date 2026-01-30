@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import mlx.core as mx
 import mlx.nn as nn
 
 from ...kernels import transformer
@@ -44,15 +43,12 @@ class _GeGLUMLPPattern:
         return False
 
     def apply(self, module: Any, config: PatchConfig) -> Any:
-        cd = getattr(mx, config.compute_dtype) if isinstance(config.compute_dtype, str) else config.compute_dtype
-
         original_call = module.__call__.__func__ if hasattr(module.__call__, "__func__") else None
 
         def patched_call(self_mod: Any, x: Any) -> Any:
             gate = self_mod.gate_proj(x)
             up = self_mod.up_proj(x)
-            fused_input = mx.concatenate([gate, up], axis=-1)
-            activated = transformer.geglu(fused_input, compute_dtype=cd)
+            activated = transformer.geglu2(gate, up)
             return self_mod.down_proj(activated)
 
         module._zmlx_original_call = original_call

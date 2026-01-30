@@ -33,11 +33,15 @@ User-facing layers:
 
 - Low-level:
   - `zmlx/metal.py`: cached kernel wrapper
+  - `zmlx/jit.py`: Python AST to Metal compiler
 - Mid-level:
   - `zmlx/elementwise.py`: elementwise generators
   - `zmlx/autograd.py`: `unary_from_expr`, `binary_from_expr`
+- High-level:
+  - `zmlx/nn.py`: high-throughput layers (PagedAttention, MoE)
+  - `zmlx/optimizers.py`: fused optimizers (AdamW)
 - High-level catalog:
-  - `zmlx/kernels/*`: softmax, norms, RoPE, activations, fused ops
+  - `zmlx/kernels/*`: softmax, norms, RoPE, activations, fused ops, optimizers, attention
 
 Design principles:
 - compile once, call many
