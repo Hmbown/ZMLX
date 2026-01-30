@@ -26,7 +26,6 @@ from ..metal import kernel as metal_kernel
 from ..msl import DEFAULT_HEADER
 from .softmax import _validate_tg
 
-
 # ---------------------------------------------------------------------------
 # Kernel 1: fused_recurrent_step
 #

@@ -110,6 +110,26 @@ z = norms.rmsnorm(x, w)                   # differentiable RMSNorm
 s = transformer.swiglu(mx.random.normal((8, 2048)).astype(mx.float16))  # fused SwiGLU
 ```
 
+### 4. High-level UX API (load / LoRA / train / generate)
+
+Requires `mlx-lm`: `pip install 'zmlx[train]'`
+
+```python
+import zmlx
+
+# Load a model with ZMLX fused-kernel patching applied automatically
+model, tokenizer = zmlx.load("mlx-community/Llama-3.2-1B-4bit", patch=True)
+
+# Apply LoRA adapters
+zmlx.lora(model, r=16, alpha=16.0)
+
+# Fine-tune
+zmlx.train(model, tokenizer, "path/to/dataset", iters=500)
+
+# Generate
+print(zmlx.generate(model, tokenizer, "Once upon a time"))
+```
+
 ---
 
 ## Kernel Catalog
