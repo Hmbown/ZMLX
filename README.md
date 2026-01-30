@@ -114,12 +114,13 @@ s = transformer.swiglu(mx.random.normal((8, 2048)).astype(mx.float16))  # fused 
 
 ## Kernel Catalog
 
-17 modules, 70+ kernels (including gradient helpers) organized by domain. Full reference: [`docs/KERNELS.md`](docs/KERNELS.md).
+18 modules, 70+ kernels (including gradient helpers) organized by domain. Full reference: [`docs/KERNELS.md`](docs/KERNELS.md).
 
 | Module | Count | Highlights |
 |:---|:---:|:---|
 | `activations` | 19 | exp, sigmoid, relu, silu, gelu_tanh, softplus + grad variants |
 | `transformer` | 10 | swiglu, geglu, rmsnorm_residual, layernorm_residual, dropout |
+| `vlsp` | 4 | fused_recurrent_step, depth_gate_sigmoid, grpo_advantage_norm |
 | `softmax` | 3 | softmax_lastdim, log_softmax_lastdim, softmax_grad |
 | `norms` | 6 | rmsnorm, layernorm, rmsnorm_grad, layer_norm_dropout |
 | `attention` | 4 | masked_softmax, scale_mask_softmax, logsumexp_lastdim |
@@ -162,7 +163,7 @@ Results vary by shape, dtype, and chip. See [`benchmarks/`](benchmarks/) for the
 
 - Flash Attention tiles (shared memory, 16x16 / 32x32)
 - Expanded quantization (int4 matmul, mixed-precision patterns)
-- Zig frontend via MLX-C (multi-language kernel generation)
+- Zig frontend via C++ shim (MLX-C once available)
 - JVP support for all catalog kernels
 - Community-contributed kernels
 

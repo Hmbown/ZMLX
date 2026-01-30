@@ -51,6 +51,15 @@ This document lists the custom Metal kernels available in the `zmlx.kernels` pac
 | `bias_swiglu(x, bias)` | Fused (x + bias) -> SwiGLU |
 | `bias_geglu(x, bias)` | Fused (x + bias) -> GeGLU |
 
+## VLSP (`zmlx.kernels.vlsp`)
+
+| Kernel | Description |
+|:--- |:--- |
+| `fused_recurrent_step(h, w_norm, gate, alpha)` | Fused RMSNorm + SiLU gating + residual update |
+| `depth_gate_sigmoid(x, k_max)` | Differentiable depth prediction with STE backward |
+| `grpo_advantage_norm(rewards)` | Fused per-group advantage normalization (GRPO) |
+| `silu_mul_residual(gate, up, residual)` | Fused silu(gate) * up + residual (custom VJP) |
+
 ## Attention (`zmlx.kernels.attention`)
 
 | Kernel | Description |

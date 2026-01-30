@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zmlx"
-version = "0.2.0"
+version = "0.2.1"
 description = "ZMLX: Numba-for-MLX. Ergonomic helpers for authoring and autotuning MLX custom Metal kernels from Python."
 readme = "README.md"
 requires-python = ">=3.10"

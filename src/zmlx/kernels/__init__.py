@@ -25,6 +25,7 @@ from . import (
     scan,
     softmax,
     transformer,
+    vlsp,
 )
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "image",
     "indexing",
     "loss",
+    "vlsp",
 ]
