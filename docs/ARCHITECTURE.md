@@ -44,22 +44,50 @@ Design principles:
 - correctness first (reference tests vs MLX ops)
 - stable names + stable generated source for caching
 
-## Frontend B (future): Zig via MLX-C
+## Frontend B: Zig via C++ shim
 
-See `zig/README.md`.
+See `zig/README.md` for build instructions and full details.
 
-The intended boundary:
-- Zig calls into MLX via **MLX-C** (arrays, devices, streams)
-- Zig reuses the **same kernel core ideas**:
-  - generate stable MSL source for a kernel
-  - call MLX’s Metal kernel facility and rely on caching
+The Zig frontend replicates layers 1–2 of the Python stack:
 
-What’s missing for a real Zig path:
-- a tiny C++ shim (if MLX-C doesn’t expose everything you need)
-- Zig wrappers for:
-  - tensor/array creation
-  - value+grad transforms (if needed for training)
-  - parameter trees / optimizers (optional)
+- `zig/src/msl.zig` — `DEFAULT_HEADER` (byte-identical to `zmlx/msl.py`)
+- `zig/src/codegen.zig` — all 5 codegen patterns (byte-identical output)
+- `zig/src/metal.zig` — `MetalKernel` wrapper + `KernelCache` (SHA-256 keyed)
+- `zig/shim/shim.cc` — minimal C ABI wrapping `mlx::core::fast::metal_kernel`
+
+Architecture:
+```
+  Zig program
+    │
+    ├─ codegen.zig   → generates MSL source strings
+    ├─ msl.zig       → shared Metal header (sigmoid, silu, gelu_tanh)
+    ├─ metal.zig     → MetalKernel struct, KernelCache, Array wrapper
+    │     │
+    │     └─ @cImport("shim.h")
+    │            │
+    └─ shim.cc ──┘   → C++ ABI: zmlx_metal_kernel_create/call/destroy
+         │                       zmlx_array_from_float32/destroy/eval
+         └─ links libmlx (MLX C++ library)
+```
+
+**Why a C++ shim instead of MLX-C?**  MLX-C does not yet expose
+`mx.fast.metal_kernel`.  The shim (`shim.h` / `shim.cc`) fills this gap
+with a minimal C ABI.  When MLX-C gains metal_kernel support, the shim
+can be dropped and Zig can call MLX-C directly.
+
+**What's implemented:**
+- Kernel creation, launch, and destruction
+- float32 / int32 array creation from host data
+- Array evaluation and data readback
+- Codegen for elementwise (unary, binary) and rowwise (reduction,
+  parallel reduction, two-pass map-reduce) patterns
+- In-process kernel cache keyed on SHA-256 of source + header
+
+**What's not yet implemented (future work):**
+- value+grad transforms (custom VJP/JVP in Zig)
+- Parameter trees / optimizers
+- Full dtype coverage beyond float32/int32
+- Catalog kernels (softmax, layernorm, etc.) in Zig
 
 ## Contributing upstream to MLX
 

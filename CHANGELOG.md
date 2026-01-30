@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-01-30
+
+### Added
+
+- **VLSP kernels** (`zmlx.kernels.vlsp`) for recurrent latent reasoning:
+  fused recurrent step, depth gate sigmoid (STE), GRPO advantage normalization,
+  and a fused SiLU * residual helper (with tests).
+- **Zig frontend (experimental)** with a minimal C++ shim over MLX:
+  MetalKernel wrapper + cache, codegen, elementwise/rowwise helpers,
+  and a small kernel catalog (activations, softmax, norms).
+
+### Changed
+
+- Zig build/test targets consolidate catalog tests under `kernels.zig`
+  to avoid module path issues and make GPU catalog tests easy to run.
+- Documentation updates for the Zig frontend architecture and build flow.
+
 ## [0.2.0] - 2026-01-29
 
 First public release.
@@ -60,5 +77,6 @@ First public release.
 - **Release workflow** (`.github/workflows/release.yml`) for PyPI trusted publishing.
 - **Benchmarks** (`benchmarks/microbench.py`) with timing comparisons vs MLX reference ops.
 
-[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Hmbown/ZMLX/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Hmbown/ZMLX/releases/tag/v0.2.0
