@@ -232,13 +232,15 @@ ZMLX wins big on **fused operations** that MLX doesn't provide as single ops (Sw
 
 ### Model-level inference
 
+All baselines are **unmodified `mlx_lm`** (`mlx_lm.load()` + `mlx_lm.generate()`) — the standard MLX inference stack. ZMLX rows add `patch(model)` on top of that same pipeline. Same model weights, same quantization, same prompt.
+
 LLM inference is **memory-bandwidth-bound**: fused kernels shine on large models where each saved memory round-trip matters. The effect scales with model size — small models see no benefit, large models see significant speedups.
 
 **Qwen3-32B-4bit (64 layers, ~18 GB)** — M4 Max, 36 GB
 
 | Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
 |:--|--:|--:|:--|
-| Baseline (MLX) | 107 | 13.5 | — |
+| Baseline (`mlx_lm`) | 107 | 13.5 | — |
 | ZMLX fused activations | 108 | 14.2 | 1.01x / **1.05x** |
 | ZMLX all patches | **127** | **18.0** | **1.19x / 1.33x** |
 
@@ -248,7 +250,7 @@ LLM inference is **memory-bandwidth-bound**: fused kernels shine on large models
 
 | Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
 |:--|--:|--:|:--|
-| Baseline (MLX) | 1,083 | 116 | — |
+| Baseline (`mlx_lm`) | 1,083 | 116 | — |
 | ZMLX fused activations | **1,635** | **158** | **1.51x / 1.36x** |
 
 > **+36% decode throughput** on MoE models — fused gating (`top2_gating_softmax`) and combine (`moe_combine`) kernels eliminate multiple memory round-trips in the expert routing path.
@@ -257,14 +259,14 @@ LLM inference is **memory-bandwidth-bound**: fused kernels shine on large models
 
 | Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
 |:--|--:|--:|:--|
-| Baseline (MLX) | 676 | 75 | — |
+| Baseline (`mlx_lm`) | 676 | 75 | — |
 | ZMLX fused activations | 675 | 76 | 1.00x / 1.01x |
 
 **Llama-3.2-1B-Instruct-4bit (16 layers, ~0.8 GB)** — `python benchmarks/llama_benchmark.py`
 
 | Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
 |:--|--:|--:|:--|
-| Baseline (MLX) | 3,913 | 377 | — |
+| Baseline (`mlx_lm`) | 3,913 | 377 | — |
 | ZMLX fused activations | 3,804 | 378 | 0.97x / 1.00x |
 | ZMLX all patches | 3,705 | 366 | 0.95x / 0.97x |
 
