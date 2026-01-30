@@ -448,7 +448,7 @@ def rmsnorm_residual(
         # val = inp + res, so d_inp = d_val and d_res = d_val
         return (d_val, d_val, d_weight)
 
-    return op(x, residual, weight)  # type: ignore[return-value]
+    return op(x, residual, weight)  # type: ignore[no-any-return, return-value]
 
 
 @cache

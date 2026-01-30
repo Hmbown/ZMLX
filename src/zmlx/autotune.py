@@ -35,6 +35,10 @@ class AutotuneResult:
     best_config: AutotuneConfig
     timings_ms: dict[AutotuneConfig, float]
 
+    @property
+    def best_threadgroup(self) -> tuple[int, int, int]:
+        return self.best_config.threadgroup
+
 
 GLOBAL_AUTOTUNE_CACHE: dict[AutotuneKey, AutotuneConfig] = {}
 
@@ -202,6 +206,36 @@ def autotune_kernel(
 
     best = min(timings.items(), key=lambda kv: kv[1])[0]
     return AutotuneResult(best_config=best, timings_ms=timings)
+
+
+def autotune_threadgroup(
+    kernel: MetalKernel,
+    *,
+    inputs: Sequence[Any],
+    template: list[tuple[str, Any]],
+    output_shapes: list[Sequence[int]] | None = None,
+    output_dtypes: list[Any] | None = None,
+    grid: tuple[int, int, int],
+    candidates: Sequence[tuple[int, int, int]],
+    warmup: int = 3,
+    iters: int = 10,
+) -> AutotuneResult:
+    """Search for the best threadgroup size among *candidates*.
+
+    Convenience wrapper around :func:`autotune_kernel` that fixes a single
+    template and only varies the threadgroup.
+    """
+    return autotune_kernel(
+        kernel,
+        inputs=inputs,
+        grid=grid,
+        template_candidates=[template],
+        threadgroup_candidates=list(candidates),
+        output_shapes=output_shapes,
+        output_dtypes=output_dtypes,
+        warmup=warmup,
+        iters=iters,
+    )
 
 
 def autotune(
