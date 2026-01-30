@@ -1,6 +1,6 @@
 import mlx.core as mx
 
-from zmlx.kernels import activations, fused, norms, rope, softmax
+from zmlx.kernels import activations, fused, moe, norms, rope, softmax
 
 
 def test_softmax_matches_reference():
@@ -105,3 +105,70 @@ def test_activation_grad_variant_matches_reference():
 
     mx.eval(gx, gx_ref)
     assert mx.allclose(gx, gx_ref, rtol=1e-4, atol=1e-4).item()
+
+
+def _sorted_pairs(indices: mx.array, weights: mx.array) -> tuple[mx.array, mx.array]:
+    order = mx.argsort(indices, axis=-1)
+    sorted_indices = mx.take_along_axis(indices, order, axis=-1)
+    sorted_weights = mx.take_along_axis(weights, order, axis=-1)
+    return sorted_indices, sorted_weights
+
+
+def test_topk_gating_softmax_normed_matches_reference():
+    x = mx.random.normal((4, 32)).astype(mx.float16)
+    k = 4
+
+    weights, indices = moe.topk_gating_softmax(x, k=k, norm_topk_prob=True)
+
+    gates = mx.softmax(x.astype(mx.float32), axis=-1)
+    inds_ref = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
+    scores_ref = mx.take_along_axis(gates, inds_ref, axis=-1)
+    scores_ref = scores_ref / (mx.sum(scores_ref, axis=-1, keepdims=True) + 1e-20)
+
+    i0, w0 = _sorted_pairs(indices, weights)
+    i1, w1 = _sorted_pairs(inds_ref.astype(indices.dtype), scores_ref.astype(weights.dtype))
+    mx.eval(i0, w0, i1, w1)
+    assert mx.all(i0 == i1).item()
+    assert mx.allclose(w0, w1, rtol=2e-3, atol=2e-3).item()
+
+
+def test_topk_gating_softmax_full_softmax_matches_reference():
+    x = mx.random.normal((3, 48)).astype(mx.float16)
+    k = 6
+
+    weights, indices = moe.topk_gating_softmax(x, k=k, norm_topk_prob=False)
+
+    gates = mx.softmax(x.astype(mx.float32), axis=-1)
+    inds_ref = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
+    scores_ref = mx.take_along_axis(gates, inds_ref, axis=-1)
+
+    i0, w0 = _sorted_pairs(indices, weights)
+    i1, w1 = _sorted_pairs(inds_ref.astype(indices.dtype), scores_ref.astype(weights.dtype))
+    mx.eval(i0, w0, i1, w1)
+    assert mx.all(i0 == i1).item()
+    assert mx.allclose(w0, w1, rtol=2e-3, atol=2e-3).item()
+
+
+def test_topk_gating_softmax_with_bias_matches_reference():
+    x = mx.random.normal((2, 40)).astype(mx.float16)
+    bias = mx.random.normal((40,)).astype(mx.float32) * 0.01
+    k = 4
+
+    weights, indices = moe.topk_gating_softmax(
+        x,
+        k=k,
+        expert_bias=bias,
+        norm_topk_prob=True,
+    )
+
+    gates = mx.softmax(x.astype(mx.float32), axis=-1)
+    gates = gates + bias
+    inds_ref = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
+    scores_ref = mx.take_along_axis(gates, inds_ref, axis=-1)
+    scores_ref = scores_ref / (mx.sum(scores_ref, axis=-1, keepdims=True) + 1e-20)
+
+    i0, w0 = _sorted_pairs(indices, weights)
+    i1, w1 = _sorted_pairs(inds_ref.astype(indices.dtype), scores_ref.astype(weights.dtype))
+    mx.eval(i0, w0, i1, w1)
+    assert mx.all(i0 == i1).item()
+    assert mx.allclose(w0, w1, rtol=2e-3, atol=2e-3).item()
