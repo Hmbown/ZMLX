@@ -28,7 +28,7 @@ Model helpers (require mlx-lm):
     zmlx.load, zmlx.lora, zmlx.train, zmlx.generate
 """
 
-__version__ = "0.6.1"
+__version__ = "0.6.3"
 
 from ._compat import is_supported_host
 

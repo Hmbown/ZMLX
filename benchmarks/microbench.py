@@ -3,17 +3,25 @@ import time
 import mlx.core as mx
 import numpy as np
 
-from zmlx.kernels import indexing, norms, reductions, scan, softmax, transformer
+from zmlx.kernels import indexing, moe, norms, reductions, scan, softmax, transformer
 
 
 def benchmark(name, fn, inputs, iters=100):
     # warmup
     for _ in range(10):
-        mx.eval(fn(*inputs))
+        out = fn(*inputs)
+        if isinstance(out, (tuple, list)):
+            mx.eval(*out)
+        else:
+            mx.eval(out)
     
     start = time.perf_counter_ns()
     for _ in range(iters):
-        mx.eval(fn(*inputs))
+        out = fn(*inputs)
+        if isinstance(out, (tuple, list)):
+            mx.eval(*out)
+        else:
+            mx.eval(out)
     end = time.perf_counter_ns()
     
     avg_ms = (end - start) / iters / 1e6
@@ -57,6 +65,24 @@ if __name__ == "__main__":
     # Top-K
     benchmark("MLX Top-K (k=5)", lambda x: mx.topk(x, k=5, axis=-1), [x])
     benchmark("ZMLX Top-K (k=5)", lambda x: reductions.topk_lastdim(x, k=5), [x])
+
+    # MoE gating (top-2)
+    E = 64
+    gates = mx.random.normal((B * S, E)).astype(mx.float16)
+
+    def mlx_moe_gating(inp):
+        g = mx.softmax(inp.astype(mx.float32), axis=-1)
+        inds = mx.argpartition(g, kth=-2, axis=-1)[..., -2:]
+        scores = mx.take_along_axis(g, inds, axis=-1)
+        scores = scores / (mx.sum(scores, axis=-1, keepdims=True) + 1e-20)
+        return scores, inds
+
+    benchmark("MLX MoE gating (top-2)", mlx_moe_gating, [gates])
+    benchmark(
+        "ZMLX MoE gating (top-2)",
+        lambda inp: moe.topk_gating_softmax(inp, k=2, norm_topk_prob=True),
+        [gates],
+    )
     
     # CumSum
     benchmark("MLX CumSum", lambda x: mx.cumsum(x, axis=-1), [x])
