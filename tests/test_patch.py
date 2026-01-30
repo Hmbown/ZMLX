@@ -219,6 +219,7 @@ def test_geglu_mlp_patch():
 
 
 def test_patch_full_model():
+    """Default patch() applies FUSED_ACTIVATIONS only — norms are NOT replaced."""
     from zmlx.patch import patch
     from zmlx.patch._modules import ZMLXRMSNorm
 
@@ -233,7 +234,29 @@ def test_patch_full_model():
     assert result_model is model  # Modified in place
     assert hasattr(model, "_zmlx_patch_result")
 
-    # RMSNorms should be replaced
+    # Default is FUSED_ACTIVATIONS — RMSNorms should NOT be replaced
+    assert not isinstance(model.norm, ZMLXRMSNorm)
+
+    out_after = model(x)
+    mx.eval(out_after)
+
+    assert mx.allclose(out_before, out_after, atol=1e-3).item()
+
+
+def test_patch_all_patterns():
+    """Explicit ALL_PATTERNS applies all 7 patterns including norms."""
+    from zmlx.patch import ALL_PATTERNS, patch
+    from zmlx.patch._modules import ZMLXRMSNorm
+
+    model = TinyModel(dims=64, hidden=128, n_layers=2)
+    x = mx.random.normal((2, 64))
+
+    out_before = model(x)
+    mx.eval(out_before)
+
+    patch(model, patterns=ALL_PATTERNS, verbose=False)
+
+    # ALL_PATTERNS includes rmsnorm — RMSNorms SHOULD be replaced
     assert isinstance(model.norm, ZMLXRMSNorm)
 
     out_after = model(x)
@@ -347,3 +370,73 @@ def test_rmsnorm_gradient():
     _grads_after = grad_fn2(model, x)
     mx.eval(_grads_after)
     # If we get here without error, gradients flow through the patched model
+
+
+# --- Mode parameter ---
+
+
+def test_patch_mode_inference():
+    """mode='inference' applies FUSED_ACTIVATIONS (no norm replacement)."""
+    from zmlx.patch import patch
+    from zmlx.patch._modules import ZMLXRMSNorm
+
+    model = TinyModel(dims=64, hidden=128, n_layers=2)
+    x = mx.random.normal((2, 64))
+
+    out_before = model(x)
+    mx.eval(out_before)
+
+    patch(model, mode="inference")
+
+    # Inference mode should NOT replace norms
+    assert not isinstance(model.norm, ZMLXRMSNorm)
+
+    out_after = model(x)
+    mx.eval(out_after)
+    assert mx.allclose(out_before, out_after, atol=1e-3).item()
+
+
+def test_patch_mode_training():
+    """mode='training' applies TRAINING_RECOMMENDED (includes norm replacement)."""
+    from zmlx.patch import patch
+    from zmlx.patch._modules import ZMLXRMSNorm
+
+    model = TinyModel(dims=64, hidden=128, n_layers=2)
+    x = mx.random.normal((2, 64))
+
+    out_before = model(x)
+    mx.eval(out_before)
+
+    patch(model, mode="training")
+
+    # Training mode SHOULD replace norms
+    assert isinstance(model.norm, ZMLXRMSNorm)
+
+    out_after = model(x)
+    mx.eval(out_after)
+    assert mx.allclose(out_before, out_after, atol=1e-3).item()
+
+
+def test_patch_mode_invalid():
+    """Invalid mode raises ValueError."""
+    import pytest
+
+    from zmlx.patch import patch
+
+    model = TinyModel(dims=64, hidden=128, n_layers=2)
+    with pytest.raises(ValueError, match="Unknown mode"):
+        patch(model, mode="bogus")
+
+
+def test_patch_patterns_overrides_mode():
+    """Explicit patterns= takes precedence over mode=."""
+    from zmlx.patch import patch
+    from zmlx.patch._modules import ZMLXRMSNorm
+
+    model = TinyModel(dims=64, hidden=128, n_layers=2)
+
+    # Even with mode="training", explicit patterns=["swiglu_mlp"] should win
+    patch(model, mode="training", patterns=["swiglu_mlp"])
+
+    # Norms should NOT be replaced because explicit patterns didn't include them
+    assert not isinstance(model.norm, ZMLXRMSNorm)
