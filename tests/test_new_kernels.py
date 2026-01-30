@@ -122,6 +122,24 @@ def test_softmax_ce():
     ref = mx.logsumexp(logits, axis=-1) - mx.take_along_axis(logits, targets[:, None], axis=-1).squeeze()
     assert mx.allclose(y, ref, atol=1e-5)
 
+def test_softmax_ce_grad():
+    logits = mx.random.normal((4, 16)).astype(mx.float32)
+    targets = mx.array([0, 1, 2, 3], dtype=mx.uint32)
+
+    def loss_fn(lgts):
+        return loss.softmax_cross_entropy(lgts, targets).mean()
+
+    def ref_loss(lgts):
+        t = targets.astype(mx.int32)
+        logsumexp = mx.logsumexp(lgts, axis=-1)
+        target_logits = mx.take_along_axis(lgts, t[:, None], axis=-1).squeeze(-1)
+        return mx.mean(logsumexp - target_logits)
+
+    g = mx.grad(loss_fn)(logits)
+    g_ref = mx.grad(ref_loss)(logits)
+    mx.eval(g, g_ref)
+    assert mx.allclose(g, g_ref, atol=1e-4).item()
+
 def test_topk():
     x = mx.array([[1., 5., 2., 10., 3.], [9., 1., 4., 3., 8.]]).astype(mx.float32)
     v, i = reductions.topk_lastdim(x, 3)

@@ -226,8 +226,137 @@ def autotune_threadgroup(
     return AutotuneResult(best_threadgroup=best, timings_ms=timings)
 
 
+def _cache_file_path() -> str | None:
+    """Return the path to the persistent autotune cache file.
+
+    Returns ``~/.cache/zmlx/autotune_v1.json`` on macOS, or ``None`` if
+    the directory cannot be determined.
+    """
+    import os
+    from pathlib import Path
+
+    cache_dir = os.environ.get("ZMLX_CACHE_DIR")
+    if cache_dir is None:
+        home = Path.home()
+        cache_dir = str(home / ".cache" / "zmlx")
+
+    return str(Path(cache_dir) / "autotune_v1.json")
+
+
+def _device_cache_key() -> str:
+    """Return a key incorporating device family and MLX version."""
+    try:
+        from .device import detect_device
+
+        dev = detect_device()
+        family = f"{dev.family}_{dev.variant}".rstrip("_")
+    except Exception:
+        family = "unknown"
+
+    try:
+        import mlx.core as mx
+
+        mlx_version = mx.__version__
+    except Exception:
+        mlx_version = "unknown"
+
+    return f"{family}_{mlx_version}"
+
+
+def save_autotune_cache(path: str | None = None) -> None:
+    """Save the global autotune cache to disk.
+
+    Args:
+        path: File path. Defaults to ``~/.cache/zmlx/autotune_v1.json``.
+    """
+    import json
+    from pathlib import Path
+
+    if path is None:
+        path = _cache_file_path()
+    if path is None:
+        return
+
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+    device_key = _device_cache_key()
+
+    # Load existing file to preserve other device profiles
+    existing: dict[str, Any] = {}
+    if Path(path).exists():
+        try:
+            with open(path) as f:
+                existing = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Serialize current cache
+    entries: dict[str, str] = {}
+    for key, tg in GLOBAL_AUTOTUNE_CACHE.items():
+        key_str = json.dumps({
+            "name": key.kernel_name,
+            "shapes": key.input_shapes,
+            "dtypes": key.input_dtypes,
+            "grid": key.grid,
+        })
+        entries[key_str] = json.dumps(tg)
+
+    existing[device_key] = entries
+
+    with open(path, "w") as f:
+        json.dump(existing, f, indent=2)
+
+
+def load_autotune_cache(path: str | None = None) -> int:
+    """Load the global autotune cache from disk.
+
+    Args:
+        path: File path. Defaults to ``~/.cache/zmlx/autotune_v1.json``.
+
+    Returns:
+        Number of cache entries loaded.
+    """
+    import json
+    from pathlib import Path
+
+    if path is None:
+        path = _cache_file_path()
+    if path is None or not Path(path).exists():
+        return 0
+
+    device_key = _device_cache_key()
+
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return 0
+
+    entries = data.get(device_key, {})
+    count = 0
+
+    for key_str, tg_str in entries.items():
+        try:
+            kd = json.loads(key_str)
+            tg = tuple(json.loads(tg_str))
+            key = AutotuneKey(
+                kernel_name=kd["name"],
+                input_shapes=tuple(tuple(s) for s in kd["shapes"]),
+                input_dtypes=tuple(kd["dtypes"]),
+                grid=tuple(kd["grid"]),
+            )
+            GLOBAL_AUTOTUNE_CACHE[key] = tg  # type: ignore[assignment]
+            count += 1
+        except (json.JSONDecodeError, KeyError, TypeError):
+            continue
+
+    return count
+
+
 __all__ = [
     "AutotuneResult",
     "autotune_threadgroup",
     "get_autotuned_threadgroup",
+    "save_autotune_cache",
+    "load_autotune_cache",
 ]
