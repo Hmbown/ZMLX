@@ -111,7 +111,7 @@ for s in stats:
 ## What's Next?
 
 - **JIT Compiler**: `@zmlx.jit` for compiling Python functions to fused kernels
-- **Optimized Optimizers**: `zmlx.optimizers.AdamW` for 2-3x faster training steps
+- **Fused AdamW**: `zmlx.optimizers.AdamW` — single-kernel optimizer step
 - **Paged Attention**: `zmlx.kernels.attention.paged_attention` for serving
 - **Custom reductions**: `zmlx.api.reduce()` for rowwise ops
 - **Map-reduce patterns**: `zmlx.api.map_reduce()` for complex fusions
