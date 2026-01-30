@@ -249,8 +249,42 @@ def moe_combine(expert_outputs: Any, weights: Any) -> Any:
     return out.reshape((*original_shape, D))
 
 
+def topk_gating_softmax(
+    x: Any,
+    k: int = 2,
+    *,
+    threadgroup: int = 256,
+    compute_dtype: Any | None = None,
+) -> tuple[Any, Any]:
+    """Top-k gating with softmax for Mixture of Experts.
+
+    For k=2 dispatches to the fused Metal kernel.  For other values of k
+    falls back to standard MLX ops (argsort + gather + softmax).
+
+    Returns:
+      - weights: (..., k) softmax probabilities
+      - indices: (..., k) expert indices (uint32)
+    """
+    if k == 2:
+        return top2_gating_softmax(x, threadgroup=threadgroup, compute_dtype=compute_dtype)
+
+    cd = compute_dtype or mx.float32
+    x_cast = x.astype(cd) if x.dtype != cd else x
+
+    # Descending argsort → take the first k indices
+    sorted_indices = mx.argpartition(-x_cast, kth=k - 1, axis=-1)
+    indices = sorted_indices[..., :k]
+
+    # Gather the top-k logits and softmax over them
+    values = mx.take_along_axis(x_cast, indices, axis=-1)
+    weights = mx.softmax(values, axis=-1)
+
+    return weights, indices.astype(mx.uint32)
+
+
 __all__ = [
     "top2_gating_softmax",
+    "topk_gating_softmax",
     "moe_dispatch",
     "moe_combine",
 ]
