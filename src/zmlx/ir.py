@@ -377,4 +377,5 @@ def ir_from_json(s: str) -> KernelIR:
         if key in d and isinstance(d[key], list):
             d[key] = tuple(d[key])
 
-    return cls(**d)
+    result: KernelIR = cls(**d)
+    return result
