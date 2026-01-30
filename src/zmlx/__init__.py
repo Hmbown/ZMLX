@@ -26,10 +26,18 @@ def __getattr__(name: str):
     if not is_supported_host():
         raise RuntimeError(_IMPORT_ERROR)
 
-    if name in {"autograd", "elementwise", "kernels", "metal", "registry", "rowwise", "msl"}:
+    if name in {
+        "autograd", "elementwise", "kernels", "metal", "registry", "rowwise", "msl",
+        "patch",
+    }:
         import importlib
 
         return importlib.import_module(f"{__name__}.{name}")
+
+    if name in {"load", "lora", "train", "generate"}:
+        from . import api as _api
+
+        return getattr(_api, name)
 
     if name == "autotune_threadgroup":
         from .autotune import autotune_threadgroup as _autotune_threadgroup
@@ -50,6 +58,11 @@ __all__ = [
     "metal",
     "msl",
     "autotune_threadgroup",
+    "patch",
     "registry",
     "rowwise",
+    "load",
+    "lora",
+    "train",
+    "generate",
 ]

@@ -35,12 +35,21 @@ Documentation = "https://github.com/Hmbown/ZMLX#readme"
 Issues = "https://github.com/Hmbown/ZMLX/issues"
 Changelog = "https://github.com/Hmbown/ZMLX/blob/main/CHANGELOG.md"
 
+[project.scripts]
+zmlx = "zmlx.train.cli:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0.0",
   "ruff>=0.5.0",
   "mypy>=1.10.0",
   "numpy>=1.24.0",
+]
+train = [
+  "mlx-lm>=0.25.0",
+  "pyyaml>=6.0",
+  "transformers>=4.40.0",
+  "huggingface_hub>=0.20.0",
 ]
 
 [tool.hatch.build.targets.wheel]
