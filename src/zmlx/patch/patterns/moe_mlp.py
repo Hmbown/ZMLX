@@ -1,8 +1,14 @@
-"""MoE MLP pattern: fuse Moe dispatch + combine logic with expert selection.
+"""MoE MLP pattern: fuse MoE dispatch + combine logic with expert selection.
 
-Targets Mixtral/DeepSeek style MoE layers with a `gate` and `experts` attribute,
-and Qwen3 style MoE layers with `gate` and `switch_mlp`.
-Fuses the top-k selection, routing, and combining passes.
+Targets several MoE styles:
+- **Qwen3** — ``gate`` returns raw logits, ``switch_mlp`` handles experts.
+  We fuse gating (softmax + top-2 + renorm) and combining into Metal kernels.
+- **GLM-4 / DeepSeek-V3** — ``gate`` returns ``(indices, scores)`` already
+  computed (sigmoid + group selection).  We preserve the original gating and
+  only fuse the combine step.
+- **Mixtral** — ``gate`` returns logits, ``experts`` is a list of modules.
+
+Also handles ``shared_experts`` (additive dense MLP) when present.
 """
 
 from __future__ import annotations
@@ -35,32 +41,44 @@ class _MoEMLPPattern:
         original_call = module.__call__
 
         def patched_call(self_mod: Any, x: Any) -> Any:
-            # 1. Fused Gating: Softmax + Top-2 + Re-normalization in one kernel
-            logits = self_mod.gate(x)
-            # weights: (B, 2), indices: (B, 2)
-            weights, indices = moe.top2_gating_softmax(logits)
-            
+            # 1. Gating — detect whether gate returns logits or (inds, scores)
+            gate_out = self_mod.gate(x)
+
+            if isinstance(gate_out, tuple):
+                # Gate already computed indices + scores (GLM-4, DeepSeek-V3 style)
+                # Preserve the original gating logic exactly — only fuse combine.
+                indices, weights = gate_out
+            else:
+                # Gate returned raw logits (Qwen3, Mixtral style)
+                # Fuse softmax + top-2 + renorm into a single Metal kernel.
+                weights, indices = moe.top2_gating_softmax(gate_out)
+
             # 2. Expert Execution
             if hasattr(self_mod, "switch_mlp"):
-                # Qwen3 style: vectorized experts (SwitchGLU)
-                # SwitchGLU handles the internal routing/experts but expects indices.
+                # Qwen3/GLM style: vectorized experts (SwitchGLU)
                 expert_outputs = self_mod.switch_mlp(x, indices)
             else:
                 # Mixtral/DeepSeek style: list of expert modules
-                # Group by expert to minimize module calls
-                B, K = indices.shape
+                B = indices.shape[0]
+                K = indices.shape[-1]
                 D = x.shape[-1]
                 expert_outputs = mx.zeros((B, K, D), dtype=x.dtype)
-                
+
                 for i, expert in enumerate(self_mod.experts):
                     for k in range(K):
-                        mask = (indices[:, k] == i)
+                        mask = indices[:, k] == i
                         if mask.any():
                             expert_outputs[mask, k] = expert(x[mask])
 
-            # 3. Fused Combine: Weighted sum of expert outputs
-            # expert_outputs shape: (B, K, D), weights shape: (B, K)
-            return moe.moe_combine(expert_outputs, weights)
+            # 3. Fused Combine: weighted sum of expert outputs in one kernel
+            y = moe.moe_combine(expert_outputs, weights)
+
+            # 4. Shared experts (GLM-4, DeepSeek-V3): additive dense path
+            shared = getattr(self_mod, "shared_experts", None)
+            if shared is not None:
+                y = y + shared(x)
+
+            return y
 
         # Store original for unpatch
         module._zmlx_original_call = original_call
@@ -70,5 +88,6 @@ class _MoEMLPPattern:
             {"__call__": patched_call},
         )
         return module
+
 
 register(_MoEMLPPattern())

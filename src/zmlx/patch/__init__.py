@@ -3,19 +3,27 @@
 Usage::
 
     import zmlx
-    model = zmlx.patch.patch(model)               # all patterns
-    model = zmlx.patch.patch(model, patterns=TRAINING_RECOMMENDED)  # training preset
-    model = zmlx.patch.smart_patch(model, sample)  # auto-benchmark, keep only what helps
+    model = zmlx.patch.patch(model)                       # safe default (inference)
+    model = zmlx.patch.patch(model, mode="training")      # training preset
+    model = zmlx.patch.patch(model, patterns=ALL_PATTERNS)  # explicit full set
+    model = zmlx.patch.smart_patch(model, sample)         # auto-benchmark
 
 Presets::
 
-    FUSED_ACTIVATIONS — SwiGLU/GeGLU fusions only (safest, no regressions)
-    TRAINING_RECOMMENDED — activations + norms + fused residual (best for training)
+    FUSED_ACTIVATIONS — SwiGLU/GeGLU/MoE fusions only (safe default, no regressions).
+        MoE models get 1.3–1.6x speedup; dense models neutral.
+    TRAINING_RECOMMENDED — activations + norms + fused residual (best for training).
+    ALL_PATTERNS — all 7 patterns including norms and softmax.
+        WARNING: causes 3–5% decode regression on ALL tested models (dense and MoE).
+        Norm/softmax kernels are slower than MLX built-ins for inference.
 
-Note on inference: LLM inference is memory-bandwidth-bound. Patching norms or
-softmax with custom kernels does not improve throughput because MLX's built-in
-``mx.fast.rms_norm`` and ``mx.softmax`` are already highly optimized. The fused
-activation patterns (SwiGLU/GeGLU) are neutral-to-positive at the model level.
+Note on inference: LLM decode is memory-bandwidth-bound — 95%+ of time is spent
+reading quantized weights through matmuls.  MLX's built-in ``mx.fast.rms_norm``,
+``mx.fast.rope``, and ``mx.fast.scaled_dot_product_attention`` are already highly
+optimized.  Custom norm/softmax kernels add dispatch overhead that exceeds any
+memory savings.  The fused activation patterns (SwiGLU/GeGLU/MoE) are the only
+patterns that help inference — MoE routing fusion is the killer feature (1.3–1.6x
+on MoE models) because MLX lacks a fast path for multi-step expert dispatch.
 
 Use ``smart_patch`` to automatically benchmark and keep only beneficial patterns.
 """
@@ -53,10 +61,25 @@ TRAINING_RECOMMENDED: list[str] = [
     "residual_norm",
 ]
 
+#: All 7 patterns.  **WARNING**: causes 3–5% decode regression on ALL tested
+#: models (dense 8B/32B and MoE 30B).  Norm and softmax kernels are slower
+#: than MLX's built-in ``mx.fast.rms_norm`` / ``mx.softmax`` at inference.
+#: Only use this preset if you have benchmarked it on your specific workload.
+ALL_PATTERNS: list[str] = [
+    "swiglu_mlp",
+    "geglu_mlp",
+    "moe_mlp",
+    "rmsnorm",
+    "layernorm",
+    "softmax",
+    "residual_norm",
+]
+
 
 def patch(
     model: nn.Module,
     *,
+    mode: str | None = None,
     patterns: list[str] | None = None,
     exclude: list[str] | None = None,
     compute_dtype: str = "float32",
@@ -70,7 +93,13 @@ def patch(
 
     Args:
         model: The nn.Module to patch (modified in place and returned).
-        patterns: List of pattern names to apply. ``None`` means all.
+        mode: Shorthand for common workloads.  ``"inference"`` (default)
+            selects :data:`FUSED_ACTIVATIONS` — safe, never regresses, and
+            gives 1.3–1.6x on MoE models.  ``"training"`` selects
+            :data:`TRAINING_RECOMMENDED` — adds norm fusions that benefit
+            backward passes.  Ignored if ``patterns`` is provided explicitly.
+        patterns: Explicit list of pattern names.  Overrides ``mode`` when
+            both are given.  ``None`` falls through to ``mode`` selection.
         exclude: Pattern names to skip.
         compute_dtype: Compute dtype name (e.g. "float32", "float16").
         threadgroup: Default threadgroup size for fused kernels, or ``"auto"``
@@ -80,8 +109,25 @@ def patch(
     Returns:
         The same model, modified in place, with a ``_zmlx_patch_result``
         attribute containing a :class:`PatchResult`.
+
+    Examples::
+
+        patch(model)                    # inference (safe default)
+        patch(model, mode="training")   # training preset
+        patch(model, patterns=["swiglu_mlp", "moe_mlp"])  # explicit
+
+    .. versionadded:: 0.6.0
+        ``mode`` parameter for workload-aware preset selection.
+    .. versionchanged:: 0.5.0
+        Default changed from all patterns to ``FUSED_ACTIVATIONS`` to avoid
+        decode regressions on inference workloads.
     """
     _ensure_loaded()
+
+    _MODES = {
+        "inference": FUSED_ACTIVATIONS,
+        "training": TRAINING_RECOMMENDED,
+    }
 
     config = PatchConfig(
         compute_dtype=compute_dtype,
@@ -89,11 +135,17 @@ def patch(
         verbose=verbose,
     )
 
-    # Resolve patterns
+    # Resolve patterns: explicit patterns > mode > default (inference)
     if patterns is not None:
         selected = [get_pattern(name) for name in patterns]
+    elif mode is not None:
+        if mode not in _MODES:
+            raise ValueError(
+                f"Unknown mode {mode!r}. Expected one of: {', '.join(_MODES)}"
+            )
+        selected = [get_pattern(name) for name in _MODES[mode]]
     else:
-        selected = list(get_all_patterns().values())
+        selected = [get_pattern(name) for name in FUSED_ACTIVATIONS]
 
     if exclude:
         exclude_set = set(exclude)
@@ -319,6 +371,7 @@ __all__ = [
     "unpatch",
     "smart_patch",
     "list_patterns",
+    "ALL_PATTERNS",
     "FUSED_ACTIVATIONS",
     "TRAINING_RECOMMENDED",
     "PatchConfig",
