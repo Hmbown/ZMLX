@@ -1,6 +1,14 @@
 """Built-in patch patterns for common model architectures."""
 
-from . import geglu_mlp, layernorm, residual_norm, rmsnorm, softmax, swiglu_mlp
+from . import (
+    geglu_mlp,
+    layernorm,
+    moe_mlp,
+    residual_norm,
+    rmsnorm,
+    softmax,
+    swiglu_mlp,
+)
 
 __all__ = [
     "rmsnorm",
@@ -9,4 +17,5 @@ __all__ = [
     "geglu_mlp",
     "softmax",
     "residual_norm",
+    "moe_mlp",
 ]
