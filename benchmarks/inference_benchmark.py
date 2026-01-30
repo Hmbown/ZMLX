@@ -7,9 +7,10 @@ so fused kernels that eliminate memory round-trips should show measurable
 speedups — especially for larger models and autoregressive decode.
 
 Usage:
-    python benchmarks/inference_benchmark.py                    # default: Qwen3-8B-4bit
+    python benchmarks/inference_benchmark.py                    # default: Qwen3-8B-4bit, FUSED_ACTIVATIONS
     python benchmarks/inference_benchmark.py --models all       # run all models
     python benchmarks/inference_benchmark.py --runs 5           # more runs for stability
+    python benchmarks/inference_benchmark.py --all-patterns     # use ALL_PATTERNS (norms too, known regression)
 """
 
 from __future__ import annotations
@@ -162,14 +163,14 @@ def timed_generate(model, tokenizer, prompt: str, max_tokens: int) -> RunMetrics
     )
 
 
-def apply_patches(model, selective: bool = False):
+def apply_patches(model, selective: bool = True):
     """Apply ZMLX kernel patches.
 
     Args:
-        selective: If True (or default patch()), only apply fused-activation
-            patterns (SwiGLU/GeGLU/MoE) which are neutral-to-positive for
-            inference.  If False, apply ALL patterns (including norms, which
-            may be slower than MLX built-ins on some models).
+        selective: If True (default), only apply fused-activation patterns
+            (SwiGLU/GeGLU/MoE) — matches ``patch(model)`` default.
+            If False, apply ALL patterns (including norms, which cause
+            3–5% decode regression on all tested models).
     """
     from zmlx.patch import ALL_PATTERNS
     from zmlx.patch import patch as zmlx_patch
@@ -310,16 +311,20 @@ def main():
         "--prompt", type=str, default=None, help="Custom prompt (overrides default)"
     )
     parser.add_argument(
-        "--selective",
+        "--all-patterns",
         action="store_true",
         default=False,
-        help="Only patch fused activations (SwiGLU/GeGLU), skip norms/softmax",
+        help="Apply ALL patterns (norms/softmax too). Default uses FUSED_ACTIVATIONS only.",
     )
     args = parser.parse_args()
 
     global PROMPT
     if args.prompt:
         PROMPT = args.prompt
+
+    # Default is FUSED_ACTIVATIONS (matches patch(model) default).
+    # --all-patterns opts into ALL_PATTERNS (norms/softmax too — known 3-5% regression).
+    selective = not args.all_patterns
 
     model_keys = list(MODELS.keys()) if "all" in args.models else args.models
     OUTPUT_BASE.mkdir(parents=True, exist_ok=True)
@@ -352,7 +357,7 @@ def main():
             patched=True,
             num_runs=args.runs,
             max_tokens=args.max_tokens,
-            selective=args.selective,
+            selective=selective,
         )
 
         # Compare
