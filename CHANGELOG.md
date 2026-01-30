@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-01-30
+
+### Fixed
+
+- **Benchmark default now matches `patch()` default**: `inference_benchmark.py` now uses
+  `FUSED_ACTIVATIONS` by default (matching `patch(model)` behavior since v0.5.0). Previously
+  the benchmark defaulted to `ALL_PATTERNS`, which included norm/softmax kernels that cause
+  3–5% decode regression — giving misleadingly low numbers. Use `--all-patterns` to opt in.
+
+### Changed
+
+- **README**: reframed top-level messaging to lead with MoE model results table. Added
+  Qwen3-30B-A3B (base) benchmark (+61% prompt / +37% decode). Noted GLM-4.7 support is
+  in progress.
+
 ## [0.6.0] - 2026-01-30
 
 ### Added
@@ -239,7 +254,8 @@ First public release.
 - **Release workflow** (`.github/workflows/release.yml`) for PyPI trusted publishing.
 - **Benchmarks** (`benchmarks/microbench.py`) with timing comparisons vs MLX reference ops.
 
-[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/Hmbown/ZMLX/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Hmbown/ZMLX/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Hmbown/ZMLX/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Hmbown/ZMLX/compare/v0.4.1...v0.4.2

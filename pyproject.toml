@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zmlx"
-version = "0.6.0"
+version = "0.6.1"
 description = "ZMLX: Triton for Apple Silicon. Custom Metal GPU kernels for MLX with Triton-like ergonomics. Killer feature: 1.3-1.6x MoE inference speedup via fused expert routing."
 readme = "README.md"
 requires-python = ">=3.10"
