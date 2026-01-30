@@ -66,6 +66,10 @@ class TrainConfig:
     patch_threadgroup: int = 256
     patch_verbose: bool = False
 
+    # --- Fused loss ---
+    use_fused_loss: bool = True
+    use_callbacks: bool = True
+
     # --- Resume ---
     resume_from: str | None = None
 

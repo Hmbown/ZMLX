@@ -1,0 +1,20 @@
+model: "mlx-community/Qwen3-1.7B-4bit"
+dataset: "mlx-community/WikiSQL"
+
+lora: true
+lora_rank: 8
+lora_alpha: 16.0
+lora_target_modules:
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+
+iters: 200
+batch_size: 2
+learning_rate: 2.0e-4
+max_seq_length: 512
+
+patch: true
+use_fused_loss: true
+verbose: true

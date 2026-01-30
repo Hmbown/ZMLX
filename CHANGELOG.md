@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-30
+
+### Added
+
+- **High-level API** (`zmlx.api`): `elementwise()`, `reduce()`, `map_reduce()`
+  — one-line kernel authoring with automatic gradient support.
+- **JIT compiler** (`zmlx.api.jit`): `@jit` decorator that compiles Python
+  scalar expressions directly to Metal kernels.
+- **Testing utilities** (`zmlx.testing`): `assert_matches()` and
+  `assert_gradient_matches()` for verifying custom kernels against reference
+  implementations across shapes and dtypes.
+- **Benchmarking utilities** (`zmlx.bench`): `compare()` for side-by-side
+  timing of multiple implementations with formatted tables.
+- **Profiling** (`zmlx.profile`): `time_kernel()`, `memory_usage()`,
+  `dump_msl()`, and `kernel_stats()` for kernel introspection.
+- **Training pipeline** (`zmlx.train`): `zmlx train` CLI command for LoRA
+  fine-tuning with ZMLX-patched models, YAML config support, gradient
+  checkpointing, and training callbacks.
+- **Smart patching** (`zmlx.patch.smart_patch`): auto-benchmarks each candidate
+  pattern against the model's forward pass and keeps only patterns that help.
+- **Neural network modules** (`zmlx.nn`): `PagedAttention` for high-throughput
+  serving, `MoELayer` for mixture-of-experts dispatch/combine.
+- **Fused AdamW optimizer** (`zmlx.optimizers`): single-kernel optimizer step
+  that fuses m/v/parameter updates to reduce memory bandwidth.
+- **New kernels**: paged attention, MoE dispatch/combine, FP8/NF4 dequantization,
+  extended RoPE variants (interleaved, GQA), additional fused transformer ops.
+- **Qwen3-32B-4bit benchmark**: 1.33x decode throughput, 1.19x prompt throughput
+  on M4 Max 36GB with full patching — demonstrates scaling benefit on large models.
+- **Documentation**: quickstart guide (`docs/QUICKSTART.md`), cookbook
+  (`docs/COOKBOOK.md`), new examples (custom activation, custom loss, custom
+  reduction, Qwen fine-tuning).
+
+### Changed
+
+- **Branding**: "Triton for Apple Silicon" — clarified positioning as a kernel
+  authoring toolkit, not a drop-in replacement for MLX built-ins.
+- **README**: reorganized with "What's New" section, prominent 32B benchmark
+  results, honest analysis of where ZMLX helps vs. where MLX built-ins win.
+- **Autotune system** (`zmlx.autotune`): refactored with persistent cache
+  support and cleaner API.
+- **Patch system**: added preset constants (`FUSED_ACTIVATIONS`,
+  `TRAINING_RECOMMENDED`) and `threadgroup="auto"` support for all patch
+  modules.
+
+### Fixed
+
+- **MoE compatibility**: SwiGLU patch now correctly skips MoE `switch_mlp`
+  modules that take routing indices as extra arguments.
+- **`rmsnorm_residual` weight gradient**: VJP now correctly computes `d_weight`.
+- **`compute_dtype` forwarding**: internal calls no longer emit spurious
+  deprecation warnings.
+
+### Deprecated
+
+- **`compute_dtype` parameter**: emits `DeprecationWarning` when non-None
+  value is passed. All kernels compute in float32 internally.
+
+## [0.3.1] - 2026-01-30
+
+### Added
+
+- **Patch presets**: `FUSED_ACTIVATIONS` and `TRAINING_RECOMMENDED` constants
+  in `zmlx.patch` for selecting the right set of kernel patches per workload.
+  `FUSED_ACTIVATIONS` is safe for inference (SwiGLU/GeGLU only);
+  `TRAINING_RECOMMENDED` includes norms and residual fusion for training.
+- **Inference benchmark selective mode**: `--selective` flag in
+  `benchmarks/inference_benchmark.py` to benchmark fused-activations-only
+  patches.
+- **Real benchmark data in README**: op-level and model-level results with
+  honest analysis of where ZMLX helps and where MLX built-ins are faster.
+
+### Fixed
+
+- **`rmsnorm_residual` weight gradient**: the VJP now correctly computes
+  `d_weight` (previously returned `None`). Training with `rmsnorm_residual`
+  will now update the weight parameter as expected.
+- **Internal `compute_dtype` forwarding**: patch modules and internal VJP
+  calls no longer pass `compute_dtype` to kernel functions, eliminating
+  spurious deprecation warnings during normal use.
+
+### Deprecated
+
+- **`compute_dtype` parameter**: all kernel functions that accepted
+  `compute_dtype` now emit a `DeprecationWarning` when a non-None value is
+  passed. All ZMLX Metal kernels already compute internally in float32
+  regardless of this parameter. The parameter will be removed in a future
+  release.
+
 ## [0.2.1] - 2026-01-30
 
 ### Added
@@ -59,8 +147,7 @@ First public release.
     attention_tile_proto (experimental)
   - `reductions` — sum, mean, max, var, std, argmax, topk (all lastdim)
   - `fused` — add, mul, bias_gelu_tanh, bias_silu, silu_mul_grad, add_bias
-  - `linear` — fused_linear_bias_silu, fused_linear_bias_gelu, fused_linear_rmsnorm,
-    dequantize_int4_matmul
+  - `linear` — fused_linear_bias_silu, fused_linear_bias_gelu, fused_linear_rmsnorm
   - `loss` — softmax_cross_entropy
   - `quant` — dequantize_int8, dequantize_silu_int8, dequantize_int4
   - `bits` — pack_bits, unpack_bits
@@ -77,6 +164,8 @@ First public release.
 - **Release workflow** (`.github/workflows/release.yml`) for PyPI trusted publishing.
 - **Benchmarks** (`benchmarks/microbench.py`) with timing comparisons vs MLX reference ops.
 
-[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Hmbown/ZMLX/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/Hmbown/ZMLX/compare/v0.2.1...v0.3.1
 [0.2.1]: https://github.com/Hmbown/ZMLX/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Hmbown/ZMLX/releases/tag/v0.2.0

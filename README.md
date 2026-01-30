@@ -1,38 +1,58 @@
-# ZMLX
+# ZMLX — Triton for Apple Silicon
 
+[![PyPI](https://img.shields.io/pypi/v/zmlx.svg)](https://pypi.org/project/zmlx/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform: macOS Apple Silicon](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-lightgrey.svg)](https://github.com/ml-explore/mlx)
 
-Numba-style helpers for authoring, autotuning, and differentiating custom Metal kernels on Apple silicon.
+**The Triton-like toolkit for [MLX](https://github.com/ml-explore/mlx)** — write custom Metal GPU kernels from Python with one-line ergonomics, automatic gradients, and built-in autotuning. No raw Metal, no manual threadgroups, no boilerplate.
+
+> **+33% decode throughput** on Qwen3-32B-4bit with fused residual+RMSNorm patches. [Benchmarks](#benchmarks)
 
 ```bash
 pip install zmlx
 ```
 
 ```python
-from zmlx import autograd, msl
+from zmlx.api import elementwise
 import mlx.core as mx
 
-silu = autograd.unary_from_expr(
-    name="my_silu", fwd_expr="x * kk_sigmoid(x)",
-    vjp_expr="g * (s + x * s * ((T)1 - s))",
-    compute_dtype=mx.float32, use_output=False,
-    vjp_prelude="T s = kk_sigmoid(x);",
-    header=msl.DEFAULT_HEADER,
-)
-y = silu(mx.random.normal((1024,)))  # runs on GPU, supports mx.grad
+# Math formula → compiled Metal kernel → runs on GPU. One line.
+mish = elementwise("x * tanh(log(1 + exp(x)))", name="mish")
+y = mish(mx.random.normal((1024,)))
 ```
+
+---
+
+## What's New in v0.4.0
+
+- **1.33x decode on 32B models** — fused residual+RMSNorm patches save real bandwidth on large, bandwidth-bound models ([benchmarks](#model-level-inference))
+- **High-level API** — `elementwise()`, `reduce()`, `map_reduce()` for kernel authoring in one line
+- **JIT compiler** — `@jit` decorator compiles Python scalar expressions to Metal
+- **Testing & benchmarking** — `zmlx.testing.assert_matches()`, `zmlx.bench.compare()` for correctness verification and side-by-side timing
+- **Profiling** — `zmlx.profile.time_kernel()`, `dump_msl()`, `kernel_stats()` for introspection
+- **Training pipeline** — `zmlx train` CLI for LoRA fine-tuning with ZMLX patches
+- **Smart patching** — `smart_patch()` auto-benchmarks each pattern and keeps only what helps
+- **Fused AdamW** — single-kernel optimizer step reducing memory bandwidth
+- **Paged attention** — `zmlx.nn.PagedAttention` for high-throughput serving
+- **70+ kernel catalog** — activations, norms, RoPE, attention, MoE, quantization, loss, bit ops
 
 ---
 
 ## Why ZMLX?
 
-- **Define-once caching** — kernels compile once and are reused across calls (keyed on source hash + config).
-- **One-line ops** — create elementwise kernels from a C expression: `elementwise.unary(name=..., expr=...)`.
-- **Differentiable kernels** — attach custom VJP backward passes (themselves Metal kernels) via `mx.custom_function`.
-- **Autotuning** — search threadgroup sizes automatically and cache the winners.
-- **70+ ready-to-use catalog kernels** — activations, softmax, norms, RoPE, transformer fused ops, reductions, quantization, and more.
+When you need a custom GPU op on Apple Silicon, your options today are:
+1. Write raw Metal source strings, manage caching, figure out threadgroups, wire up autodiff manually
+2. Use ZMLX
+
+ZMLX wraps `mx.fast.metal_kernel` and `mx.custom_function` to provide **Triton-like ergonomics**:
+
+- **One-line kernel authoring** — define elementwise, reduction, and map-reduce ops from C expressions
+- **Automatic gradients** — custom VJP backward passes (themselves Metal kernels) via `mx.custom_function`
+- **Define-once caching** — kernels compile once, reused by source hash + config
+- **Autotuning** — threadgroup size search with persistent caching
+- **Testing & benchmarking** — verify against reference ops, compare timings side-by-side
+- **Model patching** — swap MLX layers for fused ZMLX kernels with `patch(model)`
 
 ---
 
@@ -54,107 +74,115 @@ pip install -e ".[dev]"
 
 ---
 
-## Quick Examples
+## Quick Start
 
-### 1. Elementwise kernel from a C expression
+### 1. Custom elementwise kernel
 
 ```python
-from zmlx import elementwise, msl
+from zmlx.api import elementwise
 import mlx.core as mx
 
-exp_fast = elementwise.unary(
-    name="kk_exp",
-    expr="metal::exp(x)",
-    compute_dtype=mx.float32,
+# Non-differentiable — just forward pass
+fast_exp = elementwise("metal::exp(x)", name="fast_exp")
+y = fast_exp(mx.random.normal((1024,)))
+
+# Differentiable — with custom VJP
+from zmlx import msl
+
+silu = elementwise(
+    "kk_silu(x)",
+    name="my_silu",
+    grad_expr="g * (s + x * s * ((T)1 - s))",
+    grad_prelude="T s = kk_sigmoid(x);",
+    use_output=False,
     header=msl.DEFAULT_HEADER,
 )
-
-x = mx.random.normal((1024,)).astype(mx.float16)
-y = exp_fast(x)
+gx = mx.grad(lambda z: silu(z).sum())(mx.random.normal((1024,)))
 ```
 
-### 2. Differentiable kernel with custom VJP
+### 2. Custom reduction
 
 ```python
-from zmlx import autograd, msl
+from zmlx.api import reduce
 import mlx.core as mx
 
-exp_trainable = autograd.unary_from_expr(
-    name="kk_exp_vjp",
-    fwd_expr="metal::exp(x)",
-    vjp_expr="g * y",
-    compute_dtype=mx.float32,
-    use_output=True,
-    header=msl.DEFAULT_HEADER,
+my_sum = reduce(init="0.0f", update="acc + v", name="row_sum")
+y = my_sum(mx.random.normal((8, 1024)))  # shape (8,)
+```
+
+### 3. Two-pass map-reduce (softmax pattern)
+
+```python
+from zmlx.api import map_reduce
+import mlx.core as mx
+
+my_softmax = map_reduce(
+    pass1={"init": "-INFINITY", "update": "max(acc1, x)", "reduce": "max(a, b)"},
+    pass2={"init": "0.0f", "update": "acc2 + exp(x - s1)", "reduce": "a + b"},
+    write="exp(x - s1) / s2",
+    name="my_softmax",
 )
-
-def loss(z):
-    return exp_trainable(z).sum()
-
-x = mx.random.normal((1024,))
-gx = mx.grad(loss)(x)
-mx.eval(gx)
+y = my_softmax(mx.random.normal((8, 1024)))
 ```
 
-### 3. Catalog kernel (ready-to-use)
-
-```python
-from zmlx.kernels import softmax, norms, transformer
-import mlx.core as mx
-
-x = mx.random.normal((8, 1024)).astype(mx.float16)
-w = mx.ones((1024,), dtype=mx.float16)
-
-y = softmax.softmax_lastdim(x)           # rowwise softmax
-z = norms.rmsnorm(x, w)                   # differentiable RMSNorm
-s = transformer.swiglu(mx.random.normal((8, 2048)).astype(mx.float16))  # fused SwiGLU
-```
-
-### 4. High-level UX API (load / LoRA / train / generate)
-
-Requires `mlx-lm`: `pip install 'zmlx[train]'`
+### 4. Test and benchmark your kernel
 
 ```python
 import zmlx
+import mlx.core as mx
 
-# Load a model with ZMLX fused-kernel patching applied automatically
-model, tokenizer = zmlx.load("mlx-community/Llama-3.2-1B-4bit", patch=True)
+# Verify correctness
+zmlx.testing.assert_matches(
+    my_softmax, lambda x: mx.softmax(x, axis=-1),
+    shapes=[(8, 1024), (32, 4096)],
+)
 
-# Apply LoRA adapters
-zmlx.lora(model, r=16, alpha=16.0)
+# Benchmark
+zmlx.bench.compare(
+    {"ZMLX": my_softmax, "MLX": lambda x: mx.softmax(x, axis=-1)},
+    shapes=[(1024, 4096), (4096, 4096)],
+)
+```
 
-# Fine-tune
-zmlx.train(model, tokenizer, "path/to/dataset", iters=500)
+### 5. Lower-level building blocks
 
-# Generate
-print(zmlx.generate(model, tokenizer, "Once upon a time"))
+```python
+from zmlx import autograd, elementwise, msl
+import mlx.core as mx
+
+# Unary kernel (no gradient)
+exp_kern = elementwise.unary(
+    name="kk_exp", expr="metal::exp(x)",
+    compute_dtype=mx.float32, header=msl.DEFAULT_HEADER,
+)
+
+# Binary kernel with custom VJP
+mul_op = autograd.binary_from_expr(
+    name="safe_mul", fwd_expr="a * b",
+    vjp_lhs_expr="g * b", vjp_rhs_expr="g * a",
+    compute_dtype=mx.float32,
+)
 ```
 
 ---
 
 ## Kernel Catalog
 
-18 modules, 70+ kernels (including gradient helpers) organized by domain. Full reference: [`docs/KERNELS.md`](docs/KERNELS.md).
+ZMLX includes 70+ kernels organized by domain. Some are genuinely useful for custom workloads (loss, GLU fusions, bit ops, MoE gating). Others are **reference implementations** showing codegen patterns — correct but not faster than MLX built-ins for standard transformer shapes.
 
-| Module | Count | Highlights |
-|:---|:---:|:---|
-| `activations` | 19 | exp, sigmoid, relu, silu, gelu_tanh, softplus + grad variants |
-| `transformer` | 10 | swiglu, geglu, rmsnorm_residual, layernorm_residual, dropout |
-| `vlsp` | 4 | fused_recurrent_step, depth_gate_sigmoid, grpo_advantage_norm |
-| `softmax` | 3 | softmax_lastdim, log_softmax_lastdim, softmax_grad |
-| `norms` | 6 | rmsnorm, layernorm, rmsnorm_grad, layer_norm_dropout |
-| `attention` | 4 | masked_softmax, scale_mask_softmax, logsumexp_lastdim |
-| `rope` | 3 | apply_rope, apply_rope_interleaved, apply_gqa_rope |
-| `reductions` | 7 | sum, mean, max, var, std, argmax, topk (all lastdim) |
-| `fused` | 6 | add, mul, bias_gelu_tanh, bias_silu, silu_mul_grad, add_bias |
-| `linear` | 4 | fused_linear_bias_silu, fused_linear_bias_gelu, fused_linear_rmsnorm |
-| `loss` | 1 | softmax_cross_entropy |
-| `quant` | 3 | dequantize_int8, dequantize_silu_int8, dequantize_int4 |
-| `bits` | 2 | pack_bits, unpack_bits |
-| `moe` | 1 | top2_gating_softmax |
-| `image` | 2 | resize_bilinear, depthwise_conv_3x3 |
-| `indexing` | 2 | fused_gather_add, fused_scatter_add |
-| `scan` | 2 | cumsum_lastdim, cumsum_grad |
+Full reference: [`docs/KERNELS.md`](docs/KERNELS.md).
+
+| Module | Highlights |
+|:---|:---|
+| `loss` | `softmax_cross_entropy` — memory-efficient fused loss |
+| `transformer` | `swiglu`, `geglu`, `rmsnorm_residual` (with full weight gradients), `dropout` — genuine fusions |
+| `bits` | `pack_bits`, `unpack_bits` — no MLX equivalent |
+| `moe` | `top2_gating_softmax` — expert routing |
+| `scan` | `cumsum_lastdim` — differentiable prefix sum |
+| `norms` | `rmsnorm`, `layernorm` — parallel reduction showcase. All norms compute in float32 internally |
+| `softmax` | `softmax_lastdim` — map-reduce codegen showcase |
+| `rope` | `apply_rope` — elementwise codegen showcase |
+| `linear` | Reference fused-linear patterns (naive matmul, not for production) |
 
 ---
 
@@ -164,28 +192,143 @@ Three-layer design. Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 1. **Metal kernel infrastructure** — `MetalKernel` wrapper, in-process cache, stats tracking
 2. **Code generation & helpers** — MSL templates, elementwise/autograd/rowwise APIs, autotuning
-3. **Kernel catalog** — 17 domain modules built on layers 1 and 2
+3. **Kernel catalog** — domain modules built on layers 1 and 2
 
 ---
 
 ## Benchmarks
 
-Run `python benchmarks/microbench.py` to reproduce. Headline numbers on M4 (vs MLX reference ops):
+### Op-level (B=16, S=1024, D=1024, float32, M4 Max)
 
-- **Dropout**: ~7x faster (fused Metal-side LCG RNG)
-- **SwiGLU**: ~2-3x faster (fused silu + gate multiply)
+Run `python benchmarks/microbench.py` to reproduce on your hardware.
 
-Results vary by shape, dtype, and chip. See [`benchmarks/`](benchmarks/) for the full harness.
+| Operation | MLX | ZMLX | Speedup |
+|:--|--:|--:|:--|
+| **SwiGLU** | 0.85 ms | **0.40 ms** | **2.1x** |
+| **Dropout** | 3.12 ms | **0.38 ms** | **8.2x** |
+| **Top-K** | 1.82 ms | **0.49 ms** | **3.7x** |
+| **Gather-Add** | 0.54 ms | **0.41 ms** | **1.3x** |
+| Softmax | 0.36 ms | 0.41 ms | 0.90x |
+| RMSNorm | 0.37 ms | 0.41 ms | 0.90x |
+| Sum | 0.19 ms | 0.36 ms | 0.53x |
+| CumSum | 0.30 ms | 0.59 ms | 0.51x |
+
+ZMLX wins big on **fused operations** that MLX doesn't provide as single ops (SwiGLU, fused-RNG dropout, fused gather-add). MLX's built-in operations (`mx.fast.rms_norm`, `mx.softmax`, reductions) are already highly optimized and should not be replaced.
+
+### Model-level inference
+
+LLM inference is **memory-bandwidth-bound**: fused kernels shine on large models where each saved memory round-trip matters. The effect scales with model size — small models see no benefit, large models see significant speedups.
+
+**Qwen3-32B-4bit (64 layers, ~18 GB)** — M4 Max, 36 GB
+
+| Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
+|:--|--:|--:|:--|
+| Baseline (MLX) | 107 | 13.5 | — |
+| ZMLX fused activations | 108 | 14.2 | 1.01x / **1.05x** |
+| ZMLX all patches | **127** | **18.0** | **1.19x / 1.33x** |
+
+> **+33% decode throughput** on a 32B model — 64 layers of fused residual+RMSNorm, each saving a full memory round-trip.
+
+**Qwen3-30B-A3B-4bit (MoE, 48 layers, 3B active/30B total)** — `python benchmarks/inference_benchmark.py --models qwen3-30b-a3b`
+
+| Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
+|:--|--:|--:|:--|
+| Baseline (MLX) | 1,004 | 97.0 | — |
+| ZMLX all patches | 975 | 80.4 | 0.97x / 0.83x |
+
+**Llama-3.2-1B-Instruct-4bit (16 layers, ~0.8 GB)** — `python benchmarks/llama_benchmark.py`
+
+| Config | Prompt (tok/s) | Decode (tok/s) | vs Baseline |
+|:--|--:|--:|:--|
+| Baseline (MLX) | 3,913 | 377 | — |
+| ZMLX fused activations | 3,804 | 378 | 0.97x / 1.00x |
+| ZMLX all patches | 3,705 | 366 | 0.95x / 0.97x |
+
+**When do patches help?** It depends on **active parameters per token**:
+- **Dense 32B** (~18 GB active): +33% decode — bandwidth-bound, fused residual+norm saves real bandwidth per layer
+- **MoE 30B-A3B** (~3B active): -17% decode — only 3B params active per token, so kernel launch overhead dominates
+- **Dense 1B** (~0.8 GB): neutral — too small for fusion savings to outweigh overhead
+
+**Takeaway**: use all patches for **large dense models** (8B+ dense). For MoE or small models, use `smart_patch` to auto-detect what helps:
+
+```python
+from zmlx.patch import smart_patch
+import mlx.core as mx
+
+# Auto-benchmark each pattern, keep only what helps
+sample = mx.array([tokenizer.encode("Hello")])
+model = smart_patch(model, sample)
+```
+
+Or use presets if you know your workload:
+
+```python
+from zmlx.patch import patch, FUSED_ACTIVATIONS, TRAINING_RECOMMENDED
+patch(model)                                   # large models (8B+): all patches
+patch(model, patterns=FUSED_ACTIVATIONS)       # small models: activations only
+patch(model, patterns=TRAINING_RECOMMENDED)    # training: activations + norms
+```
+
+### Smart patching
+
+`smart_patch` applies each candidate pattern, benchmarks the model's forward pass, and **automatically reverts patterns that make things slower**. It supports custom forward functions for realistic benchmarks:
+
+```python
+from zmlx.patch import smart_patch
+
+# Basic: benchmark raw forward pass
+model = smart_patch(model, sample_input)
+
+# Advanced: benchmark with actual generation
+def gen_fn(model, sample):
+    return mlx_lm.generate(model, tokenizer, prompt="Hello", max_tokens=20)
+
+model = smart_patch(model, sample, forward_fn=gen_fn, threshold=0.99)
+
+# Result includes per-pattern speedups
+result = model._zmlx_patch_result
+print(result.benchmarks)    # {'swiglu_mlp': 1.012, 'residual_norm': 0.971}
+print(result.summary())     # what was kept and why
+```
+
+### Autotuning
+
+Replacement modules support `threadgroup="auto"` to search for the best threadgroup size on first invocation:
+
+```python
+from zmlx.patch import patch
+patch(model, threadgroup="auto")  # autotunes each kernel on first call
+```
+
+The `map_reduce()` API also supports autotuning:
+
+```python
+from zmlx.api import map_reduce
+my_softmax = map_reduce(..., threadgroup="auto")  # autotunes per-shape
+```
+
+### Where ZMLX genuinely helps
+
+- **Large dense model inference** — 1.33x decode on 32B dense, fused residual+norm saves bandwidth per layer (not MoE — active params too small)
+- **Custom ops that MLX doesn't have** — SwiGLU, GeGLU, fused dropout, MoE gating, bit packing
+- **Training** — fused `softmax_cross_entropy` loss, correct weight gradients for `rmsnorm_residual`
+- **Authoring new kernels** — the `elementwise()`, `reduce()`, and `map_reduce()` APIs let you go from math formula to compiled Metal kernel in one line
+- **Quantization** — FP8 (E4M3/E5M2) and NF4 dequantization kernels with real bit-manipulation
 
 ---
 
-## Roadmap
+## Precision
 
-- Flash Attention tiles (shared memory, 16x16 / 32x32)
-- Expanded quantization (int4 matmul, mixed-precision patterns)
-- Zig frontend via C++ shim (MLX-C once available)
-- JVP support for all catalog kernels
-- Community-contributed kernels
+All ZMLX Metal kernels compute internally in **float32** regardless of input dtype. The `compute_dtype` parameter accepted by many kernel functions is **deprecated** and will be removed in a future release. Passing a non-None value will emit a `DeprecationWarning`.
+
+---
+
+## Documentation
+
+- [`docs/QUICKSTART.md`](docs/QUICKSTART.md) — 5-minute tutorial
+- [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — Recipes for common patterns
+- [`docs/KERNELS.md`](docs/KERNELS.md) — Complete kernel catalog reference
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Design philosophy
 
 ---
 

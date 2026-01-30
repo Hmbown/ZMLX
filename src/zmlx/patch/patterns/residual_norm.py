@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import mlx.core as mx
 import mlx.nn as nn
 
 from .._registry import register
@@ -59,14 +58,6 @@ class _ResidualNormPattern:
         else:
             mlp_name = "ffn"
 
-        cd = (
-            getattr(mx, config.compute_dtype)
-            if isinstance(config.compute_dtype, str)
-            else config.compute_dtype
-        )
-        if cd is None:
-            cd = mx.float32
-
         original_call = module.__call__.__func__ if hasattr(module.__call__, "__func__") else None
 
         def _call_attn(attn_mod: Any, x_in: Any, mask: Any | None, cache: Any | None) -> Any:
@@ -103,13 +94,13 @@ class _ResidualNormPattern:
             attn_in = attn_norm(x)
             attn_out = _call_attn(attn_mod, attn_in, mask, cache)
 
+            tg = config.threadgroup if isinstance(config.threadgroup, int) else 256
             normed, updated_res = transformer.rmsnorm_residual(
                 attn_out,
                 x,
                 post_norm.weight,
                 eps=getattr(post_norm, "eps", 1e-6),
-                threadgroup=config.threadgroup,
-                compute_dtype=cd,
+                threadgroup=tg,
             )
 
             mlp_out = mlp_mod(normed)
