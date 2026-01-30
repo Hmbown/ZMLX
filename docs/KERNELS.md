@@ -6,7 +6,7 @@ This document lists the custom Metal kernels available in the `zmlx.kernels` pac
 >
 > 1. **Genuinely useful ops** that have no direct MLX equivalent or provide real
 >    fusion benefits (e.g. `softmax_cross_entropy`, `swiglu`, `pack_bits`,
->    `top2_gating_softmax`, `moe_dispatch`, `moe_combine`, `cumsum_lastdim`).
+>    `topk_gating_softmax`, `moe_dispatch`, `moe_combine`, `cumsum_lastdim`).
 >
 > 2. **Reference implementations** that demonstrate ZMLX codegen patterns
 >    (parallel reduction, map-reduce, elementwise with VJP). These are correct
@@ -159,7 +159,8 @@ All reductions operate over the **last dimension**.
 
 | Kernel | Description |
 |:--- |:--- |
-| `top2_gating_softmax(x)` | Select top 2 experts and return weights + indices |
+| `topk_gating_softmax(x, k)` | Select top-k experts and return weights + indices (fused Metal for k ≤ 8; bias/renorm-aware; MLX fallback otherwise) |
+| `top2_gating_softmax(x)` | Select top 2 experts and return weights + indices (fused Metal kernel) |
 | `moe_dispatch(x, indices)` | Fused token-to-expert dispatch |
 | `moe_combine(experts, weights)` | Fused expert-output combination and weighting |
 

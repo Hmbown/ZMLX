@@ -43,25 +43,20 @@ def _gating(self_mod: Any, x: Any, gate_attr: str, k: int) -> tuple[Any, Any]:
         indices, weights = gate_out
         return indices, weights
 
-    # Raw logits path — replicate the standard gating sequence exactly.
-    gates = gate_out.astype(mx.float32)
-    gates = mx.softmax(gates, axis=-1)
-
-    # Expert bias (LFM2-style): applied after softmax, before selection.
+    # Raw logits path — preserve the standard gating sequence exactly,
+    # but use the fused kernel when possible.
     expert_bias = getattr(self_mod, "expert_bias", None)
-    if expert_bias is not None:
-        gates = gates + expert_bias
+    norm_topk_prob = getattr(self_mod, "norm_topk_prob", False)
 
-    # Top-k selection.
-    inds = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
-    scores = mx.take_along_axis(gates, inds, axis=-1)
-
-    # Optional renormalization so selected weights sum to 1.
-    if getattr(self_mod, "norm_topk_prob", False):
-        scores = scores / (mx.sum(scores, axis=-1, keepdims=True) + 1e-20)
-
-    scores = scores.astype(x.dtype)
-    return inds, scores
+    weights, indices = moe.topk_gating_softmax(
+        gate_out,
+        k=k,
+        expert_bias=expert_bias,
+        norm_topk_prob=norm_topk_prob,
+        compute_dtype=mx.float32,
+    )
+    weights = weights.astype(x.dtype)
+    return indices, weights
 
 
 class _MoEMLPPattern:

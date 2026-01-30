@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-01-30
+
+### Added
+
+- **SIMD-group MoE gating kernels**: top-k gating now uses `simd_max` / `simd_sum` for D ≤ 32 to
+  eliminate threadgroup barriers on common 32-expert MoE setups.
+- **Bias-aware fused gating**: expert-bias + `norm_topk_prob` paths are fused when possible.
+- **LFM2 benchmarks (M1 Pro, 16 GB)**: updated results with SIMD gating.
+
+## [0.6.2] - 2026-01-30
+
+### Fixed
+
+- **MoE pattern uses model's actual `num_experts_per_tok`**: previously
+  hardcoded top-2 regardless of model config, causing incorrect routing
+  on models with top-4/6/8 (LFM2, Qwen3-MoE, GPT-OSS). Now reads
+  `top_k`/`num_experts_per_tok` dynamically from the module.
+- **MoE gating preserves model logic exactly**: pattern now replicates
+  each model's original gating sequence (softmax ordering, `expert_bias`,
+  `norm_topk_prob`) and only fuses the combine step. Output is bit-for-bit
+  identical to unpatched (max logit diff 2.6e-6).
+
+### Added
+
+- **`topk_gating_softmax(x, k)`** kernel: dispatches to fused Metal kernel
+  for k=2, standard MLX ops for other k values.
+- **`router` attribute support**: MoE pattern now matches modules with
+  `router` (GPT-OSS) in addition to `gate` (Qwen3, Mixtral, LFM2).
+- **LFM2-8B-A1B benchmark**: validated on Liquid AI's MoE model (32 experts,
+  top-4 routing, 8-bit). Correct routing with dynamic expert selection.
+- **Missing `moe_mlp` import** in `_registry.py` `_ensure_loaded()`.
+
 ## [0.6.1] - 2026-01-30
 
 ### Fixed
@@ -254,7 +286,8 @@ First public release.
 - **Release workflow** (`.github/workflows/release.yml`) for PyPI trusted publishing.
 - **Benchmarks** (`benchmarks/microbench.py`) with timing comparisons vs MLX reference ops.
 
-[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/Hmbown/ZMLX/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Hmbown/ZMLX/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Hmbown/ZMLX/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Hmbown/ZMLX/compare/v0.4.2...v0.5.0
