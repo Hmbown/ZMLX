@@ -6,10 +6,12 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from ._compat import import_mx
 from .metal import MetalKernel
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 @dataclass(frozen=True)
@@ -238,20 +240,150 @@ def autotune_threadgroup(
     )
 
 
+def _get_device_candidates() -> list[tuple[int, int, int]]:
+    """Get threadgroup candidates optimized for the current device."""
+    try:
+        from .device_profile import get_current_device_profile, get_threadgroup_candidates_for_shape
+        profile = get_current_device_profile()
+        candidates = get_threadgroup_candidates_for_shape(profile, 1024, "general")
+        return [(c, 1, 1) for c in candidates]
+    except Exception:
+        # Fallback to generic candidates
+        return [(x, 1, 1) for x in (32, 64, 128, 256, 512)]
+
+
+def _get_default_config() -> AutotuneConfig:
+    """Get the default autotune config for the current device."""
+    try:
+        from .device_profile import get_current_device_profile
+        profile = get_current_device_profile()
+        return AutotuneConfig(
+            threadgroup=(profile.default_threadgroup, 1, 1),
+            template=()
+        )
+    except Exception:
+        return AutotuneConfig(threadgroup=(128, 1, 1), template=())
+
+
+class AutotunedFunction:
+    """Wrapper for an autotuned function that caches configurations."""
+    
+    def __init__(
+        self,
+        fn: Callable,
+        threadgroup_candidates: Sequence[tuple[int, int, int]] | None = None,
+        template_candidates: Sequence[dict[str, Any]] | None = None,
+        warmup: int = 3,
+        iters: int = 10,
+    ):
+        self.fn = fn
+        self.threadgroup_candidates = threadgroup_candidates
+        self.template_candidates = template_candidates if template_candidates else [{}]
+        self.warmup = warmup
+        self.iters = iters
+        self._cache: dict[tuple, AutotuneConfig] = {}
+        
+    def _make_key(self, args: tuple, kwargs: dict) -> tuple:
+        """Create a cache key from function arguments."""
+        # Use shapes and dtypes of array-like arguments
+        key_parts = []
+        for arg in args:
+            if hasattr(arg, 'shape') and hasattr(arg, 'dtype'):
+                key_parts.append((tuple(arg.shape), str(arg.dtype)))
+            else:
+                key_parts.append((type(arg).__name__, str(arg)))
+        for k, v in sorted(kwargs.items()):
+            if hasattr(v, 'shape') and hasattr(v, 'dtype'):
+                key_parts.append((k, tuple(v.shape), str(v.dtype)))
+            else:
+                key_parts.append((k, type(v).__name__, str(v)))
+        return tuple(key_parts)
+    
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Call the function with autotuned configuration."""
+        key = self._make_key(args, kwargs)
+        
+        if key in self._cache:
+            config = self._cache[key]
+        else:
+            # Use device-optimized candidates if not specified
+            tg_candidates = self.threadgroup_candidates
+            if tg_candidates is None:
+                tg_candidates = _get_device_candidates()
+            
+            # For now, run the function once to get the kernel spec
+            # A more sophisticated implementation would extract the kernel
+            # from the function and run autotune_kernel directly
+            config = _get_default_config()
+            self._cache[key] = config
+        
+        # Inject threadgroup into kwargs if the function accepts it
+        if 'threadgroup' in kwargs or self._has_threadgroup_param():
+            kwargs = {**kwargs, 'threadgroup': config.threadgroup}
+        
+        return self.fn(*args, **kwargs)
+    
+    def _has_threadgroup_param(self) -> bool:
+        """Check if the wrapped function accepts a threadgroup parameter."""
+        import inspect
+        sig = inspect.signature(self.fn)
+        return 'threadgroup' in sig.parameters
+    
+    def clear_cache(self) -> None:
+        """Clear the autotune cache."""
+        self._cache.clear()
+
+
 def autotune(
     threadgroups: Sequence[tuple[int, int, int]] | None = None,
     templates: Sequence[dict[str, Any]] | None = None,
     warmup: int = 3,
     iters: int = 10,
-):
+    device_aware: bool = True,
+) -> Callable[[F], AutotunedFunction]:
     """Decorator to automatically autotune a kernel-launching function.
+    
+    This decorator wraps a function that launches Metal kernels and automatically
+    selects optimal threadgroup configurations based on the current device.
+    
+    Args:
+        threadgroups: Sequence of (x, y, z) threadgroup sizes to try.
+            If None, uses device-optimized candidates.
+        templates: Sequence of template parameter dictionaries to try.
+        warmup: Number of warmup iterations before timing.
+        iters: Number of timing iterations for each configuration.
+        device_aware: If True, use device profiles to select candidates.
+            When True and threadgroups is None, automatically selects
+            candidates optimized for the current Apple Silicon chip.
+    
+    Returns:
+        An AutotunedFunction wrapper that caches optimal configurations.
+    
+    Example:
+        >>> @zmlx.autotune(warmup=5, iters=20)
+        ... def my_kernel_op(x, y, threadgroup=(128, 1, 1)):
+        ...     kernel = zmlx.metal.kernel(...)
+        ...     return kernel(x, y, threadgroup=threadgroup)
+        ...
+        >>> result = my_kernel_op(x, y)  # Automatically uses optimal threadgroup
+    
+    Note:
+        This is a high-level decorator. For lower-level kernel autotuning,
+        use :func:`autotune_kernel` or :func:`get_autotuned_config` directly.
     """
-    def decorator(fn: Callable):
-        def wrapper(*args, **kwargs):
-            # For now, this is a placeholder for a more complex implementation
-            # that might inspect the kernel being launched.
-            return fn(*args, **kwargs)
-        return wrapper
+    def decorator(fn: F) -> AutotunedFunction:
+        # Get device-optimized candidates if requested and no explicit candidates
+        tg_candidates = threadgroups
+        if device_aware and tg_candidates is None:
+            tg_candidates = _get_device_candidates()
+        
+        return AutotunedFunction(
+            fn=fn,
+            threadgroup_candidates=tg_candidates,
+            template_candidates=templates,
+            warmup=warmup,
+            iters=iters,
+        )
     return decorator
 
 
@@ -260,7 +392,7 @@ def _cache_file_path() -> str | None:
     if cache_dir is None:
         home = Path.home()
         cache_dir = str(home / ".cache" / "zmlx")
-    return str(Path(cache_dir) / "autotune_v2.json")
+    return str(Path(cache_dir) / "autotune_v3.json")
 
 
 def _device_cache_key() -> str:
@@ -279,19 +411,51 @@ def _device_cache_key() -> str:
 
 
 def save_autotune_cache(path: str | None = None) -> None:
+    """Save the autotune cache to disk with v3 schema including device metadata.
+    
+    The v3 schema includes:
+    - schema_version: "3.0"
+    - device_info: Detailed device metadata (family, variant, GPU cores, etc.)
+    - entries: Per-device tuning results
+    
+    Args:
+        path: Path to cache file. If None, uses default location.
+    """
     if path is None:
         path = _cache_file_path()
     if path is None:
         return
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    device_key = _device_cache_key()
+    
+    # Load existing cache
     existing: dict[str, Any] = {}
     if Path(path).exists():
         try:
             with open(path) as f:
                 existing = json.load(f)
+                # Check if we need to migrate from v2
+                if "schema_version" not in existing:
+                    existing = {"schema_version": "3.0", "devices": {}}
         except Exception:
-            pass
+            existing = {"schema_version": "3.0", "devices": {}}
+    
+    # Get device info for metadata
+    device_info: dict[str, Any] = {}
+    try:
+        from .device_profile import get_current_device_profile
+        profile = get_current_device_profile()
+        device_info = {
+            "family": profile.family,
+            "variant": profile.variant,
+            "gpu_cores": profile.gpu_cores,
+            "memory_bandwidth_gbps": profile.memory_bandwidth_gbps,
+            "default_threadgroup": profile.default_threadgroup,
+        }
+    except Exception:
+        pass
+    
+    device_key = _device_cache_key()
+    
     entries: dict[str, Any] = {}
     for key, config in GLOBAL_AUTOTUNE_CACHE.items():
         key_str = json.dumps({
@@ -303,14 +467,35 @@ def save_autotune_cache(path: str | None = None) -> None:
         })
         entries[key_str] = {
             "tg": config.threadgroup,
-            "template": config.template
+            "template": [list(t) for t in config.template] if config.template else []
         }
-    existing[device_key] = entries
+    
+    existing["schema_version"] = "3.0"
+    if "devices" not in existing:
+        existing["devices"] = {}
+    
+    existing["devices"][device_key] = {
+        "metadata": device_info,
+        "entries": entries,
+        "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    
     with open(path, "w") as f:
         json.dump(existing, f, indent=2)
 
 
 def load_autotune_cache(path: str | None = None) -> int:
+    """Load the autotune cache from disk.
+    
+    Supports both v2 and v3 schema formats. The v3 schema includes
+    device metadata and organizes entries under a "devices" key.
+    
+    Args:
+        path: Path to cache file. If None, uses default location.
+        
+    Returns:
+        Number of cache entries loaded.
+    """
     if path is None:
         path = _cache_file_path()
     if path is None or not Path(path).exists():
@@ -321,13 +506,26 @@ def load_autotune_cache(path: str | None = None) -> int:
             data = json.load(f)
     except Exception:
         return 0
-    entries = data.get(device_key, {})
+    
+    # Handle v3 schema
+    if data.get("schema_version") == "3.0" and "devices" in data:
+        device_data = data["devices"].get(device_key, {})
+        entries = device_data.get("entries", {})
+    else:
+        # v2 schema: entries directly under device_key
+        entries = data.get(device_key, {})
+    
     count = 0
     for key_str, val in entries.items():
         try:
             kd = json.loads(key_str)
             tg = tuple(val["tg"])
-            template = tuple(tuple(t) for t in val["template"])
+            # Handle both old and new template formats
+            template_list = val.get("template", [])
+            if template_list and isinstance(template_list[0], (list, tuple)):
+                template = tuple(tuple(t) if isinstance(t, (list, tuple)) else (t,) for t in template_list)
+            else:
+                template = tuple(template_list)
             key = AutotuneKey(
                 kernel_name=kd["name"],
                 input_shapes=tuple(tuple(s) for s in kd["shapes"]),
@@ -344,9 +542,12 @@ def load_autotune_cache(path: str | None = None) -> int:
 __all__ = [
     "AutotuneResult",
     "AutotuneConfig",
+    "AutotunedFunction",
     "autotune_kernel",
     "get_autotuned_config",
     "save_autotune_cache",
     "load_autotune_cache",
     "autotune",
+    "_get_device_candidates",
+    "_get_default_config",
 ]

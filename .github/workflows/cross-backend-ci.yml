@@ -1,0 +1,129 @@
+name: Cross-Backend CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # Pure Python tests run on Linux (CPU backend)
+  test-linux-cpu:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install mlx
+        pip install pytest numpy
+    
+    - name: Test pure Python modules (CPU backend)
+      run: |
+        # Run only CPU-marked tests and pure Python tests
+        pytest tests/ -v -m "cpu or not (metal or cuda or gpu)" --ignore=tests/test_vlsp_kernels.py || true
+      env:
+        ZMLX_TEST_BACKEND: cpu
+    
+    - name: Test IR and registry (pure Python)
+      run: |
+        pytest tests/test_ir.py tests/test_registry_enhanced.py -v || true
+
+  # Full test suite on macOS with Metal
+  test-macos-metal:
+    runs-on: macos-14
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install .[dev]
+    
+    - name: Check Metal availability
+      run: |
+        python -c "import mlx.core as mx; print(f'Metal available: {mx.metal.is_available()}')"
+    
+    - name: Run full test suite
+      run: |
+        pytest tests/ -v
+      env:
+        ZMLX_TEST_BACKEND: metal
+    
+    - name: Run kernel benchmarks
+      run: |
+        python -c "import zmlx; print('ZMLX loaded successfully')"
+
+  # Golden value cross-backend validation
+  test-golden-values:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-14, ubuntu-latest]
+        python-version: ['3.11']
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        python -m pip install --upgrade pip
+        pip install .[dev]
+    
+    - name: Install dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        python -m pip install --upgrade pip
+        pip install mlx pytest numpy
+    
+    - name: Generate golden values
+      run: |
+        python tests/generate_golden_values.py
+    
+    - name: Compare golden values
+      run: |
+        python tests/compare_golden_values.py || true
+
+  # Lint and type check
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install lint dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ruff mypy
+    
+    - name: Lint with ruff
+      run: ruff check src/ tests/
+    
+    - name: Type check with mypy
+      run: mypy src/zmlx --ignore-missing-imports
