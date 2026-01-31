@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use ZMLX in your research, please cite it as below."
+authors:
+  - family-names: "Bown"
+    given-names: "Hunter"
+title: "ZMLX: Fused Metal kernels for MLX on Apple Silicon"
+version: 0.7.11
+date-released: 2026-01-31
+url: "https://github.com/Hmbown/ZMLX"
+license: MIT
+references:
+  - type: software
+    authors:
+      - family-names: "Hannun"
+        given-names: "Awni"
+      - family-names: "Digani"
+        given-names: "Jagrit"
+      - family-names: "Katharopoulos"
+        given-names: "Angelos"
+      - family-names: "Collobert"
+        given-names: "Ronan"
+    title: "MLX: Efficient and flexible machine learning on Apple silicon"
+    url: "https://github.com/ml-explore/mlx"
+    year: 2023
