@@ -1,14 +1,14 @@
-# ZMLX - Triton for Apple Silicon
+# ZMLX - Triton-style kernels for Apple Silicon
 
 [![PyPI](https://img.shields.io/pypi/v/zmlx.svg)](https://pypi.org/project/zmlx/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform: macOS Apple Silicon](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-lightgrey.svg)](https://github.com/ml-explore/mlx)
 
-**A Metal-kernel toolkit and optimization lab for [MLX](https://github.com/ml-explore/mlx)** — write custom GPU kernels in Python, patch models with fused ops, and prototype fused C++ Metal primitives for upstream MLX.
+**A Metal kernel toolkit and upstream incubation lab for [MLX](https://github.com/ml-explore/mlx)** — author custom GPU kernels in Python, apply fused model patches, and prototype C++ Metal primitives for upstream MLX.
 
 Toolkit highlights (available via `pip install zmlx` on stock MLX):
-- SwiGLU 2.0x, Dropout 7.5x, Top-K 3.7x on op-level microbench
+- SwiGLU 2.0x, Dropout 7.5x, Top-K 3.7x in op-level microbenchmarks
 - 70+ kernel catalog, autograd, benchmarking utilities, and model patching
 
 > **Validated benchmarks** (M4 Max 36 GB, MLX 0.30.4.dev, Jan 31, 2026):
@@ -19,13 +19,13 @@ Toolkit highlights (available via `pip install zmlx` on stock MLX):
 > | **Neutral (1.01x)** on Qwen3-4B-4bit (dense) | 125.3 vs 124.4 tok/s | Safe on dense models |
 > | **+4% per MoE layer** on LFM2-8B-A1B-4bit (MoE, E=32, K=4) | 293 us -> 282 us at M=1 decode | Kernel-level bench; E2E too noisy to report |
 >
-> Fused SwiGLU requires a [local MLX build](#optimization-lab) with `gather_qmm_swiglu`. On stock MLX, gating+combine-only can be neutral to negative (Qwen3-30B regressed 0.95-0.98x), so use `smart_patch` or a fused build for MoE models.
+> Fused SwiGLU requires a [local MLX build](#optimization-lab) with `gather_qmm_swiglu`. On stock MLX, gating+combine-only can be neutral to slightly negative (Qwen3-30B measured 0.95–0.98x), so use `smart_patch` or a fused build for MoE models.
 
 ```bash
 pip install zmlx
 ```
 
-**Speed up MoE inference in 3 lines:**
+**MoE patching example:**
 
 ```python
 import mlx_lm
@@ -35,7 +35,7 @@ model, tokenizer = mlx_lm.load("mlx-community/Qwen3-30B-A3B-4bit")
 patch(model)  # best on MoE with fused MLX; use smart_patch on stock MLX
 ```
 
-**Or write custom GPU kernels in one line:**
+**Custom kernel example:**
 
 ```python
 from zmlx.api import elementwise
@@ -52,13 +52,13 @@ y = mish(mx.random.normal((1024,)))
 
 ### Fused expert SwiGLU (`gather_qmm_swiglu`)
 
-ZMLX now prototypes fused C++ Metal primitives in a local MLX fork. The first: `gather_qmm_swiglu` — fuses gate projection + up projection + SwiGLU activation into a single kernel launch, reading the input tensor once instead of twice.
+ZMLX prototypes fused C++ Metal primitives in a local MLX fork. The first: `gather_qmm_swiglu` — fuses gate projection + up projection + SwiGLU activation into a single kernel launch, reading the input tensor once instead of twice.
 
 - **+5-8% decode** on Qwen3-30B-A3B-4bit (119-122 vs 113-114 tok/s, E2E)
 - **+4% per MoE layer** on LFM2-8B-A1B-4bit (293 us → 282 us at M=1 decode, kernel-level)
 - **Neutral (1.01x)** on Qwen3-4B-4bit (dense, E2E)
 - Auto-enabled by `patch(model)` when available; falls back to two-pass otherwise
-- Threshold-guarded: fused kernel used for M<=32 (decode/small prefill), falls back at large M where it regresses
+- Threshold-guarded: fused kernel used for M<=32 (decode/small prefill), falls back at large M where it is slower
 - Added kernel-level + E2E benchmark scripts plus correctness tests
 
 Requires building MLX from the local fork (`mlx_local/`). See [Optimization Lab](#optimization-lab) for details. Upstream PR to MLX planned.
@@ -273,7 +273,7 @@ Run `python benchmarks/microbench.py` to reproduce on your hardware.
 | Sum | 0.22 ms | 0.37 ms | 0.58x |
 | CumSum | 0.32 ms | 0.62 ms | 0.52x |
 
-ZMLX wins big on **fused operations** that MLX doesn't provide as single ops (SwiGLU, fused-RNG dropout, fused gather-add). MLX's built-in operations (`mx.fast.rms_norm`, `mx.softmax`, reductions) are already highly optimized and should not be replaced.
+ZMLX is most effective for **fused operations** that MLX does not provide as single ops (SwiGLU, fused-RNG dropout, fused gather-add). MLX built-ins (`mx.fast.rms_norm`, `mx.softmax`, reductions) are already highly optimized and remain the preferred choice for standard transformer shapes.
 
 ### Model-level inference (E2E)
 
@@ -290,7 +290,7 @@ All baselines are **unmodified `mlx_lm`**. ZMLX rows add `patch(model)`. Same mo
 | `patch(model)` — gating + combine only | 109-111 | 0.95-0.98x |
 | `patch(model)` — with fused SwiGLU | 119-122 | **+5-8%** |
 
-> Fused SwiGLU requires local MLX build. Gating+combine alone regresses on this model.
+> Fused SwiGLU requires a local MLX build. Gating+combine alone measured below baseline on this model.
 
 **LFM2-8B-A1B-4bit** (MoE, 24 layers, E=32, K=4) — E2E is too noisy at ~20k tok/s.  
 Use the kernel-level MoE layer benchmark below as the authoritative measurement.
@@ -352,7 +352,7 @@ python benchmarks/bench_moe_suite.py \
 | M=16, K=2048, N=1024 | 243 us | 229 us | 1.06x |
 | M=64, K=2048, N=1024 | 240 us | 534 us | 0.45x |
 
-> Fused kernel wins at small M (decode), regresses at large M (prefill). The patch auto-selects: fused for M<=32, two-pass fallback otherwise.
+> Fused kernel improves small M (decode) and is slower at large M (prefill). The patch auto-selects: fused for M<=32, two-pass fallback otherwise.
 
 ### Next steps (roadmap)
 
@@ -362,7 +362,7 @@ python benchmarks/bench_moe_suite.py \
 - **Per-device autotune profiles** (better defaults by chip family)
 
 **When do patches help?**
-- **MoE Models (4-bit)**: Best case with fused SwiGLU on a local MLX build. Qwen3-30B gets **+5-8%** E2E; LFM2 shows **+4% per MoE layer** at decode (E2E too noisy to report). On stock MLX, gating+combine can regress — use `smart_patch` or exclude `moe_mlp`.
+- **MoE Models (4-bit)**: Best case with fused SwiGLU on a local MLX build. Qwen3-30B gets **+5-8%** E2E; LFM2 shows **+4% per MoE layer** at decode (E2E too noisy to report). On stock MLX, gating+combine can be slower — use `smart_patch` or exclude `moe_mlp`.
 - **MoE Models (8-bit)**: Fused SwiGLU is less impactful; benchmark before enabling.
 - **MoE Models (pre-computed gating)**: GLM-4, DeepSeek-V3 — neutral. Gate is already `@mx.compile`-optimized.
 - **Dense Models (any size)**: Neutral. Decode is bandwidth-bound; Qwen3-4B is 1.01x.
@@ -388,7 +388,7 @@ patch(model, mode="training")   # training: adds norm fusions for backward pass 
 from zmlx.patch import ALL_PATTERNS, FUSED_ACTIVATIONS, TRAINING_RECOMMENDED
 patch(model, patterns=FUSED_ACTIVATIONS)       # same as default
 patch(model, patterns=TRAINING_RECOMMENDED)    # same as mode="training"
-patch(model, patterns=ALL_PATTERNS)            # WARNING: can regress on inference
+patch(model, patterns=ALL_PATTERNS)            # WARNING: can be slower on inference
 ```
 
 ### Smart patching
@@ -431,7 +431,7 @@ my_softmax = map_reduce(..., threadgroup="auto")  # autotunes per-shape
 
 ### Where ZMLX genuinely helps
 
-- **MoE model inference** — best results with fused expert SwiGLU (`gather_qmm_swiglu`, local MLX build). Qwen3-30B gets **+5-8%** E2E; LFM2 shows **+4% per layer** at decode. On stock MLX, use `smart_patch` to avoid gating+combine regressions. Supports Qwen3-MoE, LFM2, Mixtral, GPT-OSS.
+- **MoE model inference** — best results with fused expert SwiGLU (`gather_qmm_swiglu`, local MLX build). Qwen3-30B gets **+5-8%** E2E; LFM2 shows **+4% per layer** at decode. On stock MLX, use `smart_patch` to avoid gating+combine slowdowns. Supports Qwen3-MoE, LFM2, Mixtral, GPT-OSS.
 - **Prototyping MLX-level optimizations** — ZMLX's optimization lab incubates C++ Metal primitives. Prove value with benchmarks here, then upstream to MLX for everyone.
 - **Custom ops that MLX doesn't have** — SwiGLU, GeGLU, fused dropout, fused MoE gating, bit packing
 - **Training** — fused `softmax_cross_entropy` loss, correct weight gradients for `rmsnorm_residual`
@@ -476,7 +476,7 @@ CMAKE_ARGS='-DMETAL_CPP_URL=file:///path/to/ZMLX/mlx_local/third_party/metal-cpp
 pip install -e mlx_local --no-build-isolation
 ```
 
-ZMLX auto-detects the fused primitives at runtime. If you're on stock MLX, `patch(model)` uses the standard two-pass path — for MoE models, prefer `smart_patch` to avoid gating+combine regressions.
+ZMLX auto-detects the fused primitives at runtime. If you're on stock MLX, `patch(model)` uses the standard two-pass path — for MoE models, prefer `smart_patch` to avoid gating+combine slowdowns.
 
 ### The plan
 
