@@ -20,18 +20,25 @@ Toolkit highlights (available via `pip install zmlx` on stock MLX):
 > | Result | Measurement | Notes |
 > |:--|:--|:--|
 > | **+4% per MoE layer** on LFM2-8B-A1B-4bit (MoE, E=32, K=4) | 293 us -> 282 us at M=1 decode | Kernel-level bench; E2E too noisy to report |
-> | **+5-8% decode** on Qwen3-30B-A3B-4bit (MoE, E=128, K=8) | 119-122 tok/s vs 113-114 | Best E2E speed; requires local MLX build with `gather_qmm_swiglu` |
-> | **Neutral (1.01x)** on Qwen3-4B-4bit (dense) | 125.3 vs 124.4 tok/s | Safe on dense models |
+> | **+14% decode** on LFM2-8B-A1B-4bit (default FUSED_ACTIVATIONS) | 224.2 -> 255.0 tok/s | Token-identical in `zmlx.validate` (200-token greedy) |
+> | **Qwen3-30B-A3B-4bit (moe_mlp)** | 110.5 -> 120.7 tok/s | **Not token-identical** (13/200; diverges at token 0) |
+> | **Qwen3-4B-4bit (swiglu_mlp default)** | 128.6 -> 129.0 tok/s | **Not token-identical** (21/200; diverges at token 18) |
 >
-> Fused SwiGLU requires a [local MLX build](#optimization-lab) with `gather_qmm_swiglu`. On stock MLX, gating+combine-only can be neutral to slightly negative (Qwen3-30B measured 0.95–0.98x), so use `smart_patch` or a fused build for MoE models.
+> E2E numbers above are from `python -m zmlx.validate` with a fixed 200-token greedy prompt and are best used for relative comparisons. Fast models can show variance.
+>
+> Fused SwiGLU requires a [local MLX build](#optimization-lab) with `gather_qmm_swiglu`. On stock MLX, gating+combine-only can be neutral to slightly negative, so use `smart_patch` or a fused build for MoE models and verify token fidelity.
 >
 > **Token fidelity** (greedy decode vs unpatched `mlx_lm`, Jan 31, 2026):
 >
-> | Model | Default patch | Tokens matching | Notes |
+> | Model | Pattern(s) | Tokens matching | Notes |
 > |:--|:--|:--|:--|
-> | LFM2-8B-A1B-4bit | `patch(model)` | 200/200 | Token-identical in internal test |
-> | Qwen3-30B-A3B-4bit | `patch(model)` | 18/50 | Gating semantics differ (full-softmax vs top-k softmax) |
-> | GPT-OSS-20B-MXFP4-Q4 | `patch(model)` | 0/50 | Combine-only improves to 38/50 |
+> | LFM2-8B-A1B-4bit | `moe_mlp`, default FUSED_ACTIVATIONS | 200/200 | Token-identical in `zmlx.validate` (200 tokens) |
+> | LFM2-8B-A1B-8bit | `moe_mlp` | 200/200 | Token-identical in `zmlx.validate` (200 tokens) |
+> | Qwen3-30B-A3B-4bit | `moe_mlp` | 13/200 | Diverges at token 0; `residual_norm` is 101/200 |
+> | GPT-OSS-20B-MXFP4-Q4 | `moe_mlp` | 2/50 | `residual_norm` improves to 29/50 |
+> | Qwen3-4B-4bit | `swiglu_mlp` (default) | 21/200 | Diverges at token 18 |
+> | Llama-3.2-1B-Instruct-4bit | `residual_norm` | 200/200 | Small decode regression (~0.98x) |
+> | Qwen3-8B-4bit | `residual_norm` | 29/200 | Diverges at token 27 |
 >
 > Results are single-prompt greedy decode checks; see `experiments/gpt_oss_20b_moe.md` for GPT-OSS details.
 > If you require strict parity, use baseline `mlx_lm` or `smart_patch` with `moe_mlp` excluded.
@@ -56,15 +63,43 @@ Toolkit highlights (available via `pip install zmlx` on stock MLX):
 pip install zmlx
 ```
 
-**MoE patching example:**
+### LFM2 with ZMLX
+
+Works with both [4bit](https://huggingface.co/mlx-community/LFM2-8B-A1B-4bit) and [8bit](https://huggingface.co/mlx-community/LFM2-8B-A1B-8bit-MLX):
 
 ```python
 import mlx_lm
 from zmlx.patch import patch
 
-model, tokenizer = mlx_lm.load("mlx-community/LFM2-8B-A1B-4bit")
-patch(model)  # best on MoE with fused MLX; use smart_patch on stock MLX
+model, tokenizer = mlx_lm.load("mlx-community/LFM2-8B-A1B-8bit-MLX")
+patch(model)  # patches 22 MoE layers + 2 dense SwiGLU layers
+
+text = mlx_lm.generate(model, tokenizer,
+    prompt="Explain mixture-of-experts models in one paragraph.",
+    max_tokens=100)
+print(text)
 ```
+
+Output (token-identical to unpatched `mlx_lm`):
+
+```
+A mixture-of-experts model is a neural architecture that combines multiple
+specialized sub-networks (or "experts") to solve complex tasks by dynamically
+routing input data to the most relevant expert based on content, enabling
+efficient, scalable, and interpretable reasoning through collaborative
+decision-making among diverse specialized components.
+```
+
+> **LFM2 speed & fidelity** (M4 Max 36 GB, `python -m zmlx.validate`, Jan 31, 2026):
+>
+> | | 4bit | 8bit |
+> |:--|:--|:--|
+> | **Token fidelity** | 200/200 identical | 200/200 identical |
+> | **E2E decode** | 224 -> 255 tok/s (**+14%**) | 153 -> 170 tok/s (**+11%**) |
+> | **Memory** | 5.3 GB | 9.5 GB |
+> | **Kernel-level** | +4% per MoE layer (293 -> 282 us, decode) | Same architecture, similar improvement |
+>
+> Both variants fit on 16 GB M-series Macs. `patch(model)` auto-detects LFM2 and applies the validated pattern set (`moe_mlp` + `swiglu_mlp`).
 
 **Custom kernel example:**
 
@@ -79,7 +114,7 @@ y = mish(mx.random.normal((1024,)))
 
 ---
 
-## What's New in v0.7.0
+## What's New in v0.7.1
 
 ### Fused expert SwiGLU (`gather_qmm_swiglu`)
 
@@ -323,8 +358,16 @@ All baselines are **unmodified `mlx_lm`**. ZMLX rows add `patch(model)`. Same mo
 
 > Fused SwiGLU requires a local MLX build. Gating+combine alone measured below baseline on this model.
 
-**LFM2-8B-A1B-4bit** (MoE, 24 layers, E=32, K=4) — E2E is too noisy at ~20k tok/s.  
-Use the kernel-level MoE layer benchmark below as the authoritative measurement.
+**LFM2-8B-A1B** (MoE, 24 layers, E=32, K=4) — both [4bit](https://huggingface.co/mlx-community/LFM2-8B-A1B-4bit) and [8bit](https://huggingface.co/mlx-community/LFM2-8B-A1B-8bit-MLX) variants.
+
+| Config | Decode (tok/s) | vs Baseline |
+|:--|--:|:--|
+| Baseline 4bit | 224 | — |
+| `patch(model)` 4bit | 255 | **+14%** |
+| Baseline 8bit | 153 | — |
+| `patch(model)` 8bit | 170 | **+11%** |
+
+Output is **token-identical** to unpatched `mlx_lm` (200/200 tokens, greedy). Both variants fit on 16 GB M-series Macs (5.3 GB 4bit / 9.5 GB 8bit). See [example above](#lfm2-with-zmlx).
 
 #### Dense models (neutral — expected)
 
@@ -393,16 +436,49 @@ python benchmarks/bench_moe_suite.py \
 - **Per-device autotune profiles** (better defaults by chip family)
 
 **When do patches help?**
-- **MoE Models (4-bit)**: Best case with fused SwiGLU on a local MLX build. Qwen3-30B gets **+5-8%** E2E; LFM2 shows **+4% per MoE layer** at decode (E2E too noisy to report). Token fidelity is model-specific: LFM2 is token-identical in internal testing; Qwen3/GPT-OSS can diverge with the default patch. On stock MLX, gating+combine can be slower — use `smart_patch` or exclude `moe_mlp`.
-- **MoE Models (8-bit)**: Fused SwiGLU is less impactful; benchmark before enabling.
-- **MoE Models (pre-computed gating)**: GLM-4, DeepSeek-V3 — neutral. Gate is already `@mx.compile`-optimized.
-- **Dense Models (any size)**: Neutral. Decode is bandwidth-bound; Qwen3-4B is 1.01x.
+- **LFM2 (MoE, 4-bit/8-bit)**: Best supported model. **+14% decode** on 4-bit, **+11%** on 8-bit, token-identical. `patch(model)` auto-applies the right patterns.
+- **Qwen3-MoE / GPT-OSS**: `moe_mlp` improves speed (+9% on Qwen3-30B) but breaks token fidelity. `patch(model)` auto-excludes these. Fix pending — likely a gating normalization mismatch.
+- **Dense models (Qwen3-4B, Llama, etc.)**: Neutral. Decode is bandwidth-bound. `swiglu_mlp` can diverge on Qwen3 quantized variants.
+- **GLM-4, DeepSeek-V3**: Neutral. Pre-computed gating is already `@mx.compile`-optimized.
+
+### Tested & validated models
+
+Models below were tested with `python -m zmlx.validate` (200-token greedy decode, M4 Max, Jan 2026). `patch(model)` auto-detects the model family and applies only validated patterns.
+
+| Model | `patch(model)` applies | Decode speedup | Token fidelity |
+|:--|:--|:--|:--|
+| **LFM2-8B-A1B-4bit** | `moe_mlp` + `swiglu_mlp` | **1.14x** (224 -> 255 tok/s) | 200/200 |
+| **LFM2-8B-A1B-8bit** | `moe_mlp` | **1.11x** (153 -> 170 tok/s) | 200/200 |
+| Qwen3-30B-A3B-4bit | *auto-excluded* | — | fails at token 0 |
+| Qwen3-4B-4bit | *auto-excluded* | — | fails at token 18 |
+| GPT-OSS-20B-MXFP4-Q4 | *auto-excluded* | — | fails at token 1 |
+| Llama-3.2-1B-4bit | neutral | 0.98x | 200/200 |
+
+For models not listed here, run `python -m zmlx.validate <model>` before deploying. You can override auto-exclusions with `patch(model, patterns=[...])`.
+
+### Model-aware defaults (v0.7.1)
+
+`patch(model)` detects the model architecture and skips patterns with known fidelity issues:
+
+```python
+patch(model)
+# LFM2:  applies moe_mlp + swiglu_mlp (+14% decode, token-identical)
+# Qwen3: auto-excludes moe_mlp, swiglu_mlp (fidelity issues)
+# Other: applies FUSED_ACTIVATIONS defaults
+```
+
+To force a specific pattern (at your own risk):
+
+```python
+patch(model, patterns=["moe_mlp"])  # prints a fidelity warning for Qwen
+```
+
+To auto-benchmark and keep only what speeds things up:
 
 ```python
 from zmlx.patch import smart_patch
 import mlx.core as mx
 
-# Auto-benchmark each pattern, keep only what helps
 sample = mx.array([tokenizer.encode("Hello")])
 model = smart_patch(model, sample)
 ```
@@ -473,7 +549,7 @@ my_softmax = map_reduce(..., threadgroup="auto")  # autotunes per-shape
 
 - **Expert matmuls are the bottleneck** — for M=1 decode, MoE layers do 3 gather_qmm calls per layer (gate, up, down). Fusing gate+up+SwiGLU into one kernel (`gather_qmm_swiglu`) saves one full read of the input tensor.
 - **E2E gains are a compound effect** — on Qwen3-30B, 48 MoE layers x one eliminated dispatch saves ~240 us per token (~2.7% of 8.85 ms/token), plus reduced intermediate memory pressure and fewer graph nodes.
-- **Fast models need kernel-level timing** — LFM2 runs at ~20k tok/s, so E2E variance is 20-40%. The kernel-level MoE layer benchmark is the reliable measurement (+4% per layer at decode).
+- **Kernel-level timing complements E2E** — LFM2 E2E shows +14% (224 -> 255 tok/s) with some run-to-run variance. The kernel-level MoE layer benchmark (+4% per layer at decode, p50 over 500 iterations) is the most stable measurement.
 
 ### Where ZMLX won't help
 

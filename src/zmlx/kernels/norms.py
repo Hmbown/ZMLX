@@ -671,6 +671,234 @@ def residual_rmsnorm(
     )[0]
 
 
+@cache
+def _add_rmsnorm_kernel(d: int, tg: int, eps: float) -> Any:
+    D = int(d)
+    TG = _validate_tg(tg)
+    eps_f = float(eps)
+    eps_str = str(eps_f).replace(".", "_").replace("-", "_")
+
+    # Two-pass rowwise parallel reduction.
+    # Key design: pass 2 re-reads x and residual from global memory rather than
+    # reading from h_out. This avoids the T-cast precision loss when T=float16.
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint TG = {TG};
+        constexpr float EPS = {eps_f}f;
+
+        uint gid = thread_position_in_grid.x;
+        uint tid = thread_position_in_threadgroup.x;
+        uint row = gid / TG;
+        uint base = row * D;
+
+        threadgroup float buf[TG];
+
+        // Pass 1: compute sumsq of (x + residual), write h_out = (T)(x + residual)
+        float sumsq = 0.0f;
+        for (uint j = tid; j < D; j += TG) {{
+            float h = (float)inp[base + j] + (float)residual[base + j];
+            h_out[base + j] = (T)h;
+            sumsq += h * h;
+        }}
+        buf[tid] = sumsq;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (uint stride = TG / 2; stride > 0; stride >>= 1) {{
+            if (tid < stride) {{
+                buf[tid] += buf[tid + stride];
+            }}
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }}
+
+        float inv = metal::rsqrt(buf[0] / (float)D + EPS);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // Pass 2: re-read x + residual in float32 for precision, apply norm + weight
+        for (uint j = tid; j < D; j += TG) {{
+            float h = (float)inp[base + j] + (float)residual[base + j];
+            float w = (float)weight[j];
+            normed[base + j] = (T)(h * inv * w);
+        }}
+    """
+
+    return metal_kernel(
+        name=f"kk_add_rmsnorm_D{D}_TG{TG}_E{eps_str}",
+        input_names=["inp", "residual", "weight"],
+        output_names=["normed", "h_out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+@cache
+def _add_rmsnorm_bwd_kernel(d: int, tg: int, eps: float) -> Any:
+    D = int(d)
+    TG = _validate_tg(tg)
+    eps_f = float(eps)
+    eps_str = str(eps_f).replace(".", "_").replace("-", "_")
+
+    # Three-pass backward:
+    # 1. Recompute sumsq and rms from x + residual
+    # 2. Compute mean_dot = mean(d_out * w * y_raw)
+    # 3. Write d_val = rms * (d_out * w - y_raw * mean_dot) + d_h_passthrough
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint TG = {TG};
+        constexpr float EPS = {eps_f}f;
+
+        uint gid = thread_position_in_grid.x;
+        uint tid = thread_position_in_threadgroup.x;
+        uint row = gid / TG;
+        uint base = row * D;
+
+        threadgroup float buf[TG];
+
+        // Pass 1: Recompute RMS of (x + residual)
+        float sumsq = 0.0f;
+        for (uint j = tid; j < D; j += TG) {{
+            float val = (float)inp[base + j] + (float)residual[base + j];
+            sumsq += val * val;
+        }}
+        buf[tid] = sumsq;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint s = TG / 2; s > 0; s >>= 1) {{
+            if (tid < s) buf[tid] += buf[tid + s];
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }}
+        float rms = metal::rsqrt(buf[0] / (float)D + EPS);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // Pass 2: mean_dot = sum(d_out * weight * y_raw) / D
+        float m_dot = 0.0f;
+        for (uint j = tid; j < D; j += TG) {{
+            float val = (float)inp[base + j] + (float)residual[base + j];
+            float y_raw = val * rms;
+            float g = (float)d_out[base + j];
+            float w = (float)weight[j];
+            m_dot += g * w * y_raw;
+        }}
+        buf[tid] = m_dot;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint s = TG / 2; s > 0; s >>= 1) {{
+            if (tid < s) buf[tid] += buf[tid + s];
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }}
+        float mean_dot = buf[0] / (float)D;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // Pass 3: d_val = rms * (d_out * w - y_raw * mean_dot) + d_h_passthrough
+        for (uint j = tid; j < D; j += TG) {{
+            float val = (float)inp[base + j] + (float)residual[base + j];
+            float y_raw = val * rms;
+            float g = (float)d_out[base + j];
+            float w = (float)weight[j];
+            float d_norm = rms * (g * w - y_raw * mean_dot);
+            float d_h_j = (float)d_h[base + j];
+            d_val[base + j] = (T)(d_norm + d_h_j);
+        }}
+    """
+
+    return metal_kernel(
+        name=f"kk_add_rmsnorm_bwd_D{D}_TG{TG}_E{eps_str}",
+        input_names=["inp", "residual", "weight", "d_out", "d_h"],
+        output_names=["d_val"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def add_rms_norm(
+    x: Any,
+    residual: Any,
+    weight: Any,
+    *,
+    eps: float = 1e-6,
+    threadgroup: int = 256,
+) -> tuple[Any, Any]:
+    """Fused Add + RMSNorm with improved numerical precision.
+
+    Computes ``h = x + residual`` and ``normed = RMSNorm(h, weight, eps)``,
+    returning both outputs. Unlike ``rmsnorm_residual`` in transformer.py,
+    pass 2 re-reads ``x`` and ``residual`` in float32 rather than reading
+    the T-cast ``h`` output, avoiding precision loss in float16.
+
+    Args:
+        x: Input tensor, shape ``(..., D)``.
+        residual: Residual tensor, same shape as ``x``.
+        weight: RMSNorm weight, shape ``(D,)``.
+        eps: Epsilon for numerical stability.
+        threadgroup: Threadgroup size (must be power of 2).
+
+    Returns:
+        ``(normed, updated_residual)`` where ``updated_residual = x + residual``.
+    """
+    if x.ndim < 1:
+        raise ValueError("add_rms_norm: x must have rank >= 1")
+    D = int(x.shape[-1])
+    if x.shape != residual.shape:
+        raise ValueError("add_rms_norm: x and residual must have same shape")
+    if int(weight.ndim) != 1 or int(weight.shape[0]) != D:
+        raise ValueError(f"add_rms_norm: weight must have shape ({D},)")
+
+    TG = _validate_tg(threadgroup)
+    rows = x.size // D
+    k_fwd = _add_rmsnorm_kernel(D, TG, float(eps))
+
+    @mx.custom_function
+    def op(x_in, res_in, w_in):
+        normed, h_out = k_fwd(
+            x_in,
+            res_in,
+            w_in,
+            template=[("T", x.dtype)],
+            grid=(rows * TG, 1, 1),
+            threadgroup=(TG, 1, 1),
+            output_shapes=[x.shape, x.shape],
+            output_dtypes=[x.dtype, x.dtype],
+        )
+        return normed, h_out
+
+    @op.vjp
+    def op_vjp(primals, cotangents, outputs):
+        x_in, res_in, w_in = primals
+        if isinstance(cotangents, (list, tuple)):
+            ct_normed = cotangents[0]
+            ct_h = cotangents[1]
+        else:
+            ct_normed = cotangents
+            ct_h = mx.zeros_like(ct_normed)
+
+        k_bwd = _add_rmsnorm_bwd_kernel(D, TG, float(eps))
+        d_val = k_bwd(
+            x_in,
+            res_in,
+            w_in,
+            ct_normed,
+            ct_h,
+            template=[("T", x.dtype)],
+            grid=(rows * TG, 1, 1),
+            threadgroup=(TG, 1, 1),
+            output_shapes=[x.shape],
+            output_dtypes=[x.dtype],
+        )[0]
+
+        # d_weight = sum(ct_normed * y_raw, axis=batch_dims)
+        val = x_in + res_in
+        rms = mx.rsqrt(mx.mean(val * val, axis=-1, keepdims=True) + eps)
+        y_raw = val * rms
+        batch_axes = tuple(range(x_in.ndim - 1))
+        d_weight = mx.sum(ct_normed * y_raw, axis=batch_axes)
+
+        # h = x + residual => d_x = d_val, d_residual = d_val
+        return (d_val, d_val, d_weight)
+
+    return op(x, residual, weight)  # type: ignore[return-value]
+
+
 __all__ = [
     "rmsnorm",
     "rmsnorm_grad",
@@ -679,4 +907,5 @@ __all__ = [
     "layer_norm_dropout",
     "layernorm",
     "residual_rmsnorm",
+    "add_rms_norm",
 ]

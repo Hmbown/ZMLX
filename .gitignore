@@ -42,3 +42,11 @@ HANDOFF_PROMPT.md
 REVIEW_PROMPT.md
 IMPLEMENTATION_SUMMARY.md
 benchmarks/results/
+
+# Local-only directories (not shipped)
+mlx_local/
+_worktrees/
+stable-diffcoder-mlx/
+experiments/
+NEXT_SESSION_PROMPT.md
+.hf_cache/

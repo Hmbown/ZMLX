@@ -41,6 +41,44 @@ from ._traversal import apply_patterns
 from ._types import PatchConfig, PatchResult
 
 # ---------------------------------------------------------------------------
+# Model-aware safety: auto-exclude patterns with known fidelity issues
+# ---------------------------------------------------------------------------
+
+def _model_family(model: nn.Module) -> str:
+    """Best-effort model family detection from class/module names."""
+    candidates: list[str] = []
+    for obj in (model, getattr(model, "model", None)):
+        if obj is None:
+            continue
+        candidates.append(type(obj).__module__ or "")
+        candidates.append(type(obj).__name__)
+
+    combined = " ".join(candidates).lower()
+    if "lfm" in combined:
+        return "lfm"
+    if "qwen" in combined:
+        return "qwen"
+    if "gpt_oss" in combined or "gptoss" in combined:
+        return "gpt_oss"
+    if "llama" in combined:
+        return "llama"
+    if "mixtral" in combined:
+        return "mixtral"
+    if "deepseek" in combined:
+        return "deepseek"
+    if "glm" in combined:
+        return "glm"
+    return "unknown"
+
+
+# Patterns known to break token fidelity per model family.
+# Validated with `python -m zmlx.validate` (200-token greedy, Jan 2026).
+_FIDELITY_EXCLUDES: dict[str, set[str]] = {
+    "qwen": {"moe_mlp", "swiglu_mlp", "residual_norm"},
+    "gpt_oss": {"moe_mlp", "residual_norm"},
+}
+
+# ---------------------------------------------------------------------------
 # Presets — curated pattern lists for common scenarios
 # ---------------------------------------------------------------------------
 
@@ -141,7 +179,8 @@ def patch(
     )
 
     # Resolve patterns: explicit patterns > mode > default (inference)
-    if patterns is not None:
+    explicit = patterns is not None
+    if explicit:
         selected = [get_pattern(name) for name in patterns]
     elif mode is not None:
         if mode not in _MODES:
@@ -155,6 +194,29 @@ def patch(
     if exclude:
         exclude_set = set(exclude)
         selected = [p for p in selected if p.name not in exclude_set]
+
+    # Model-aware safety: auto-exclude patterns with known fidelity issues.
+    # Only when using default pattern selection (no explicit patterns=).
+    # Pass patterns=[...] explicitly to override.
+    family = _model_family(model)
+    fidelity_risks = _FIDELITY_EXCLUDES.get(family, set())
+    if not explicit and fidelity_risks:
+        before_names = {p.name for p in selected}
+        selected = [p for p in selected if p.name not in fidelity_risks]
+        removed = before_names - {p.name for p in selected}
+        if removed:
+            print(
+                f"[zmlx.patch] {family} model detected — excluded {sorted(removed)} "
+                f"(known fidelity issues). Override with patterns=[...]."
+            )
+    elif explicit and fidelity_risks:
+        requested_risky = {p.name for p in selected} & fidelity_risks
+        if requested_risky:
+            print(
+                f"[zmlx.patch] WARNING: {sorted(requested_risky)} may break token "
+                f"fidelity on {family} models. "
+                f"Run `python -m zmlx.validate` to verify."
+            )
 
     if verbose:
         print(f"[zmlx.patch] Applying {len(selected)} patterns: {[p.name for p in selected]}")
@@ -202,7 +264,9 @@ def unpatch(model: nn.Module) -> nn.Module:
 # Module-replacement patterns (rmsnorm, layernorm) swap the nn.Module and
 # cannot be cheaply reverted — we only test those if the user explicitly
 # includes them.
-_REVERTIBLE_PATTERNS = {"swiglu_mlp", "geglu_mlp", "residual_norm", "softmax", "moe_mlp"}
+# NOTE: residual_norm excluded — slower than baseline (0.94-0.99x) on every
+# model tested and breaks fidelity on Qwen/GPT-OSS.  Only use explicitly.
+_REVERTIBLE_PATTERNS = {"swiglu_mlp", "geglu_mlp", "softmax", "moe_mlp"}
 
 
 def _time_forward(
