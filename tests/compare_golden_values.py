@@ -8,7 +8,11 @@ import json
 import sys
 from pathlib import Path
 
-import mlx.core as mx
+try:
+    import mlx.core as mx
+except Exception as exc:  # pragma: no cover - skip when MLX isn't available
+    print(f"MLX not available; skipping golden value comparison: {exc}")
+    raise SystemExit(0) from None
 import numpy as np
 
 
