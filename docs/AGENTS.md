@@ -1,12 +1,12 @@
 # Development Guide
 
-## Project Status (v0.7.x)
+## Project Status (v0.7.11)
 
 - 70+ Metal kernel catalog (activations, norms, RoPE, attention, MoE, quantization, loss, scan)
-- Model patching: `patch(model)` with model-aware defaults, validated on LFM2, Qwen3, Llama
-- Fused MoE inference: +5-12% decode on LFM2-8B-A1B (token-identical)
+- Model patching: `patch(model)` with model-aware defaults, validated on LFM2
+- Fused MoE inference: +5-12% decode on LFM2-8B-A1B (token-identical, prefill neutral)
 - Optimization lab: `gather_qmm_swiglu` C++ Metal primitive (local MLX fork)
-- High-level API: `elementwise()`, `reduce()`, `map_reduce()`, autograd, autotuning
+- Benchmark infrastructure: repro capsules, `bench.report` CLI, `validate` CLI
 
 ## Development Areas
 
@@ -24,18 +24,17 @@
 
 ### Performance
 - Per-device autotune profiles (M1/M2/M3/M4 families)
-- Regression tracking with JSON output
+- Regression tracking with JSON repro capsules
 - Memory bandwidth analysis
 
 ### Upstream contributions
-- `gather_qmm_swiglu` PR to MLX
+- `gather_qmm_swiglu` PR to MLX (see [`UPSTREAM_PLAN.md`](../UPSTREAM_PLAN.md))
 - `add_rms_norm` fused primitive
 - `gather_qmm_combine` fused primitive
 
-## Open Backlog
+## Backlog
 
 ### High Priority
-- [ ] Fix prefill regression on memory-constrained devices (M1 Pro 16 GB, LFM2 4bit)
 - [ ] Fused dequant+compute (int4 dequant fused into activation)
 - [ ] Per-device autotune profiles
 - [ ] Upstream `gather_qmm_swiglu` to MLX

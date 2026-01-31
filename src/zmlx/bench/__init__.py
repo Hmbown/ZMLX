@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from ._compat import import_mx
+from zmlx._compat import import_mx
 
 
 def _maybe_sync(mx: Any) -> None:

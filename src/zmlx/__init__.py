@@ -1,7 +1,7 @@
-"""ZMLX — Triton for Apple Silicon.
+"""ZMLX — Faster MoE inference on Apple Silicon.
 
-The ergonomic toolkit for custom Metal kernels on MLX.  Write, test, and
-benchmark differentiable GPU ops with Triton-like simplicity.
+Fused Metal kernels for MLX models.  Patches MoE decode with token-identical
+output, plus a 70+ kernel catalog and one-line kernel authoring API.
 
 Kernel authoring (from zmlx.api):
     elementwise()   — custom elementwise op (with optional gradient)
@@ -28,7 +28,7 @@ Model helpers (require mlx-lm):
     zmlx.load, zmlx.lora, zmlx.train, zmlx.generate
 """
 
-__version__ = "0.7.0"
+__version__ = "0.7.11"
 
 from ._compat import is_supported_host
 

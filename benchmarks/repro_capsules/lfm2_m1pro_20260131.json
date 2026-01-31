@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "date": "2026-01-31",
+    "device": "Apple M1 Pro",
+    "memory_gb": 16,
+    "macos": "14.6.1",
+    "mlx_version": "0.30.4",
+    "zmlx_version": "0.7.1",
+    "git_commit": "7de879eb0d1514230a43eac23e4f86799cfe4bb8",
+    "python": "3.10.0",
+    "command_4bit": "python -m zmlx.validate mlx-community/LFM2-8B-A1B-4bit --max-tokens 500 --runs 5",
+    "command_8bit": "python -m zmlx.validate mlx-community/LFM2-8B-A1B-8bit-MLX --max-tokens 500 --runs 5",
+    "note": "4bit decode numbers from confirmatory run (controlled conditions). Initial validate run had anomalous baseline prefill uplift (255 tok/s) not reproducible."
+  },
+  "lfm2_8b_a1b_4bit": {
+    "model": "mlx-community/LFM2-8B-A1B-4bit",
+    "max_tokens": 500,
+    "gen_tokens": 430,
+    "runs": 5,
+    "fidelity": {"matched": 430, "total": 430, "verdict": "PASS"},
+    "baseline": {
+      "prefill_tok_s": [225.4, 222.4, 231.6, 233.7, 220.1],
+      "decode_tok_s": [105.1, 107.4, 104.9, 105.5, 110.0],
+      "median_prefill": 225.4,
+      "median_decode": 105.5,
+      "peak_mem_gb": 5.30
+    },
+    "patched": {
+      "patterns": ["swiglu_mlp", "geglu_mlp", "moe_mlp"],
+      "modules_patched": 24,
+      "prefill_tok_s": [222.3, 223.0, 227.1, 230.9, 228.6],
+      "decode_tok_s": [115.1, 115.5, 115.3, 115.2, 116.5],
+      "median_prefill": 227.1,
+      "median_decode": 115.3,
+      "peak_mem_gb": 5.30
+    },
+    "summary": {
+      "decode_speedup": 1.093,
+      "prefill_change": 0.008,
+      "decode_ms_saved_per_token": 0.81,
+      "total_saved_430tok_s": 0.347
+    }
+  },
+  "lfm2_8b_a1b_8bit": {
+    "model": "mlx-community/LFM2-8B-A1B-8bit-MLX",
+    "max_tokens": 500,
+    "gen_tokens": 500,
+    "runs": 5,
+    "fidelity": {"matched": 500, "total": 500, "verdict": "PASS"},
+    "baseline": {
+      "prefill_tok_s": [165.5, 180.5, 182.4, 180.0, 182.9],
+      "decode_tok_s": [72.8, 72.0, 72.6, 73.3, 73.0],
+      "median_prefill": 180.5,
+      "median_decode": 72.8,
+      "peak_mem_gb": 9.45
+    },
+    "patched": {
+      "patterns": ["swiglu_mlp", "geglu_mlp", "moe_mlp"],
+      "modules_patched": 24,
+      "prefill_tok_s": [164.5, 170.9, 182.8, 183.6, 182.8],
+      "decode_tok_s": [76.0, 75.8, 76.6, 76.4, 76.9],
+      "median_prefill": 182.8,
+      "median_decode": 76.4,
+      "peak_mem_gb": 9.45
+    },
+    "summary": {
+      "decode_speedup": 1.050,
+      "prefill_change": 0.013,
+      "decode_ms_saved_per_token": 0.65,
+      "total_saved_500tok_s": 0.324
+    }
+  }
+}
