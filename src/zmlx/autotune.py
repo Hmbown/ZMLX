@@ -286,7 +286,7 @@ class AutotunedFunction:
     def _make_key(self, args: tuple, kwargs: dict) -> tuple:
         """Create a cache key from function arguments."""
         # Use shapes and dtypes of array-like arguments
-        key_parts = []
+        key_parts: list[tuple[Any, ...]] = []
         for arg in args:
             if hasattr(arg, 'shape') and hasattr(arg, 'dtype'):
                 key_parts.append((tuple(arg.shape), str(arg.dtype)))

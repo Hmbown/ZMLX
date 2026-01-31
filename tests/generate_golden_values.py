@@ -7,7 +7,11 @@ Metal backend, which can then be used to validate other backends.
 import json
 from pathlib import Path
 
-import mlx.core as mx
+try:
+    import mlx.core as mx
+except Exception as exc:  # pragma: no cover - skip when MLX isn't available
+    print(f"MLX not available; skipping golden value generation: {exc}")
+    raise SystemExit(0) from None
 
 
 def _metal_available() -> bool:
