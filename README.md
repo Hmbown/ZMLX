@@ -494,7 +494,7 @@ patch(model, mode="training")   # training: adds norm fusions for backward pass 
 
 # Or explicit presets for full control:
 from zmlx.patch import ALL_PATTERNS, FUSED_ACTIVATIONS, TRAINING_RECOMMENDED
-patch(model, patterns=FUSED_ACTIVATIONS)       # same as default
+patch(model, patterns=FUSED_ACTIVATIONS)       # skips model-aware auto-excludes
 patch(model, patterns=TRAINING_RECOMMENDED)    # same as mode="training"
 patch(model, patterns=ALL_PATTERNS)            # WARNING: can be slower on inference
 ```

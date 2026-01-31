@@ -130,7 +130,6 @@ def _bench_config(
 ) -> _ConfigResult:
     import mlx_lm
 
-    from zmlx.patch import FUSED_ACTIVATIONS
     from zmlx.patch import patch as zmlx_patch
 
     print(f"\n{'='*60}")
@@ -142,8 +141,8 @@ def _bench_config(
 
     patched_count = 0
     if patterns is None:
-        print(f"  Applying patterns: {FUSED_ACTIVATIONS} (default FUSED_ACTIVATIONS)")
-        zmlx_patch(model, patterns=FUSED_ACTIVATIONS, verbose=True)
+        print("  Applying: patch(model) with model-aware defaults")
+        zmlx_patch(model, verbose=True)
     elif patterns:
         print(f"  Applying patterns: {patterns}")
         zmlx_patch(model, patterns=patterns, verbose=True)
