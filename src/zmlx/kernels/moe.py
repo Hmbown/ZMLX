@@ -1003,9 +1003,205 @@ def topk_gating_softmax(
     return scores, inds.astype(mx.uint32)
 
 
+@cache
+def _weighted_accumulate_kernel(d_out: int) -> Any:
+    """Fused out = acc + gate_weight * projection — avoids materializing gate * proj."""
+    D_out = int(d_out)
+    source = f"""
+        uint elem = thread_position_in_grid.x;
+        constexpr uint D = {D_out};
+        uint row = elem / D;
+        float w = (float)gate[row];
+        float v = (float)proj[elem];
+        out[elem] = (T)((float)acc[elem] + w * v);
+    """
+    return metal_kernel(
+        name=f"kk_weighted_accumulate_D{D_out}",
+        input_names=["acc", "proj", "gate"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def _should_use_streaming(batch_size: int, streaming: bool | None) -> bool:
+    """Decide whether to use streaming accumulation.
+
+    Default ON for B <= 16 (decode-like), OFF for B > 16 (batch prefill).
+    Always overridable via explicit streaming kwarg.
+    """
+    if streaming is not None:
+        return streaming
+    return batch_size <= 16
+
+
+def gather_qmm_combine(
+    act: Any,
+    weights: Any,
+    gate: Any,
+    indices: Any,
+    *,
+    streaming: bool | None = None,
+) -> Any:
+    """Fused gather-matmul-combine for MoE down-projection (dense weights).
+
+    Computes ``output = sum_k(gate[:, k] * (act[:, k, :] @ weights[indices[:, k]]))``.
+    When streaming is enabled, accumulates results without materializing the
+    full ``(B, K, D_out)`` intermediate.
+
+    Args:
+        act: Dispatched activations, shape ``(B, K, D_in)``.
+        weights: Expert weight matrices, shape ``(E, D_in, D_out)``.
+        gate: Gating weights, shape ``(B, K)``.
+        indices: Expert indices, shape ``(B, K)`` with dtype uint32.
+        streaming: Force streaming mode on/off. Default: auto (ON for B <= 16).
+
+    Returns:
+        Combined output, shape ``(B, D_out)``.
+    """
+    if act.ndim != 3:
+        raise ValueError("gather_qmm_combine: act must have shape (B, K, D_in)")
+    B, K, _ = act.shape
+    if weights.ndim != 3:
+        raise ValueError("gather_qmm_combine: weights must have shape (E, D_in, D_out)")
+    D_out = int(weights.shape[2])
+
+    if not _should_use_streaming(B, streaming):
+        # Non-streaming: batch matmul then combine
+        # Gather expert weights: (B, K, D_in, D_out)
+        proj_all = []
+        for k_idx in range(K):
+            # act[:, k_idx, :] -> (B, D_in)
+            a_k = act[:, k_idx, :]
+            # Gather weights for this k: indices[:, k_idx] -> (B,)
+            w_k = weights[indices[:, k_idx]]  # (B, D_in, D_out)
+            # Batched matmul: (B, 1, D_in) @ (B, D_in, D_out) -> (B, 1, D_out)
+            proj_k = mx.matmul(mx.expand_dims(a_k, axis=1), w_k).squeeze(axis=1)
+            proj_all.append(proj_k)
+        # Stack: (B, K, D_out), then weighted sum
+        proj_stacked = mx.stack(proj_all, axis=1)
+        return mx.sum(proj_stacked * mx.expand_dims(gate, axis=-1), axis=1)
+
+    # Streaming: accumulate without (B, K, D_out) intermediate
+    k_acc = _weighted_accumulate_kernel(D_out)
+
+    output = mx.zeros((B, D_out), dtype=act.dtype)
+    for k_idx in range(K):
+        a_k = act[:, k_idx, :]
+        w_k = weights[indices[:, k_idx]]
+        proj_k = mx.matmul(mx.expand_dims(a_k, axis=1), w_k).squeeze(axis=1)
+        gate_k = gate[:, k_idx]
+
+        output = k_acc(
+            output,
+            proj_k,
+            gate_k,
+            template=[("T", act.dtype)],
+            grid=(B * D_out, 1, 1),
+            threadgroup=(min(D_out, 256), 1, 1),
+            output_shapes=[(B, D_out)],
+            output_dtypes=[act.dtype],
+        )[0]
+
+    return output
+
+
+def gather_qmm_combine_quantized(
+    act: Any,
+    weights: Any,
+    scales: Any,
+    biases: Any,
+    gate: Any,
+    indices: Any,
+    *,
+    group_size: int = 64,
+    bits: int = 4,
+    streaming: bool | None = None,
+) -> Any:
+    """Fused gather-qmm-combine for MoE down-projection (quantized weights).
+
+    Uses ``mx.gather_qmm`` for quantized matmul, then accumulates with a
+    custom Metal kernel to avoid materializing ``(B, K, D_out)``.
+
+    Args:
+        act: Dispatched activations, shape ``(B, K, D_in)``.
+        weights: Quantized expert weights (packed), shape ``(E, D_out, D_in_packed)``.
+        scales: Quantization scales, shape ``(E, D_out, n_groups)``.
+        biases: Quantization biases, shape ``(E, D_out, n_groups)``.
+        gate: Gating weights, shape ``(B, K)``.
+        indices: Expert indices, shape ``(B, K)`` with dtype uint32.
+        group_size: Quantization group size.
+        bits: Number of bits per weight.
+        streaming: Force streaming mode on/off. Default: auto (ON for B <= 16).
+
+    Returns:
+        Combined output, shape ``(B, D_out)``.
+    """
+    if act.ndim != 3:
+        raise ValueError(
+            "gather_qmm_combine_quantized: act must have shape (B, K, D_in)"
+        )
+    B, K, _ = act.shape
+    D_out = int(weights.shape[1])
+
+    if not _should_use_streaming(B, streaming):
+        # Non-streaming: gather_qmm per expert then combine
+        proj_all = []
+        for k_idx in range(K):
+            a_k = act[:, k_idx, :]
+            proj_k = mx.gather_qmm(
+                a_k,
+                weights,
+                scales,
+                biases,
+                rhs_indices=indices[:, k_idx],
+                transpose=True,
+                group_size=group_size,
+                bits=bits,
+            )
+            proj_all.append(proj_k)
+        proj_stacked = mx.stack(proj_all, axis=1)
+        return mx.sum(proj_stacked * mx.expand_dims(gate, axis=-1), axis=1)
+
+    # Streaming: accumulate without (B, K, D_out) intermediate
+    k_acc = _weighted_accumulate_kernel(D_out)
+
+    output = mx.zeros((B, D_out), dtype=act.dtype)
+    for k_idx in range(K):
+        a_k = act[:, k_idx, :]
+        proj_k = mx.gather_qmm(
+            a_k,
+            weights,
+            scales,
+            biases,
+            rhs_indices=indices[:, k_idx],
+            transpose=True,
+            group_size=group_size,
+            bits=bits,
+        )
+        gate_k = gate[:, k_idx]
+
+        output = k_acc(
+            output,
+            proj_k,
+            gate_k,
+            template=[("T", act.dtype)],
+            grid=(B * D_out, 1, 1),
+            threadgroup=(min(D_out, 256), 1, 1),
+            output_shapes=[(B, D_out)],
+            output_dtypes=[act.dtype],
+        )[0]
+
+    return output
+
+
 __all__ = [
     "top2_gating_softmax",
     "topk_gating_softmax",
     "moe_dispatch",
     "moe_combine",
+    "gather_qmm_combine",
+    "gather_qmm_combine_quantized",
 ]
