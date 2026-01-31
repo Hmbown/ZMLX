@@ -14,7 +14,6 @@ import statistics
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, List
 
 import mlx.core as mx
 import mlx_lm
@@ -49,8 +48,8 @@ class RunMetrics:
 class SequenceResult:
     """Results for a specific sequence length."""
     seq_length: int
-    baseline_runs: List[RunMetrics] = field(default_factory=list)
-    patched_runs: List[RunMetrics] = field(default_factory=list)
+    baseline_runs: list[RunMetrics] = field(default_factory=list)
+    patched_runs: list[RunMetrics] = field(default_factory=list)
     
     # Aggregated metrics
     baseline_median_prompt_tps: float = 0.0
@@ -105,7 +104,7 @@ def load_model():
     """Load model + tokenizer."""
     print(f"Loading {MODEL_ID}...")
     model, tokenizer = mlx_lm.load(MODEL_ID)
-    print(f"  Model loaded successfully")
+    print("  Model loaded successfully")
     return model, tokenizer
 
 def warmup(model, tokenizer):
@@ -238,7 +237,7 @@ def main():
     args = parser.parse_args()
     
     print(f"\n{'#'*70}")
-    print(f"# ZMLX Comprehensive Benchmark")
+    print("# ZMLX Comprehensive Benchmark")
     print(f"# Model: {MODEL_NAME}")
     print(f"# Runs per config: {args.runs}")
     print(f"# Max tokens to generate: {args.max_tokens}")

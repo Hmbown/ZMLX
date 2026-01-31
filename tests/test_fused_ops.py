@@ -247,8 +247,7 @@ class TestTopKGating:
     def test_top2_gating_selects_top(self):
         """Test that gating selects the top 2 experts."""
         from zmlx.kernels.moe import top2_gating_softmax
-        
-        B, E = 4, 8
+
         # Create input where we know the top 2
         x = mx.array([
             [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],  # top: 7, 6

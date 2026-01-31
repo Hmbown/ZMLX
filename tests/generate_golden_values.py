@@ -5,11 +5,22 @@ Metal backend, which can then be used to validate other backends.
 """
 
 import json
-import os
 from pathlib import Path
 
 import mlx.core as mx
-import numpy as np
+
+
+def _metal_available() -> bool:
+    metal = getattr(mx, "metal", None)
+    if metal is None:
+        return False
+    fn = getattr(metal, "is_available", None)
+    if not callable(fn):
+        return False
+    try:
+        return bool(fn())
+    except Exception:
+        return False
 
 def generate_elementwise_golden():
     """Generate golden values for elementwise operations."""
@@ -55,7 +66,7 @@ def generate_softmax_golden():
 
 def main():
     """Generate and save golden values."""
-    backend = "metal" if mx.metal.is_available() else "cpu"
+    backend = "metal" if _metal_available() else "cpu"
     
     golden_values = {
         "backend": backend,
