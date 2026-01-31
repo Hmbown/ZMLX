@@ -37,4 +37,8 @@ zig/zig-out/
 firebase-debug.log
 SETUP_TRAINING.md
 NEXT_SESSION.md
+CLAUDE.md
+HANDOFF_PROMPT.md
+REVIEW_PROMPT.md
+IMPLEMENTATION_SUMMARY.md
 benchmarks/results/

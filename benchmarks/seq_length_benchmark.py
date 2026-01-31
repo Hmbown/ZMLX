@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Variable sequence length benchmark for Qwen3-30B-A3B-Instruct."""
 
-import time
-import json
 import gc
-from pathlib import Path
-from dataclasses import dataclass, field, asdict
+import json
 import statistics
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import mlx.core as mx
 import mlx_lm
+
 from zmlx.patch import patch
 
 # Config
@@ -23,7 +24,7 @@ SEQ_LENGTHS = [128, 512, 1024, 2048]
 NUM_RUNS = 5
 MAX_TOKENS = 150
 
-@dataclass 
+@dataclass
 class BenchmarkResult:
     seq_length: int
     baseline_prompt_tps: float = 0.0
@@ -132,7 +133,7 @@ def benchmark_sequence_length(seq_length: int) -> BenchmarkResult:
         gen_speedup=patched.gen_tps / baseline.gen_tps if baseline.gen_tps > 0 else 0,
     )
     
-    print(f"\n--- RESULTS ---")
+    print("\n--- RESULTS ---")
     print(f"  Prompt: {baseline.prompt_tps:.1f} -> {patched.prompt_tps:.1f} tok/s ({result.prompt_speedup:.2f}x)")
     print(f"  Gen:    {baseline.gen_tps:.1f} -> {patched.gen_tps:.1f} tok/s ({result.gen_speedup:.2f}x)")
     print(f"  Memory: {baseline.memory_gb:.2f} -> {patched.memory_gb:.2f} GB")
@@ -141,7 +142,7 @@ def benchmark_sequence_length(seq_length: int) -> BenchmarkResult:
 
 def main():
     print(f"{'#'*60}")
-    print(f"# ZMLX Variable Sequence Length Benchmark")
+    print("# ZMLX Variable Sequence Length Benchmark")
     print(f"# Model: {MODEL_NAME}")
     print(f"# Runs per config: {NUM_RUNS}")
     print(f"# Max tokens: {MAX_TOKENS}")

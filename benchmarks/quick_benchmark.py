@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Quick benchmark for ZMLX testing - focused on key models."""
 
-import time
-import json
 import gc
+import json
+import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from dataclasses import dataclass, field, asdict
-import statistics
 
 import mlx.core as mx
 import mlx_lm
+
 from zmlx.patch import patch
 
 # Results storage
@@ -75,7 +75,7 @@ def run_benchmark(model_id: str, patched: bool = False, max_tokens: int = 200) -
         runtime_sec=runtime
     )
     
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Prompt TPS:     {metrics.prompt_tps:.1f} tok/s")
     print(f"  Generation TPS: {metrics.generation_tps:.1f} tok/s")
     print(f"  Peak Memory:    {metrics.peak_memory_gb:.2f} GB")

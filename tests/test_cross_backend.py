@@ -40,7 +40,7 @@ class TestBackendDetection:
     
     def test_has_gpu_backend(self):
         """Test GPU backend detection."""
-        from zmlx._compat import has_gpu_backend, detect_backend
+        from zmlx._compat import detect_backend, has_gpu_backend
         
         has_gpu = has_gpu_backend()
         backend = detect_backend()
@@ -52,7 +52,7 @@ class TestBackendDetection:
     
     def test_is_metal_available(self):
         """Test Metal availability check."""
-        from zmlx._compat import is_metal_available, is_macos, is_arm64
+        from zmlx._compat import is_arm64, is_macos, is_metal_available
         
         is_metal = is_metal_available()
         

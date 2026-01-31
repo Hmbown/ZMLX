@@ -55,7 +55,7 @@ class TestDeviceProfile:
     
     def test_all_device_profiles_exist(self):
         """Test that all 16 chip variants have profiles."""
-        from zmlx.device_profile import get_device_profile, ALL_DEVICE_PROFILES
+        from zmlx.device_profile import ALL_DEVICE_PROFILES, get_device_profile
         
         families = ["M1", "M2", "M3", "M4"]
         variants = ["", "Pro", "Max", "Ultra"]
@@ -119,7 +119,7 @@ class TestAutotuneIntegration:
     
     def test_autotune_decorator(self):
         """Test the @autotune decorator."""
-        from zmlx.autotune import autotune, AutotunedFunction
+        from zmlx.autotune import AutotunedFunction, autotune
         
         @autotune(warmup=2, iters=5)
         def dummy_kernel(x, threadgroup=(128, 1, 1)):
@@ -144,7 +144,7 @@ class TestDeviceDetection:
     
     def test_fallback_on_detection_failure(self):
         """Test fallback when detection fails."""
-        from zmlx.device_profile import get_current_device_profile, DeviceTuningProfile
+        from zmlx.device_profile import DeviceTuningProfile, get_current_device_profile
         
         # This should not raise an exception
         profile = get_current_device_profile()
