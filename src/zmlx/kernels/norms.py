@@ -896,7 +896,7 @@ def add_rms_norm(
         # h = x + residual => d_x = d_val, d_residual = d_val
         return (d_val, d_val, d_weight)
 
-    return op(x, residual, weight)  # type: ignore[return-value]
+    return op(x, residual, weight)  # type: ignore[return-value, no-any-return]
 
 
 __all__ = [

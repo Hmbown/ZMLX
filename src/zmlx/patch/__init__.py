@@ -181,6 +181,7 @@ def patch(
     # Resolve patterns: explicit patterns > mode > default (inference)
     explicit = patterns is not None
     if explicit:
+        assert patterns is not None  # mypy narrowing
         selected = [get_pattern(name) for name in patterns]
     elif mode is not None:
         if mode not in _MODES:
