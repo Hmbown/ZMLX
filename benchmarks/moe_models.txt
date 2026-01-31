@@ -1,0 +1,13 @@
+# Default MoE model list for overnight runs.
+# Lines starting with # are ignored.
+
+mlx-community/LFM2-8B-A1B-4bit
+mlx-community/Qwen3-30B-A3B-4bit
+
+# Optional (uncomment if available in your cache / HF):
+# mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit
+# mlx-community/Qwen3-30B-A3B-Instruct-2507-8bit
+# mlx-community/Qwen3-0.6B-4bit
+# mlx-community/Qwen3-1.7B-4bit
+# mlx-community/Mixtral-8x7B-Instruct-v0.1-4bit
+# mlx-community/DeepSeek-V3-4bit
