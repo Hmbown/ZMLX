@@ -71,8 +71,8 @@ def _topk_gating_simd_kernel(d: int, k: int) -> Any:
         float cur = v;
         for (uint i = 0; i < K; ++i) {{
             float cur_max = simd_max(cur);
-            uint candidate = (cur == cur_max && tid < D) ? tid : 0xFFFFFFFF;
-            uint winner = simd_min(candidate);
+            uint candidate = (cur == cur_max && tid < D) ? tid : 0;
+            uint winner = simd_max(candidate);
             if (tid == 0) {{
                 topk_vals[i] = cur_max;
                 topk_idx[i] = winner;
@@ -145,8 +145,8 @@ def _topk_softmax_simd_kernel(d: int, k: int, renorm: bool) -> Any:
         float cur = p;
         for (uint i = 0; i < K; ++i) {{
             float cur_max = simd_max(cur);
-            uint candidate = (cur == cur_max && tid < D) ? tid : 0xFFFFFFFF;
-            uint winner = simd_min(candidate);
+            uint candidate = (cur == cur_max && tid < D) ? tid : 0;
+            uint winner = simd_max(candidate);
             if (tid == 0) {{
                 topk_vals[i] = cur_max;
                 topk_idx[i] = winner;
@@ -222,8 +222,8 @@ def _topk_softmax_bias_simd_kernel(d: int, k: int, renorm: bool) -> Any:
         float cur = p;
         for (uint i = 0; i < K; ++i) {{
             float cur_max = simd_max(cur);
-            uint candidate = (cur == cur_max && tid < D) ? tid : 0xFFFFFFFF;
-            uint winner = simd_min(candidate);
+            uint candidate = (cur == cur_max && tid < D) ? tid : 0;
+            uint winner = simd_max(candidate);
             if (tid == 0) {{
                 topk_vals[i] = cur_max;
                 topk_idx[i] = winner;
