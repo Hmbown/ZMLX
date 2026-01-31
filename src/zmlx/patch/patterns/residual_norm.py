@@ -1,8 +1,13 @@
 """Residual + RMSNorm fusion at TransformerBlock level.
 
-Matches Llama-style blocks that compute ``h = x + self_attn(norm(x))``
+Matches transformer blocks that compute ``h = x + self_attn(norm(x))``
 followed by ``mlp(norm(h))``. Rewrites the block to use
-``zmlx.kernels.transformer.rmsnorm_residual`` for the post-attention norm.
+``zmlx.kernels.norms.add_rms_norm`` for the post-attention norm,
+fusing the residual add and RMSNorm into a single kernel with
+improved float16 precision.
+
+Supports all major mlx-lm model architectures (Llama, Qwen, Mistral,
+Gemma, Phi, DeepSeek, LFM, GLM, etc.) via broad attribute name matching.
 """
 
 from __future__ import annotations
@@ -14,6 +19,35 @@ import mlx.nn as nn
 from .._registry import register
 from .._types import PatchConfig
 
+# ---------------------------------------------------------------------------
+# Attribute name candidates — covers all 60+ mlx-lm architectures
+# ---------------------------------------------------------------------------
+_ATTN_NORM_NAMES = (
+    "input_layernorm",
+    "norm1",
+    "operator_norm",
+    "attention_norm",
+    "attention_layernorm",
+)
+_POST_NORM_NAMES = (
+    "post_attention_layernorm",
+    "norm2",
+    "ffn_norm",
+    "pre_ff_layernorm",
+    "feedforward_layernorm",
+)
+_ATTN_NAMES = ("self_attn", "attention", "conv")
+_MLP_NAMES = ("mlp", "feed_forward", "ffn", "block_sparse_moe")
+
+
+def _first_match(module: Any, names: tuple[str, ...]) -> tuple[str | None, Any]:
+    """Return ``(attr_name, attr)`` for the first present attribute, or ``(None, None)``."""
+    for name in names:
+        attr = getattr(module, name, None)
+        if attr is not None:
+            return name, attr
+    return None, None
+
 
 class _ResidualNormPattern:
     @property
@@ -24,14 +58,10 @@ class _ResidualNormPattern:
         if not isinstance(module, nn.Module):
             return False
 
-        attn_norm = getattr(module, "input_layernorm", None) or getattr(module, "norm1", None)
-        post_norm = getattr(module, "post_attention_layernorm", None) or getattr(module, "norm2", None)
-        attn = getattr(module, "self_attn", None) or getattr(module, "attention", None)
-        mlp = (
-            getattr(module, "mlp", None)
-            or getattr(module, "feed_forward", None)
-            or getattr(module, "ffn", None)
-        )
+        _, attn_norm = _first_match(module, _ATTN_NORM_NAMES)
+        _, post_norm = _first_match(module, _POST_NORM_NAMES)
+        _, attn = _first_match(module, _ATTN_NAMES)
+        _, mlp = _first_match(module, _MLP_NAMES)
 
         if attn_norm is None or post_norm is None or attn is None or mlp is None:
             return False
@@ -42,21 +72,11 @@ class _ResidualNormPattern:
         return isinstance(post_norm, (nn.RMSNorm, ZMLXRMSNorm))
 
     def apply(self, module: Any, config: PatchConfig) -> Any:
-        from ...kernels import transformer
-
-        attn_norm_name = "input_layernorm" if hasattr(module, "input_layernorm") else "norm1"
-        post_norm_name = (
-            "post_attention_layernorm"
-            if hasattr(module, "post_attention_layernorm")
-            else "norm2"
-        )
-        attn_name = "self_attn" if hasattr(module, "self_attn") else "attention"
-        if hasattr(module, "mlp"):
-            mlp_name = "mlp"
-        elif hasattr(module, "feed_forward"):
-            mlp_name = "feed_forward"
-        else:
-            mlp_name = "ffn"
+        attn_norm_name, _ = _first_match(module, _ATTN_NORM_NAMES)
+        post_norm_name, _ = _first_match(module, _POST_NORM_NAMES)
+        attn_name, _ = _first_match(module, _ATTN_NAMES)
+        mlp_name, _ = _first_match(module, _MLP_NAMES)
+        assert attn_norm_name and post_norm_name and attn_name and mlp_name  # ensured by matches()
 
         original_call = module.__call__.__func__ if hasattr(module.__call__, "__func__") else None
 
@@ -79,6 +99,8 @@ class _ResidualNormPattern:
                 return attn_mod(x_in)
 
         def patched_call(self_mod: Any, x: Any, *args: Any, **kwargs: Any) -> Any:
+            from ...kernels.norms import add_rms_norm
+
             mask = kwargs.get("mask")
             cache = kwargs.get("cache")
             if len(args) > 0:
@@ -95,7 +117,7 @@ class _ResidualNormPattern:
             attn_out = _call_attn(attn_mod, attn_in, mask, cache)
 
             tg = config.threadgroup if isinstance(config.threadgroup, int) else 256
-            normed, updated_res = transformer.rmsnorm_residual(
+            normed, updated_res = add_rms_norm(
                 attn_out,
                 x,
                 post_norm.weight,
