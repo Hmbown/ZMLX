@@ -7,6 +7,10 @@
 
 **A Metal kernel toolkit and upstream incubation lab for [MLX](https://github.com/ml-explore/mlx)** — author custom GPU kernels in Python, apply fused model patches, and prototype C++ Metal primitives for upstream MLX.
 
+ZMLX is **additive** to MLX, not a replacement:
+- **Stock MLX**: `pip install mlx` + `pip install zmlx` (pure Python + Metal kernels)
+- **Local MLX fork**: build/install `mlx_local/` + `pip install zmlx` (enables fused C++ primitives like `gather_qmm_swiglu`)
+
 Toolkit highlights (available via `pip install zmlx` on stock MLX):
 - SwiGLU 2.0x, Dropout 7.5x, Top-K 3.7x in op-level microbenchmarks
 - 70+ kernel catalog, autograd, benchmarking utilities, and model patching
@@ -15,11 +19,38 @@ Toolkit highlights (available via `pip install zmlx` on stock MLX):
 >
 > | Result | Measurement | Notes |
 > |:--|:--|:--|
-> | **+5-8% decode** on Qwen3-30B-A3B-4bit (MoE, E=128, K=8) | 119-122 tok/s vs 113-114 | Requires local MLX build with `gather_qmm_swiglu` |
-> | **Neutral (1.01x)** on Qwen3-4B-4bit (dense) | 125.3 vs 124.4 tok/s | Safe on dense models |
 > | **+4% per MoE layer** on LFM2-8B-A1B-4bit (MoE, E=32, K=4) | 293 us -> 282 us at M=1 decode | Kernel-level bench; E2E too noisy to report |
+> | **+5-8% decode** on Qwen3-30B-A3B-4bit (MoE, E=128, K=8) | 119-122 tok/s vs 113-114 | Best E2E speed; requires local MLX build with `gather_qmm_swiglu` |
+> | **Neutral (1.01x)** on Qwen3-4B-4bit (dense) | 125.3 vs 124.4 tok/s | Safe on dense models |
 >
 > Fused SwiGLU requires a [local MLX build](#optimization-lab) with `gather_qmm_swiglu`. On stock MLX, gating+combine-only can be neutral to slightly negative (Qwen3-30B measured 0.95–0.98x), so use `smart_patch` or a fused build for MoE models.
+>
+> **Token fidelity** (greedy decode vs unpatched `mlx_lm`, Jan 31, 2026):
+>
+> | Model | Default patch | Tokens matching | Notes |
+> |:--|:--|:--|:--|
+> | LFM2-8B-A1B-4bit | `patch(model)` | 200/200 | Token-identical in internal test |
+> | Qwen3-30B-A3B-4bit | `patch(model)` | 18/50 | Gating semantics differ (full-softmax vs top-k softmax) |
+> | GPT-OSS-20B-MXFP4-Q4 | `patch(model)` | 0/50 | Combine-only improves to 38/50 |
+>
+> Results are single-prompt greedy decode checks; see `experiments/gpt_oss_20b_moe.md` for GPT-OSS details.
+> If you require strict parity, use baseline `mlx_lm` or `smart_patch` with `moe_mlp` excluded.
+
+> **Benchmarking matrix** (to compare apples-to-apples):
+>
+> | Label | MLX install | ZMLX | Notes |
+> |:--|:--|:--|:--|
+> | Baseline | Stock `mlx` | None | Unpatched `mlx_lm` |
+> | ZMLX (stock MLX) | Stock `mlx` | `pip install zmlx` | `patch(model)` without fused C++ primitives |
+> | ZMLX + fused MLX | Local `mlx_local/` | `pip install zmlx` | `gather_qmm_swiglu` available |
+>
+> Always report MLX version, ZMLX version, device, and whether `gather_qmm_swiglu` is detected.
+> You can check detection with:
+>
+> ```python
+> from zmlx.kernels.fused_moe import has_gather_qmm_swiglu
+> print(has_gather_qmm_swiglu())
+> ```
 
 ```bash
 pip install zmlx
@@ -31,7 +62,7 @@ pip install zmlx
 import mlx_lm
 from zmlx.patch import patch
 
-model, tokenizer = mlx_lm.load("mlx-community/Qwen3-30B-A3B-4bit")
+model, tokenizer = mlx_lm.load("mlx-community/LFM2-8B-A1B-4bit")
 patch(model)  # best on MoE with fused MLX; use smart_patch on stock MLX
 ```
 
@@ -362,7 +393,7 @@ python benchmarks/bench_moe_suite.py \
 - **Per-device autotune profiles** (better defaults by chip family)
 
 **When do patches help?**
-- **MoE Models (4-bit)**: Best case with fused SwiGLU on a local MLX build. Qwen3-30B gets **+5-8%** E2E; LFM2 shows **+4% per MoE layer** at decode (E2E too noisy to report). On stock MLX, gating+combine can be slower — use `smart_patch` or exclude `moe_mlp`.
+- **MoE Models (4-bit)**: Best case with fused SwiGLU on a local MLX build. Qwen3-30B gets **+5-8%** E2E; LFM2 shows **+4% per MoE layer** at decode (E2E too noisy to report). Token fidelity is model-specific: LFM2 is token-identical in internal testing; Qwen3/GPT-OSS can diverge with the default patch. On stock MLX, gating+combine can be slower — use `smart_patch` or exclude `moe_mlp`.
 - **MoE Models (8-bit)**: Fused SwiGLU is less impactful; benchmark before enabling.
 - **MoE Models (pre-computed gating)**: GLM-4, DeepSeek-V3 — neutral. Gate is already `@mx.compile`-optimized.
 - **Dense Models (any size)**: Neutral. Decode is bandwidth-bound; Qwen3-4B is 1.01x.
