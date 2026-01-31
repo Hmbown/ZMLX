@@ -11,6 +11,7 @@ class PatchConfig:
     compute_dtype: str = "float32"
     threadgroup: int | str = 256
     verbose: bool = False
+    moe_fused_swiglu_max_tokens: int | None = None
 
 
 @dataclass

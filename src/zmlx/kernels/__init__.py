@@ -13,6 +13,7 @@ from . import (
     attention,
     bits,
     fused,
+    fused_moe,
     image,
     indexing,
     linear,
@@ -32,6 +33,7 @@ from . import (
 __all__ = [
     "activations",
     "fused",
+    "fused_moe",
     "norms",
     "rope",
     "softmax",
