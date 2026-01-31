@@ -83,6 +83,36 @@ def _is_quantized_switch_linear(mod: Any) -> bool:
     )
 
 
+def _is_switch_glu_module(mod: Any) -> bool:
+    """Return True if *mod* looks like a SwitchGLU-style expert module."""
+    return (
+        mod is not None
+        and hasattr(mod, "gate_proj")
+        and hasattr(mod, "up_proj")
+        and hasattr(mod, "down_proj")
+    )
+
+
+def _is_standard_swiglu_activation(switch_mlp: Any) -> bool:
+    """Return True if the activation matches MLX's standard SwiGLU."""
+    activation = getattr(switch_mlp, "activation", None)
+    if activation is None:
+        return True
+
+    mod = getattr(activation.__class__, "__module__", "")
+    name = activation.__class__.__name__
+    if mod == "mlx_lm.models.switch_layers" and name == "SwiGLU":
+        return True
+
+    if callable(activation):
+        func_mod = getattr(activation, "__module__", "")
+        func_name = getattr(activation, "__name__", "")
+        if func_mod == "mlx_lm.models.activations" and func_name == "swiglu":
+            return True
+
+    return False
+
+
 def _can_fuse_switch_mlp(switch_mlp: Any) -> bool:
     """Return True if the switch_mlp can use gather_qmm_swiglu.
 
@@ -91,6 +121,7 @@ def _can_fuse_switch_mlp(switch_mlp: Any) -> bool:
     - gate_proj and up_proj must be QuantizedSwitchLinear
     - Both must use the same quantization config
     - mode must be "affine"
+    - activation must be standard SwiGLU (no custom gating)
     """
     if not has_gather_qmm_swiglu():
         return False
@@ -115,6 +146,9 @@ def _can_fuse_switch_mlp(switch_mlp: Any) -> bool:
     if gate_proj.group_size != up_proj.group_size:
         return False
     if gate_proj.bits != up_proj.bits:
+        return False
+
+    if not _is_standard_swiglu_activation(switch_mlp):
         return False
 
     return True
@@ -197,9 +231,19 @@ class _MoEMLPPattern:
         # Resolve which attribute holds the gating linear layer.
         _gate_attr = "gate" if hasattr(module, "gate") else "router"
 
+        # Resolve SwitchGLU-style experts (switch_mlp or experts module).
+        switch_mlp = None
+        switch_mlp_attr = None
+        if hasattr(module, "switch_mlp") and _is_switch_glu_module(module.switch_mlp):
+            switch_mlp = module.switch_mlp
+            switch_mlp_attr = "switch_mlp"
+        elif hasattr(module, "experts") and _is_switch_glu_module(module.experts):
+            switch_mlp = module.experts
+            switch_mlp_attr = "experts"
+
         # Check if we can fuse the switch_mlp's gate+up+SwiGLU step.
         _use_fused_swiglu = False
-        if hasattr(module, "switch_mlp") and _can_fuse_switch_mlp(module.switch_mlp):
+        if switch_mlp is not None and _can_fuse_switch_mlp(switch_mlp):
             _use_fused_swiglu = True
             fused_swiglu_max_tokens = (
                 _FUSED_SWIGLU_MAX_TOKENS
@@ -207,12 +251,13 @@ class _MoEMLPPattern:
                 else config.moe_fused_swiglu_max_tokens
             )
             # Store original switch_mlp call for fallback at large token counts
-            module.switch_mlp._zmlx_original_switch_call = module.switch_mlp.__call__
+            switch_mlp._zmlx_original_switch_call = switch_mlp.__call__
             if config.verbose:
-                gp = module.switch_mlp.gate_proj
+                gp = switch_mlp.gate_proj
+                loc = f"{switch_mlp_attr}" if switch_mlp_attr else "experts"
                 print(
                     f"  [moe_mlp] Fusing gate+up+SwiGLU via gather_qmm_swiglu "
-                    f"(bits={gp.bits}, gs={gp.group_size})"
+                    f"(bits={gp.bits}, gs={gp.group_size}, attr={loc})"
                 )
 
         def patched_call(self_mod: Any, x: Any) -> Any:
@@ -220,27 +265,30 @@ class _MoEMLPPattern:
             indices, weights = _gating(self_mod, x, _gate_attr, num_experts_per_tok)
 
             # 2. Expert Execution
-            if hasattr(self_mod, "switch_mlp"):
+            if switch_mlp is not None:
                 if _use_fused_swiglu:
                     # Fused path: gather_qmm_swiglu for small token counts,
                     # falls back to original for large M.
                     expert_outputs = _fused_switch_mlp_call(
-                        self_mod.switch_mlp,
+                        switch_mlp,
                         x,
                         indices,
                         max_tokens=fused_swiglu_max_tokens,
                     )
                 else:
                     # Qwen3/GLM/LFM2 style: vectorized experts (SwitchGLU)
-                    expert_outputs = self_mod.switch_mlp(x, indices)
+                    expert_outputs = switch_mlp(x, indices)
             else:
                 # Mixtral/DeepSeek style: list of expert modules
+                experts = getattr(self_mod, "experts", None)
+                if experts is None:
+                    return original_call(x)
                 B = indices.shape[0]
                 K = indices.shape[-1]
                 D = x.shape[-1]
                 expert_outputs = mx.zeros((B, K, D), dtype=x.dtype)
 
-                for i, expert in enumerate(self_mod.experts):
+                for i, expert in enumerate(experts):
                     for k in range(K):
                         mask = indices[:, k] == i
                         if mask.any():
