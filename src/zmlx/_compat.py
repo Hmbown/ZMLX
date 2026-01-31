@@ -7,9 +7,11 @@ from typing import Any
 def is_macos() -> bool:
     return platform.system() == "Darwin"
 
+
 def is_arm64() -> bool:
     """Check if running on ARM64 architecture (Apple Silicon or ARM Linux)."""
     return platform.machine() in ("arm64", "aarch64")
+
 
 def is_supported_host() -> bool:
     """Check if the host supports ZMLX Metal kernels.
@@ -37,7 +39,7 @@ def detect_backend() -> str:
     
     # Check for Metal
     if hasattr(mx, "metal"):
-        metal = getattr(mx, "metal")
+        metal = mx.metal
         is_available = getattr(metal, "is_available", None)
         if callable(is_available):
             try:
@@ -48,7 +50,7 @@ def detect_backend() -> str:
     
     # Check for CUDA
     if hasattr(mx, "cuda"):
-        cuda = getattr(mx, "cuda")
+        cuda = mx.cuda
         is_available = getattr(cuda, "is_available", None)
         if callable(is_available):
             try:

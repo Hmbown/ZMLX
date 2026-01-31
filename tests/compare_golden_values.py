@@ -12,6 +12,19 @@ import mlx.core as mx
 import numpy as np
 
 
+def _metal_available() -> bool:
+    metal = getattr(mx, "metal", None)
+    if metal is None:
+        return False
+    fn = getattr(metal, "is_available", None)
+    if not callable(fn):
+        return False
+    try:
+        return bool(fn())
+    except Exception:
+        return False
+
+
 def load_golden_values(backend: str) -> dict:
     """Load golden values for a specific backend."""
     tests_dir = Path(__file__).parent
@@ -59,7 +72,7 @@ def compare_golden_backends(backend1: str, backend2: str) -> bool:
     golden2 = load_golden_values(backend2)
     
     if not golden1 or not golden2:
-        print(f"  Missing golden values for one or both backends")
+        print("  Missing golden values for one or both backends")
         return False
     
     all_passed = True
@@ -82,7 +95,7 @@ def compare_golden_backends(backend1: str, backend2: str) -> bool:
 
 def main():
     """Compare golden values across all available backends."""
-    current_backend = "metal" if mx.metal.is_available() else "cpu"
+    current_backend = "metal" if _metal_available() else "cpu"
     print(f"Current backend: {current_backend}")
     
     # Compare current backend against reference (Metal)

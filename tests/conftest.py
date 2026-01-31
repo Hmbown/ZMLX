@@ -7,7 +7,6 @@ This module provides:
 """
 
 import platform
-import sys
 
 import pytest
 
@@ -201,8 +200,6 @@ def assert_allclose_cross_backend():
     This function compares arrays with tolerances appropriate for the
     specific backends being compared.
     """
-    import mlx.core as mx
-    
     def _assert_allclose(
         actual,
         desired,

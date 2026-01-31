@@ -4,15 +4,16 @@
 Loads model once per configuration (baseline/patched) and tests all sequence lengths.
 """
 
-import time
-import json
 import gc
-from pathlib import Path
-from dataclasses import dataclass, field, asdict
+import json
 import statistics
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import mlx.core as mx
 import mlx_lm
+
 from zmlx.patch import patch
 
 # Config
@@ -26,7 +27,7 @@ SEQ_LENGTHS = [128, 512, 1024, 2048]
 NUM_RUNS = 5
 MAX_TOKENS = 150
 
-@dataclass 
+@dataclass
 class SeqResult:
     seq_length: int
     baseline_prompt_tps: float = 0.0
@@ -104,9 +105,9 @@ def benchmark_config(model, tokenizer, prompts: dict, config_name: str) -> dict:
 
 def main():
     print(f"{'#'*60}")
-    print(f"# ZMLX Variable Sequence Length Benchmark")
+    print("# ZMLX Variable Sequence Length Benchmark")
     print(f"# Model: {MODEL_NAME}")
-    print(f"# Hardware: Apple M4 Max 36GB")
+    print("# Hardware: Apple M4 Max 36GB")
     print(f"# Runs per config: {NUM_RUNS}")
     print(f"# Max tokens: {MAX_TOKENS}")
     print(f"{'#'*60}\n")
