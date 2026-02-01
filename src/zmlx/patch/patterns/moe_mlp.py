@@ -37,7 +37,7 @@ def _is_qwen3_moe_block(mod: Any) -> bool:
     cls = mod.__class__
     if cls.__name__ == "Qwen3MoeSparseMoeBlock":
         return True
-    return cls.__module__.startswith("mlx_lm.models.qwen3_moe")
+    return bool(cls.__module__.startswith("mlx_lm.models.qwen3_moe"))
 
 
 def _gating(self_mod: Any, x: Any, gate_attr: str, k: int) -> tuple[Any, Any]:
