@@ -1,13 +1,12 @@
 # Development Guide
 
-## Project Status (v0.7.11)
+## Project Status (v0.7.12)
 
 - 70+ Metal kernel catalog (activations, norms, RoPE, attention, MoE, quantization, loss, scan)
-- Model patching: `patch(model)` with model-aware defaults, validated on LFM2
-- Fused MoE inference: +5-12% decode on LFM2-8B-A1B (token-identical, prefill neutral)
-- Optimization lab: `gather_qmm_swiglu` C++ Metal primitive (local MLX fork)
+- Model patching: `patch(model)` with model-aware defaults, validated on LFM2, Qwen3, GPT-OSS
+- Fused MoE inference: +5-12% decode on LFM2-8B-A1B, +7% on Qwen3-30B-A3B, +1% on GPT-OSS-20B (token-identical, prefill neutral)
 - Benchmark infrastructure: repro capsules, `bench.report` CLI, `validate` CLI
-- Dev MLX workflow: use the local `mlx_local` fork when validating MoE gains (Qwen3 needs `mx.gather_qmm_swiglu` for speedups).
+- Experimental MLX fork lives in `docs/EXPERIMENTAL_MLX.md` (optional, not required for stable results)
 
 ## Development Areas
 
@@ -27,18 +26,16 @@
 - Per-device autotune profiles (M1/M2/M3/M4 families)
 - Regression tracking with JSON repro capsules
 - Memory bandwidth analysis
-- Dev MLX env: `.venv-mlx-dev` with `pip install -e mlx_local` to expose `mx.gather_qmm_swiglu`
-- Verify dev MLX: `python -c "import mlx.core as mx; print(hasattr(mx, 'gather_qmm_swiglu'))"`
+- Experimental MLX work is documented in `docs/EXPERIMENTAL_MLX.md`.
 
 ### Release policy
 - **Stable (default)**: stock MLX, only token‑identical patches enabled.
-- **Fast (opt‑in)**: dev MLX allowed; experimental kernels are opt‑in and must be validated.
-- **Edge (opt‑in)**: nightly/dev MLX + experimental kernels for local testing only.
+- **Experimental (opt‑in)**: custom MLX allowed; kernels are opt‑in and must be validated.
 
 ### Upstream contributions
 - `mx.fast.swiglu` fused primitive (small, general‑purpose)
 - `add_rms_norm` fused primitive (benchmark‑gated)
-- `gather_qmm_swiglu` (local fork; RFC before any PR)
+- `gather_qmm_swiglu` (experimental; RFC before any PR)
 
 ## Backlog
 
@@ -49,7 +46,6 @@
 
 ### Medium Priority
 - [ ] `jvp` support for elementwise ops
-- [ ] Fix token fidelity on Qwen3-MoE (`moe_mlp` diverges at token 0)
 - [ ] More architecture support (Gemma, Phi, Mistral MoE)
 - [ ] `add_rms_norm` fused primitive (if MLX doesn't already fuse add+norm)
 

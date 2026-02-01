@@ -60,6 +60,8 @@ def _model_family(model: nn.Module) -> str:
         return "qwen"
     if "gpt_oss" in combined or "gptoss" in combined:
         return "gpt_oss"
+    if "nemotron" in combined:
+        return "nemotron"
     if "llama" in combined:
         return "llama"
     if "mixtral" in combined:
@@ -74,8 +76,8 @@ def _model_family(model: nn.Module) -> str:
 # Patterns known to break token fidelity per model family.
 # Validated with `python -m zmlx.validate` (200-token greedy, Jan 2026).
 _FIDELITY_EXCLUDES: dict[str, set[str]] = {
-    "qwen": {"moe_mlp", "swiglu_mlp", "residual_norm"},
-    "gpt_oss": {"moe_mlp", "residual_norm"},
+    "qwen": {"swiglu_mlp", "residual_norm"},
+    "gpt_oss": {"residual_norm"},
     "mixtral": {"moe_mlp"},
 }
 

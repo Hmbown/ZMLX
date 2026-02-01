@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -378,11 +378,17 @@ def load(
     if verbose:
         print(f"[zmlx.load] Loading model: {model_name}")
 
-    model, tokenizer, config = lm_utils.load(
-        model_name,
-        tokenizer_config={"trust_remote_code": True},
-        return_config=True,
+    loaded = cast(
+        tuple[Any, ...],
+        lm_utils.load(
+            model_name,
+            tokenizer_config={"trust_remote_code": True},
+            return_config=True,
+        ),
     )
+    model = loaded[0]
+    tokenizer = loaded[1]
+    config = cast(dict[str, Any], loaded[2] if len(loaded) > 2 else {})
 
     q_bits = _parse_quantize(quantize)
     already_quantized = bool(config.get("quantization") or config.get("quantization_config"))
@@ -443,20 +449,41 @@ def lora(
 
     def _to_lora(layer: nn.Module) -> nn.Module:
         if use_dora:
-            if isinstance(layer, (nn.Linear, nn.QuantizedLinear)):
-                return DoRALinear.from_base(layer, r=r, dropout=dropout, scale=scale)
-            if isinstance(layer, (nn.Embedding, nn.QuantizedEmbedding)):
-                return DoRAEmbedding.from_base(layer, r=r, dropout=dropout, scale=scale)
+            if isinstance(layer, (nn.QuantizedLinear, nn.QuantizedEmbedding)):
+                raise ValueError("DoRA does not support quantized layers")
+            if isinstance(layer, nn.Linear):
+                return cast(
+                    nn.Module,
+                    DoRALinear.from_base(layer, r=r, dropout=dropout, scale=scale),
+                )
+            if isinstance(layer, nn.Embedding):
+                return cast(
+                    nn.Module,
+                    DoRAEmbedding.from_base(layer, r=r, dropout=dropout, scale=scale),
+                )
             raise ValueError(f"DoRA unsupported for layer type: {type(layer).__name__}")
 
         if hasattr(layer, "to_lora"):
-            return layer.to_lora(r=r, dropout=dropout, scale=scale)
-        if isinstance(layer, (nn.Linear, nn.QuantizedLinear)):
-            return LoRALinear.from_base(layer, r=r, dropout=dropout, scale=scale)
+            return cast(
+                nn.Module, layer.to_lora(r=r, dropout=dropout, scale=scale)
+            )
+        if isinstance(layer, (nn.QuantizedLinear, nn.QuantizedEmbedding)):
+            raise ValueError("LoRA does not support quantized layers without to_lora()")
+        if isinstance(layer, nn.Linear):
+            return cast(
+                nn.Module,
+                LoRALinear.from_base(layer, r=r, dropout=dropout, scale=scale),
+            )
         if isinstance(layer, (SwitchLinear, QuantizedSwitchLinear)):
-            return LoRASwitchLinear.from_base(layer, r=r, dropout=dropout, scale=scale)
-        if isinstance(layer, (nn.Embedding, nn.QuantizedEmbedding)):
-            return LoRAEmbedding.from_base(layer, r=r, dropout=dropout, scale=scale)
+            return cast(
+                nn.Module,
+                LoRASwitchLinear.from_base(layer, r=r, dropout=dropout, scale=scale),
+            )
+        if isinstance(layer, nn.Embedding):
+            return cast(
+                nn.Module,
+                LoRAEmbedding.from_base(layer, r=r, dropout=dropout, scale=scale),
+            )
         raise ValueError(f"Unsupported layer type for LoRA: {type(layer).__name__}")
 
     lora_layers = []
@@ -552,6 +579,7 @@ def train(
 
     lr = build_schedule(lr_schedule) if isinstance(lr_schedule, dict) else learning_rate
 
+    opt_class: type[optim.Optimizer]
     if optimizer_name == "adam":
         opt_class = optim.Adam
     elif optimizer_name == "adamw":

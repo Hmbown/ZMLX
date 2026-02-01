@@ -120,6 +120,27 @@ def relu(*, compute_dtype_key: str = "float32") -> Callable[[Any], Any]:
 
 
 @cache
+def relu2(*, compute_dtype_key: str = "float32") -> Callable[[Any], Any]:
+    """Build a Metal kernel for elementwise ReLU-squared.
+
+    Args:
+        compute_dtype_key: Precision for internal computation.
+            ``"float32"`` (default) or ``"float16"``.
+
+    Returns:
+        A callable ``f(x) -> max(x, 0)^2`` that runs on the GPU.
+    """
+    mx = import_mx()
+    compute_dtype = mx.float32 if compute_dtype_key == "float32" else mx.float16
+    return unary_kernel(
+        name=f"kk_relu2_{compute_dtype_key}",
+        expr="metal::max(x, (T)0) * metal::max(x, (T)0)",
+        compute_dtype=compute_dtype,
+        header=DEFAULT_HEADER,
+    )
+
+
+@cache
 def silu(*, compute_dtype_key: str = "float32") -> Callable[[Any], Any]:
     """Build a Metal kernel for elementwise SiLU (swish).
 
@@ -332,6 +353,31 @@ def relu_grad(*, compute_dtype_key: str = "float32") -> Callable[[Any], Any]:
 
 
 @cache
+def relu2_grad(*, compute_dtype_key: str = "float32") -> Callable[[Any], Any]:
+    """Build a differentiable Metal kernel for elementwise ReLU-squared.
+
+    Supports ``mx.grad`` via a custom VJP.
+
+    Args:
+        compute_dtype_key: Precision for internal computation.
+            ``"float32"`` (default) or ``"float16"``.
+
+    Returns:
+        A callable ``f(x) -> max(x, 0)^2`` that runs on the GPU.
+    """
+    mx = import_mx()
+    compute_dtype = mx.float32 if compute_dtype_key == "float32" else mx.float16
+    return unary_from_expr(
+        name=f"kk_relu2_grad_{compute_dtype_key}",
+        fwd_expr="metal::max(x, (T)0) * metal::max(x, (T)0)",
+        vjp_expr="(x > (T)0) ? (T)2 * x * g : (T)0",
+        compute_dtype=compute_dtype,
+        use_output=False,
+        header=DEFAULT_HEADER,
+    )
+
+
+@cache
 def silu_grad(*, compute_dtype_key: str = "float32") -> Callable[[Any], Any]:
     """Build a differentiable Metal kernel for elementwise SiLU.
 
@@ -489,6 +535,7 @@ __all__ = [
     "tanh",
     "sigmoid",
     "relu",
+    "relu2",
     "silu",
     "gelu_tanh",
     "softplus",
@@ -498,6 +545,7 @@ __all__ = [
     "tanh_grad",
     "sigmoid_grad",
     "relu_grad",
+    "relu2_grad",
     "silu_grad",
     "gelu_tanh_grad",
     "softplus_grad",

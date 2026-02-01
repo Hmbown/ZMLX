@@ -865,7 +865,9 @@ def _moe_combine_kernel_exact(d: int, k: int) -> Any:
         for (uint i = 0; i < K; ++i) {{
             T w = weights[token_idx * K + i];
             T v = expert_outputs[(token_idx * K + i) * D + d_idx];
-            acc += w * v;
+            // Match MLX bf16 semantics: round after multiply, then after add.
+            T prod = (T)(w * v);
+            acc = (T)(acc + prod);
         }}
         out[token_idx * D + d_idx] = acc;
     """
@@ -901,6 +903,66 @@ def moe_combine_exact(expert_outputs: Any, weights: Any) -> Any:
         threadgroup=(min(D, 256), 1, 1),
         output_shapes=[(B, D)],
         output_dtypes=[expert_outputs.dtype],
+    )[0]
+    return out.reshape((*original_shape, D))
+
+
+@cache
+def _moe_combine_kernel_fp32(d: int, k: int) -> Any:
+    """Combine kernel: reads experts in T, weights in float, accumulates and outputs float32."""
+    D = int(d)
+    K = int(k)
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint K = {K};
+        uint token_idx = thread_position_in_grid.y;
+        uint d_idx = thread_position_in_grid.x;
+
+        float acc = 0.0f;
+        for (uint i = 0; i < K; ++i) {{
+            float w = weights[token_idx * K + i];
+            float v = (float)expert_outputs[(token_idx * K + i) * D + d_idx];
+            acc += w * v;
+        }}
+        out[token_idx * D + d_idx] = acc;
+    """
+    return metal_kernel(
+        name=f"kk_moe_combine_fp32_D{D}_K{K}",
+        input_names=["expert_outputs", "weights"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def moe_combine_fp32(expert_outputs: Any, weights: Any) -> Any:
+    """Combine expert outputs with float32 weights, accumulate and output in float32.
+
+    Matches MLX's dtype promotion behavior when expert_outputs is bfloat16/float16
+    and weights is float32: the multiply promotes to float32 and the sum stays float32.
+
+    expert_outputs: (..., K, D) — any dtype (read as float32 internally)
+    weights: (..., K) — float32
+    Returns: (..., D) — float32
+    """
+    original_shape = weights.shape[:-1]
+    K = weights.shape[-1]
+    D = expert_outputs.shape[-1]
+
+    expert_outputs_flat = expert_outputs.reshape(-1, K, D)
+    weights_flat = weights.reshape(-1, K).astype(mx.float32)
+    B = weights_flat.shape[0]
+
+    k = _moe_combine_kernel_fp32(D, K)
+    out = k(
+        expert_outputs_flat, weights_flat,
+        template=[("T", expert_outputs.dtype)],
+        grid=(D, B, 1),
+        threadgroup=(min(D, 256), 1, 1),
+        output_shapes=[(B, D)],
+        output_dtypes=[mx.float32],
     )[0]
     return out.reshape((*original_shape, D))
 
@@ -1257,6 +1319,7 @@ __all__ = [
     "moe_dispatch",
     "moe_combine",
     "moe_combine_exact",
+    "moe_combine_fp32",
     "gather_qmm_combine",
     "gather_qmm_combine_quantized",
 ]

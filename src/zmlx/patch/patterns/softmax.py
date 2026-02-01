@@ -42,7 +42,7 @@ class _SoftmaxPattern:
         def _zmlx_softmax(x: Any, axis: int = -1, precise: bool = False) -> Any:
             # Only replace last-dim softmax when precision requirements allow.
             if axis not in (-1, x.ndim - 1) or precise:
-                return mx.softmax(x, axis=axis, precise=precise)
+                return mx.softmax(x, axis=axis, precise=precise)  # type: ignore[call-arg]
             tg = config.threadgroup if isinstance(config.threadgroup, int) else 256
             return zmlx_softmax.softmax_lastdim(
                 x,

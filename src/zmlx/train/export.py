@@ -25,12 +25,19 @@ def merge_and_export(
         Path to the exported merged model.
     """
     try:
-        from mlx_lm import fuse as mlx_fuse
+        import mlx_lm
     except ImportError as e:
         raise ImportError(
             "mlx_lm is required for export. "
             "Install with: pip install 'zmlx[train]'"
         ) from e
+
+    mlx_fuse = getattr(mlx_lm, "fuse", None)
+    if mlx_fuse is None:
+        raise ImportError(
+            "mlx_lm.fuse is required for export. "
+            "Install with: pip install 'zmlx[train]'"
+        )
 
     if output_path is None:
         output_path = str(Path(adapter_path) / "merged")

@@ -40,7 +40,22 @@ def _is_qwen3_moe_block(mod: Any) -> bool:
     return bool(cls.__module__.startswith("mlx_lm.models.qwen3_moe"))
 
 
-def _gating(self_mod: Any, x: Any, gate_attr: str, k: int) -> tuple[Any, Any]:
+def _is_gpt_oss_block(mod: Any) -> bool:
+    """Return True if this module looks like a GPT-OSS MoE block."""
+    cls = mod.__class__
+    mod_path = getattr(cls, "__module__", "") or ""
+    return "gpt_oss" in mod_path
+
+
+def _gating(
+    self_mod: Any,
+    x: Any,
+    gate_attr: str,
+    k: int,
+    *,
+    is_qwen3: bool = False,
+    is_gpt_oss: bool = False,
+) -> tuple[Any, Any]:
     """Run the model's gating logic faithfully, returning (indices, weights).
 
     Handles several conventions:
@@ -56,13 +71,21 @@ def _gating(self_mod: Any, x: Any, gate_attr: str, k: int) -> tuple[Any, Any]:
         indices, weights = gate_out
         return indices, weights
 
-    if _is_qwen3_moe_block(self_mod):
+    if is_qwen3:
         # Qwen3 uses precise softmax on logits, then argpartition on probs.
-        gates = mx.softmax(gate_out, axis=-1, precise=True)
+        gates = mx.softmax(gate_out, axis=-1, precise=True)  # type: ignore[call-arg]
         inds = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
         scores = mx.take_along_axis(gates, inds, axis=-1)
         if getattr(self_mod, "norm_topk_prob", False):
             scores = scores / mx.sum(scores, axis=-1, keepdims=True)
+        return inds.astype(mx.uint32), scores
+
+    if is_gpt_oss:
+        # GPT-OSS does top-k on raw logits first, then softmax on only K values.
+        # This produces different probabilities than full-softmax-then-top-k.
+        inds = mx.argpartition(gate_out, kth=-k, axis=-1)[..., -k:]
+        top_k_values = mx.take_along_axis(gate_out, inds, axis=-1)
+        scores = mx.softmax(top_k_values, axis=-1, precise=True)  # type: ignore[call-arg]
         return inds.astype(mx.uint32), scores
 
     # Raw logits path — preserve the standard gating sequence exactly,
@@ -177,7 +200,7 @@ def _fused_switch_mlp_call(
     indices: mx.array,
     *,
     max_tokens: int,
-) -> mx.array:
+) -> Any:
     """Replace gate_proj + up_proj + SwiGLU with a single gather_qmm_swiglu.
 
     Falls back to the original switch_mlp call when the token count is large
@@ -200,7 +223,7 @@ def _fused_switch_mlp_call(
     x_expanded = mx.expand_dims(x, (-2, -3))
 
     # Fused gate + up + SwiGLU in one kernel
-    activated = mx.gather_qmm_swiglu(
+    activated = mx.gather_qmm_swiglu(  # type: ignore[attr-defined]
         x_expanded,
         gate_proj.weight, gate_proj.scales, gate_proj.get("biases"),
         up_proj.weight, up_proj.scales, up_proj.get("biases"),
@@ -277,11 +300,20 @@ class _MoEMLPPattern:
                     f"(bits={gp.bits}, gs={gp.group_size}, attr={loc})"
                 )
 
-        use_exact_combine = _is_qwen3_moe_block(module)
+        is_qwen3 = _is_qwen3_moe_block(module)
+        is_gpt_oss = _is_gpt_oss_block(module)
+        use_exact_combine = is_qwen3
 
         def patched_call(self_mod: Any, x: Any) -> Any:
             # 1. Gating — preserve the model's original logic exactly.
-            indices, weights = _gating(self_mod, x, _gate_attr, num_experts_per_tok)
+            indices, weights = _gating(
+                self_mod,
+                x,
+                _gate_attr,
+                num_experts_per_tok,
+                is_qwen3=is_qwen3,
+                is_gpt_oss=is_gpt_oss,
+            )
 
             # 2. Expert Execution
             if switch_mlp is not None:
@@ -313,8 +345,14 @@ class _MoEMLPPattern:
                         if mask.any():
                             expert_outputs[mask, k] = expert(x[mask])
 
-            # 3. Combine: Qwen3 uses the exact sum path for fidelity.
-            if use_exact_combine:
+            # 3. Combine
+            if is_gpt_oss:
+                # GPT-OSS: match MLX's dtype promotion and sum order.
+                if weights.dtype == mx.float32:
+                    y = moe.moe_combine_fp32(expert_outputs, weights)
+                else:
+                    y = moe.moe_combine_exact(expert_outputs, weights)
+            elif use_exact_combine:
                 y = moe.moe_combine_exact(expert_outputs, weights)
             else:
                 # Fused Combine: weighted sum of expert outputs in one kernel

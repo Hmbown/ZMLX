@@ -404,7 +404,7 @@ def _device_cache_key() -> str:
         family = "unknown"
     try:
         import mlx.core as mx
-        mlx_version = mx.__version__
+        mlx_version = getattr(mx, "__version__", "unknown")
     except Exception:
         mlx_version = "unknown"
     return f"{family}_{mlx_version}"

@@ -57,13 +57,13 @@ class MoE(nn.Module):
         # Note: We still loop over the experts for now, but we use the 
         # dispatched tensors which are structured for the experts.
         # Ideally, we'd have a fused expert kernel for even more gain.
-        expert_outputs = []
+        expert_outputs_list: list[Any] = []
         for i in range(indices.shape[-1]):
             # This is still a bit slow in Python; a true batch expert 
             # kernel would be better.
-            expert_outputs.append(self.experts[i](dispatched[:, i]))
+            expert_outputs_list.append(self.experts[i](dispatched[:, i]))
             
-        expert_outputs = mx.stack(expert_outputs, axis=1)
+        expert_outputs = mx.stack(expert_outputs_list, axis=1)
         
         # 4. Fused Combine
         return moe_combine(expert_outputs, weights)

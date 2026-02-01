@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.12] - 2026-02-01
+
+### Added
+
+- **ReLU2 kernels**: `relu2` and `relu2_grad` with catalog tests.
+- **Docs**: `docs/BENCHMARKS.md` methodology + repro capsules, `docs/EXPERIMENTAL_MLX.md` for optional MLX fork work.
+- **Stable MoE coverage**: Qwen3-30B-A3B and GPT-OSS-20B listed as token-identical on stock MLX.
+
+### Fixed
+
+- **MoE gating detection**: cache GPT-OSS/Qwen3 model detection before class replacement so `_gating` selects the correct path.
+- **`moe_combine_exact` bf16 rounding**: explicit rounding after multiply/add to match MLX bf16 accumulation semantics.
+
+### Changed
+
+- **GPT-OSS combine routing**: float32 gating weights now use `moe_combine_fp32` to preserve MLX promotion behavior.
+- **Auto-excludes**: Qwen3 excludes only `swiglu_mlp` + `residual_norm`; GPT-OSS excludes only `residual_norm`.
+- **README**: simplified install (`zmlx[train]`), removed custom MLX details from main docs, refreshed stable model table.
+
 ## [0.6.3] - 2026-01-30
 
 ### Added

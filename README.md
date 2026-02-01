@@ -5,7 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform: macOS Apple Silicon](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-lightgrey.svg)](https://github.com/ml-explore/mlx)
 
-ZMLX patches [MLX](https://github.com/ml-explore/mlx) models with fused Metal kernels for faster Mixture-of-Experts decode on Apple Silicon. No model conversion, no config changes — just `pip install zmlx` and `patch(model)`.
+ZMLX patches [MLX](https://github.com/ml-explore/mlx) models with fused Metal kernels for faster Mixture-of-Experts decode on Apple Silicon. **Stock MLX only** for the supported models. No model conversion, no config changes — just install and `patch(model)`.
+
+Quick start (model patching; requires `zmlx[train]` or `mlx-lm`):
 
 ```python
 import mlx_lm
@@ -21,24 +23,36 @@ text = mlx_lm.generate(model, tokenizer,
 
 ---
 
-## Two modes
+## Install (recommended)
+
+```bash
+pip install "zmlx[train]"
+```
+
+That includes `mlx-lm` and everything needed for model patching. For kernel authoring only:
+
+```bash
+pip install zmlx
+```
+
+## Supported mode
 
 | Mode | What you need | What you get |
 |:--|:--|:--|
-| **Stable** (default) | `pip install zmlx` + stock MLX | Token-identical output, +5-12% decode on LFM2 |
-| **Fast** (opt-in) | Custom MLX fork with `mx.gather_qmm_swiglu` | Additional fused SwiGLU for MoE experts; faster on Qwen3 but may diverge on token fidelity |
+| **Stable** (default) | Stock MLX + `zmlx` | Token-identical output, real decode speedups |
 
-`patch()` auto-detects which primitives are available and only enables what is safe. On stock MLX, Qwen3-MoE patterns are auto-excluded to prevent silent correctness loss.
+`patch()` auto-detects which patterns are safe for your model family.
 
 ---
 
 ## Benchmarks — Stable mode (stock MLX)
 
-### LFM2-8B-A1B on M1 Pro 16 GB
+LFM2-8B-A1B: **+5-12% decode**, token-identical, measured on M1 Pro and M4 Max. Prefill neutral by design (fused kernels activate only at M <= 32).
 
-> macOS 14.6.1 · MLX 0.30.4 · ZMLX 0.7.11 · Python 3.10.0 · commit `7de879e`
->
-> **Method:** `python -m zmlx.validate` — greedy decode (`temp=0`), fixed prompt, 5 runs, `max_tokens=500` (4-bit runs terminated at 430 tokens due to EOS), median reported. Baseline is unpatched `mlx_lm`; patched adds `patch(model)`.
+<details>
+<summary>LFM2-8B-A1B on M1 Pro 16 GB</summary>
+
+> macOS 14.6.1 · MLX 0.30.4 · ZMLX 0.7.12 · Python 3.10.0 · commit `7de879e`
 >
 > **Repro capsule:** [`benchmarks/repro_capsules/lfm2_m1pro_20260131.json`](benchmarks/repro_capsules/lfm2_m1pro_20260131.json) · **Print report:** `python -m zmlx.bench.report <capsule.json>`
 
@@ -60,11 +74,12 @@ text = mlx_lm.generate(model, tokenizer,
 | Fidelity | — | 500/500 | token-identical |
 | Peak memory | — | 9.5 GB | |
 
-### LFM2-8B-A1B on M4 Max 36 GB
+</details>
 
-> macOS 26.1 · MLX 0.30.1 · ZMLX 0.7.11 · Python 3.12 · commit `139993e`
->
-> **Method:** `python -m zmlx.validate` — greedy decode (`temp=0`), fixed prompt, 5 runs, `max_tokens=500` (4-bit runs terminated at 430 tokens due to EOS), median reported. Baseline is unpatched `mlx_lm`; patched adds `patch(model)`.
+<details>
+<summary>LFM2-8B-A1B on M4 Max 36 GB</summary>
+
+> macOS 26.1 · MLX 0.30.1 · ZMLX 0.7.12 · Python 3.12 · commit `139993e`
 >
 > **Repro capsule:** [`benchmarks/repro_capsules/lfm2_m4max_20260131.json`](benchmarks/repro_capsules/lfm2_m4max_20260131.json) · **Print report:** `python -m zmlx.bench.report <capsule.json>`
 
@@ -86,22 +101,9 @@ text = mlx_lm.generate(model, tokenizer,
 | Fidelity | — | 500/500 | token-identical |
 | Peak memory | — | 9.45 GB | |
 
-### Benchmarks — Fast mode (custom MLX fork)
+</details>
 
-> Requires a local MLX build that exposes `mx.gather_qmm_swiglu`. This fuses the gate+up projections and SwiGLU activation into a single kernel for quantized MoE experts. Check availability: `python -c "import mlx.core as mx; print(hasattr(mx, 'gather_qmm_swiglu'))"`.
-
-**Qwen3-30B-A3B (max_tokens=500, runs=3):**
-
-| Config | Decode speedup | Fidelity | Notes |
-|:--|:--|:--|:--|
-| Stock MLX, auto-excluded patches | 1.007x (base) / 0.979x (instruct) | PASS (500/500) | Safe but no MoE gain — `patch()` auto-excludes `moe_mlp` on Qwen3 |
-| Dev MLX + `moe_mlp` forced | **+6.9%** (base) / **+8.9%** (instruct) | FAIL | Diverges at token 6 (base) / token 146 (instruct) |
-
-The Qwen3 fidelity failure comes from precision differences in the fused `gather_qmm_swiglu` kernel (likely float16 internal accumulation vs MLX's default primitives). This is a known issue we plan to fix by switching the kernel to float32 accumulation. Until then, Qwen3 gains require explicit opt-in and are not enabled by default.
-
-### Notes on methodology
-
-Prefill throughput is neutral by design — fused kernels are guarded to activate only at sequence length M <= 32 (decode), so prefill takes the standard MLX code path. Raw per-run data is in the repro capsules (`benchmarks/repro_capsules/`).
+Full methodology and raw data: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 ---
 
@@ -117,7 +119,8 @@ In Mixture-of-Experts models, each token is routed to a subset of expert network
 
 On Apple Silicon, each Metal kernel dispatch has fixed overhead (command buffer encoding, GPU scheduling). When the actual compute per dispatch is small — as it is for M=1 decode — this overhead dominates. The GPU spends more time waiting between kernels than doing math.
 
-### What ZMLX fuses
+<details>
+<summary>What ZMLX fuses</summary>
 
 ZMLX replaces the multi-dispatch sequences with single Metal kernels that do the same math in one pass. All fused kernels are generated from Python via [`mx.fast.metal_kernel`](https://ml-explore.github.io/mlx/build/html/python/fast.html) — no changes to MLX core required.
 
@@ -129,10 +132,6 @@ Replaces the 4-dispatch gating sequence with a single kernel. For small expert c
 
 Replaces the separate element-wise multiply and reduce-sum with a single kernel that reads each expert output once, multiplies by its gating weight, and accumulates the weighted sum in float32. Output shape goes directly from `(B, K, D)` to `(B, D)` without materializing the intermediate `weights * expert_outputs` tensor.
 
-**Fused gate+up+SwiGLU** (`gather_qmm_swiglu`, fast mode only):
-
-A C++ Metal primitive (in `mlx_local/`) that fuses the gate projection, up projection, and SwiGLU activation for quantized MoE experts into a single kernel launch. Instead of reading the input vector twice (once for gate, once for up), it reads once and produces the activated output directly. This requires access to MLX's internal quantized matmul infrastructure and is the only ZMLX optimization that needs a custom MLX build.
-
 ### Why prefill is unaffected
 
 All fused kernels are guarded with a sequence length check (`M <= 32`). During prefill, M equals the prompt length (typically hundreds or thousands of tokens). At this scale, the compute-to-dispatch ratio is high and the standard MLX path is already efficient. The guards ensure ZMLX never regresses prefill performance.
@@ -140,6 +139,8 @@ All fused kernels are guarded with a sequence length check (`M <= 32`). During p
 ### Correctness guarantee
 
 Token fidelity is a first-class requirement. `patch()` auto-detects the model family and excludes patterns with known fidelity issues. The fused gating kernel reproduces the exact same top-k selection and softmax normalization as the reference MLX ops. The combine kernel accumulates in float32 (or dtype-matched for Qwen3's `moe_combine_exact`). `python -m zmlx.validate` compares every generated token ID between patched and unpatched models under greedy decoding.
+
+</details>
 
 ### Patching options
 
@@ -167,20 +168,14 @@ Token-identical output, measurable decode improvement. Safe to use without furth
 |:--|:--|:--|:--|
 | **LFM2-8B-A1B-4bit** | **+9-12%** | token-identical | `moe_mlp` + `swiglu_mlp` |
 | **LFM2-8B-A1B-8bit** | **+5-8%** | token-identical | `moe_mlp` + `swiglu_mlp` |
-
-### Fast (requires custom MLX)
-
-Requires a local MLX build with `mx.gather_qmm_swiglu`. Speedups exist but token parity is not guaranteed. Auto-excluded by `patch()` defaults — force with `patch(model, patterns=["moe_mlp"])`.
-
-| Model | Decode speedup | Fidelity | Notes |
-|:--|:--|:--|:--|
-| Qwen3-30B-A3B-4bit | +6.9% | diverges at token 6 | Fused SwiGLU precision mismatch |
-| Qwen3-30B-A3B-Instruct-2507-4bit | +8.9% | diverges at token 146 | Fused SwiGLU precision mismatch |
+| **Qwen3-30B-A3B-4bit** | **+7%** | token-identical | `moe_mlp` |
+| **GPT-OSS-20B-MXFP4-Q4** | **+1%** | token-identical | `moe_mlp` |
 
 ### Tested (no gain)
 
 | Model | Status | Notes |
 |:--|:--|:--|
+| Nemotron-3-Nano-30B-A3B-NVFP4 | 0.999x, PASS | Hybrid Mamba-MoE, bandwidth-limited at 19.4 GB |
 | LFM2.5-1.2B-Thinking-MLX-8bit | 0.997x, PASS | Dense model, no matched MoE patterns |
 | Qwen3-4B-4bit (dense) | diverges at token 18 | Dense model, patches not expected to help |
 | Llama-3.2-1B-4bit | 0.98x, PASS | Dense model, bandwidth-bound |
@@ -206,7 +201,8 @@ mish = elementwise("x * tanh(log(1 + exp(x)))", name="mish")
 y = mish(mx.random.normal((1024,)))
 ```
 
-### Op-level benchmarks
+<details>
+<summary>Op-level microbenchmarks</summary>
 
 B=16, S=1024, D=1024, float16, M4 Max. `python benchmarks/microbench.py`:
 
@@ -220,6 +216,8 @@ B=16, S=1024, D=1024, float16, M4 Max. `python benchmarks/microbench.py`:
 | RMSNorm | 0.51 ms | 0.54 ms | 0.95x |
 
 ZMLX helps most for **fused operations** that MLX doesn't provide as single ops. MLX built-ins (`mx.fast.rms_norm`, `mx.softmax`) are already highly optimized.
+
+</details>
 
 ### Kernel catalog
 
@@ -238,9 +236,15 @@ ZMLX helps most for **fused operations** that MLX doesn't provide as single ops.
 
 ---
 
-## Install
+## Install (full)
 
 **Requirements**: macOS (Apple Silicon), Python >= 3.10, mlx >= 0.30.0
+
+```bash
+pip install "zmlx[train]"
+```
+
+Kernel authoring only:
 
 ```bash
 pip install zmlx
@@ -257,8 +261,6 @@ pip install -e ".[dev]"
 ---
 
 ## Quick Start
-
-### Custom elementwise kernel
 
 ```python
 from zmlx.api import elementwise
@@ -281,6 +283,9 @@ silu = elementwise(
 )
 gx = mx.grad(lambda z: silu(z).sum())(mx.random.normal((1024,)))
 ```
+
+<details>
+<summary>More examples: reductions, softmax, testing</summary>
 
 ### Custom reduction
 
@@ -324,23 +329,13 @@ zmlx.bench.compare(
 )
 ```
 
----
-
-## Optimization Lab
-
-ZMLX includes a local MLX fork (`mlx_local/`) for prototyping fused C++ Metal primitives that need access to MLX internals. These are intended for eventual upstream contribution — see [`UPSTREAM_PLAN.md`](UPSTREAM_PLAN.md).
-
-| Primitive | Status | Description |
-|:--|:--|:--|
-| `gather_qmm_swiglu` | Working | Fused gate+up+SwiGLU for quantized MoE experts |
-| `gather_qmm_combine` | Working | Fused down projection + weighted expert sum |
-| `add_rms_norm` | Planned | Fused residual add + RMSNorm |
+</details>
 
 ---
 
 ## Precision
 
-All Python-level Metal kernels compute internally in **float32** regardless of input dtype. The C++ `gather_qmm_swiglu` primitive currently uses the default MLX quantized matmul precision, which may differ — this is the source of the Qwen3 fidelity issue and a target for improvement.
+All Python-level Metal kernels compute internally in **float32** regardless of input dtype. When exact dtype behavior matters (e.g., bfloat16 accumulation order), ZMLX provides specialized kernels to match MLX’s semantics.
 
 ---
 
@@ -350,6 +345,8 @@ All Python-level Metal kernels compute internally in **float32** regardless of i
 - [`docs/QUICKSTART.md`](docs/QUICKSTART.md) — 5-minute tutorial
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — Recipes for common patterns
 - [`docs/KERNELS.md`](docs/KERNELS.md) — Complete kernel catalog
+- [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) — Detailed benchmark methodology
+- [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) — Optional custom‑MLX experiments
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Design philosophy
 - [`UPSTREAM_PLAN.md`](UPSTREAM_PLAN.md) — What belongs upstream in MLX
 

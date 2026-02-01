@@ -107,6 +107,28 @@ def test_activation_grad_variant_matches_reference():
     assert mx.allclose(gx, gx_ref, rtol=1e-4, atol=1e-4).item()
 
 
+def test_relu2_matches_reference():
+    op = activations.relu2()
+    x = mx.random.normal((2048,)).astype(mx.float16)
+
+    y = op(x)
+    y_ref = mx.maximum(x, 0) ** 2
+
+    mx.eval(y, y_ref)
+    assert mx.allclose(y, y_ref, rtol=2e-3, atol=2e-3).item()
+
+
+def test_relu2_grad_matches_reference():
+    op = activations.relu2_grad()
+    x = mx.random.normal((2048,)).astype(mx.float32)
+
+    gx = mx.grad(lambda z: mx.mean(op(z)))(x)
+    gx_ref = mx.grad(lambda z: mx.mean(mx.maximum(z, 0) ** 2))(x)
+
+    mx.eval(gx, gx_ref)
+    assert mx.allclose(gx, gx_ref, rtol=1e-4, atol=1e-4).item()
+
+
 def _sorted_pairs(indices: mx.array, weights: mx.array) -> tuple[mx.array, mx.array]:
     order = mx.argsort(indices, axis=-1)
     sorted_indices = mx.take_along_axis(indices, order, axis=-1)

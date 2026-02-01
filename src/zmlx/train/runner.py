@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 
 def _check_mlx_lm() -> None:
@@ -42,10 +42,15 @@ def train(config: Any) -> dict[str, Any]:
     if config.verbose:
         print(f"[zmlx.train] Loading model: {config.model}")
 
-    model, tokenizer = mlx_lm.utils.load(
-        config.model,
-        tokenizer_config={"trust_remote_code": True},
+    loaded = cast(
+        tuple[Any, ...],
+        mlx_lm.utils.load(
+            config.model,
+            tokenizer_config={"trust_remote_code": True},
+        ),
     )
+    model = loaded[0]
+    tokenizer = loaded[1]
 
     # 2. Apply ZMLX patching
     if config.patch:
@@ -123,7 +128,9 @@ def train(config: Any) -> dict[str, Any]:
         max_seq_length=config.max_seq_length,
     )
 
-    train_set, valid_set, _ = tuner_datasets.load_dataset(dataset_args, tokenizer)
+    train_set, valid_set, _ = tuner_datasets.load_dataset(
+        dataset_args, cast(Any, tokenizer)
+    )
 
     # 7. Build TrainingArgs
     training_args = trainer.TrainingArgs(
@@ -142,6 +149,7 @@ def train(config: Any) -> dict[str, Any]:
     # 8. Build optimizer
     optimizer_name = config.optimizer.lower()
     lr = config.learning_rate
+    optimizer: optim.Optimizer
     if optimizer_name == "adam":
         optimizer = optim.Adam(learning_rate=lr)
     elif optimizer_name == "adamw":
@@ -186,15 +194,25 @@ def train(config: Any) -> dict[str, Any]:
     if config.verbose:
         print("[zmlx.train] Starting training...")
 
-    trainer.train(
-        model=model,
-        optimizer=optimizer,
-        train_dataset=tuner_datasets.CacheDataset(train_set),
-        val_dataset=tuner_datasets.CacheDataset(valid_set),
-        args=training_args,
-        loss=loss_fn,
-        training_callback=training_callback,
-    )
+    if training_callback is None:
+        trainer.train(
+            model=model,
+            optimizer=optimizer,
+            train_dataset=tuner_datasets.CacheDataset(train_set),
+            val_dataset=tuner_datasets.CacheDataset(valid_set),
+            args=training_args,
+            loss=loss_fn,
+        )
+    else:
+        trainer.train(
+            model=model,
+            optimizer=optimizer,
+            train_dataset=tuner_datasets.CacheDataset(train_set),
+            val_dataset=tuner_datasets.CacheDataset(valid_set),
+            args=training_args,
+            loss=loss_fn,
+            training_callback=training_callback,
+        )
 
     return {
         "output_dir": str(output_dir),
