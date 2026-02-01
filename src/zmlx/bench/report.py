@@ -13,11 +13,11 @@ import sys
 from pathlib import Path
 
 
-def _fmt_change(baseline: float, patched: float) -> str:
+def _fmt_change(baseline: float, patched: float, neutral_threshold: float = 2.0) -> str:
     if baseline <= 0:
         return "—"
     pct = (patched / baseline - 1) * 100
-    if abs(pct) < 2.0:
+    if abs(pct) < neutral_threshold:
         return f"{pct:+.1f}% (neutral)"
     return f"**{pct:+.1f}%**"
 
@@ -42,7 +42,10 @@ def _print_model_table(key: str, data: dict) -> None:
     print(f"  {'Metric':<14} {'Baseline':>12} {'Patched':>12} {'Change':>18}")
     print(f"  {'-' * 58}")
     print(f"  {'Decode':<14} {b_decode:>10.1f}  {p_decode:>10.1f}  {_fmt_change(b_decode, p_decode):>18}")
-    print(f"  {'Prefill':<14} {b_prefill:>10.1f}  {p_prefill:>10.1f}  {_fmt_change(b_prefill, p_prefill):>18}")
+    print(
+        f"  {'Prefill':<14} {b_prefill:>10.1f}  {p_prefill:>10.1f}  "
+        f"{_fmt_change(b_prefill, p_prefill, neutral_threshold=3.0):>18}"
+    )
     fidelity_str = f"{matched}/{total}"
     print(f"  {'Fidelity':<14} {'':>12} {fidelity_str:>12}  {verdict:>18}")
     if peak_mem > 0:

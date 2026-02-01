@@ -32,6 +32,14 @@ from .._registry import register
 from .._types import PatchConfig
 
 
+def _is_qwen3_moe_block(mod: Any) -> bool:
+    """Return True if this module looks like Qwen3's MoE block."""
+    cls = mod.__class__
+    if cls.__name__ == "Qwen3MoeSparseMoeBlock":
+        return True
+    return cls.__module__.startswith("mlx_lm.models.qwen3_moe")
+
+
 def _gating(self_mod: Any, x: Any, gate_attr: str, k: int) -> tuple[Any, Any]:
     """Run the model's gating logic faithfully, returning (indices, weights).
 
@@ -47,6 +55,15 @@ def _gating(self_mod: Any, x: Any, gate_attr: str, k: int) -> tuple[Any, Any]:
         # Gate already computed indices + scores (GLM-4, DeepSeek-V3 style).
         indices, weights = gate_out
         return indices, weights
+
+    if _is_qwen3_moe_block(self_mod):
+        # Qwen3 uses precise softmax on logits, then argpartition on probs.
+        gates = mx.softmax(gate_out, axis=-1, precise=True)
+        inds = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
+        scores = mx.take_along_axis(gates, inds, axis=-1)
+        if getattr(self_mod, "norm_topk_prob", False):
+            scores = scores / mx.sum(scores, axis=-1, keepdims=True)
+        return inds.astype(mx.uint32), scores
 
     # Raw logits path — preserve the standard gating sequence exactly,
     # but use the fused kernel when possible.
@@ -260,6 +277,8 @@ class _MoEMLPPattern:
                     f"(bits={gp.bits}, gs={gp.group_size}, attr={loc})"
                 )
 
+        use_exact_combine = _is_qwen3_moe_block(module)
+
         def patched_call(self_mod: Any, x: Any) -> Any:
             # 1. Gating — preserve the model's original logic exactly.
             indices, weights = _gating(self_mod, x, _gate_attr, num_experts_per_tok)
@@ -294,8 +313,12 @@ class _MoEMLPPattern:
                         if mask.any():
                             expert_outputs[mask, k] = expert(x[mask])
 
-            # 3. Fused Combine: weighted sum of expert outputs in one kernel
-            y = moe.moe_combine(expert_outputs, weights)
+            # 3. Combine: Qwen3 uses the exact sum path for fidelity.
+            if use_exact_combine:
+                y = moe.moe_combine_exact(expert_outputs, weights)
+            else:
+                # Fused Combine: weighted sum of expert outputs in one kernel
+                y = moe.moe_combine(expert_outputs, weights)
 
             # 4. Shared experts (GLM-4, DeepSeek-V3): additive dense path
             shared = getattr(self_mod, "shared_experts", None)

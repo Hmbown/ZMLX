@@ -851,6 +851,60 @@ def moe_combine(expert_outputs: Any, weights: Any) -> Any:
     return out.reshape((*original_shape, D))
 
 
+@cache
+def _moe_combine_kernel_exact(d: int, k: int) -> Any:
+    D = int(d)
+    K = int(k)
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint K = {K};
+        uint token_idx = thread_position_in_grid.y;
+        uint d_idx = thread_position_in_grid.x;
+
+        T acc = (T)0;
+        for (uint i = 0; i < K; ++i) {{
+            T w = weights[token_idx * K + i];
+            T v = expert_outputs[(token_idx * K + i) * D + d_idx];
+            acc += w * v;
+        }}
+        out[token_idx * D + d_idx] = acc;
+    """
+    return metal_kernel(
+        name=f"kk_moe_combine_exact_D{D}_K{K}",
+        input_names=["expert_outputs", "weights"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def moe_combine_exact(expert_outputs: Any, weights: Any) -> Any:
+    """Combine expert outputs using gating weights (dtype-accurate accumulation).
+
+    Matches MX behavior by accumulating in the input dtype (e.g., float16).
+    """
+    original_shape = weights.shape[:-1]
+    K = weights.shape[-1]
+    D = expert_outputs.shape[-1]
+
+    expert_outputs_flat = expert_outputs.reshape(-1, K, D)
+    weights_flat = weights.reshape(-1, K)
+    B = weights_flat.shape[0]
+
+    k = _moe_combine_kernel_exact(D, K)
+    out = k(
+        expert_outputs_flat, weights_flat,
+        template=[("T", expert_outputs.dtype)],
+        grid=(D, B, 1),
+        threadgroup=(min(D, 256), 1, 1),
+        output_shapes=[(B, D)],
+        output_dtypes=[expert_outputs.dtype],
+    )[0]
+    return out.reshape((*original_shape, D))
+
+
 def topk_gating_softmax(
     x: Any,
     k: int = 2,
@@ -1202,6 +1256,7 @@ __all__ = [
     "topk_gating_softmax",
     "moe_dispatch",
     "moe_combine",
+    "moe_combine_exact",
     "gather_qmm_combine",
     "gather_qmm_combine_quantized",
 ]

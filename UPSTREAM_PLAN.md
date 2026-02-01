@@ -6,54 +6,61 @@ What belongs in MLX, what stays in ZMLX, and how to get there.
 
 ZMLX sits on top of MLX's `mx.fast.metal_kernel` and `mx.custom_function` APIs. Most of ZMLX (kernel authoring, autograd wrappers, the catalog) is a toolkit that doesn't need to be upstream. The fused C++ Metal primitives in `mlx_local/` are the upstream candidates — they need access to MLX internals that `metal_kernel` can't reach.
 
-## What belongs upstream
+## Principles
 
-| Primitive | Status | Why it needs to be in MLX |
+- Prefer general-purpose primitives that benefit many model families.
+- Keep MoE‑specific fusions in ZMLX unless MLX maintainers request them.
+- Default user path must remain token‑identical (performance without silent drift).
+
+## Upstream candidates (general‑purpose first)
+
+| Candidate | Status | Why it belongs in MLX |
 |:--|:--|:--|
-| `gather_qmm_swiglu` | Working (local fork) | Fused gather + quantized matmul + SwiGLU for MoE experts. Reads `x` once instead of twice, requires access to MLX's quantized matmul internals. |
-| `add_rms_norm` | Planned | Fused residual add + RMSNorm. Needs to write the residual and the normalized output in a single pass (2x memory bandwidth reduction). |
-| `gather_qmm_combine` | Planned | Fused down-projection + weighted expert sum. Eliminates the intermediate expert output buffer. |
+| `mx.fast.swiglu` | Proposed | Common transformer activation (Llama/Qwen/Mistral/Gemma/Phi). Small, clean primitive that mirrors `mx.fast.*` patterns. |
+| `add_rms_norm` | Benchmark‑gated | Only useful if MLX doesn’t already fuse `x + residual` into `rms_norm`. |
+| `gather_qmm_swiglu` | Local fork (RFC first) | MoE‑specific, uses MLX quantized matmul internals. Needs maintainers’ buy‑in before a PR. |
 
-### Smallest safe PR: `gather_qmm_swiglu`
+### Minimal PR: `mx.fast.swiglu`
 
-**What it does:** Given a quantized weight matrix W_gate and W_up (packed as a SwitchLinear), and a set of expert indices per token, computes `SwiGLU(gather(W_gate, idx) @ x, gather(W_up, idx) @ x)` in a single Metal kernel dispatch.
+**What it does:** Computes `silu(gate) * up` in a single pass with a small elementwise Metal kernel.
 
-**Why it helps:** In MoE decode (M=1), the standard path dispatches 3+ kernels (gather, two QMMs, SwiGLU). The fused version does one dispatch, reducing Metal command buffer overhead and reading the input once.
-
-**Validation:**
-- Token-identical output vs unfused path (greedy decode, 500 tokens)
-- Tested on LFM2-8B-A1B-4bit and 8bit (E=32, K=4)
-- Guarded: only activates for M <= 32 (decode). Prefill falls through to the standard path.
-- Measured: +4% per MoE layer at M=1 on M1 Pro, +9-12% end-to-end decode on M4 Max
+**Why it helps:** Every modern transformer uses SwiGLU. A fused op reduces dispatch overhead and intermediate buffers and fits MLX’s existing `mx.fast` API pattern.
 
 **PR structure:**
-1. C++ primitive + Metal kernel in `mlx/backend/metal/kernels/`
-2. Python binding in `mlx/fast.py`
-3. Tests: correctness vs reference implementation, shape/dtype coverage
-4. Benchmark: single-layer timing at M=1,4,16,64
+1. Declare `swiglu()` in `mlx/fast.h`
+2. Add primitive + VJP (patterned on RMSNorm)
+3. Implement a tiny Metal kernel (single‑pass elementwise)
+4. Add Python binding
+5. Tests: forward correctness + VJP + CPU/Metal parity
 
-## What stays in ZMLX
+### Benchmark gate: `add_rms_norm`
 
-- **Kernel authoring API** (`elementwise()`, `reduce()`, `map_reduce()`) — developer tooling, not a runtime primitive.
-- **Autograd wrappers** — convenience layer over `mx.custom_function`.
-- **Kernel catalog** (70+ kernels) — reference implementations and benchmarks. Some may eventually inform upstream optimizations, but they're useful as-is for prototyping.
-- **Model patching** (`patch()`, `smart_patch()`) — ZMLX-specific UX for applying fused kernels to existing models.
-- **Autotune** — threadgroup search that works with `metal_kernel`. Could become upstream if MLX adds autotuning.
+Before proposing a primitive, benchmark whether MLX already fuses:
 
-## Validation approach
+```
+mx.fast.rms_norm(x + residual, w, eps)
+```
 
-Before any upstream PR:
+If MLX already fuses this into a single dispatch, an `add_rms_norm` primitive adds complexity without benefit. If it does not, a fused add+norm can halve memory bandwidth at every layer.
 
-1. **Correctness**: `python -m zmlx.validate <model> --max-tokens 500 --runs 5` must report `PASS` (token-identical greedy decode).
-2. **Performance**: Single-layer benchmarks (`benchmarks/bench_moe_layer.py`) must show measurable improvement at decode sequence lengths (M=1 to M=32).
-3. **Regression guard**: Prefill (M > 32) must not regress. The fused path is guarded with a sequence length threshold.
-4. **Repro capsule**: Raw per-run data saved to `benchmarks/repro_capsules/` with hardware, OS, and version metadata.
+### MoE‑specific fusions
 
-## Timeline
+- **`gather_qmm_swiglu`**: keep in `mlx_local/` until an MLX Discussion confirms interest. Share LFM2 and Qwen3 repro capsules to justify it.
+- **`gather_qmm_combine`**: stays in ZMLX (achievable via `metal_kernel` and too specialized for core MLX).
 
-| Step | Target |
-|:--|:--|
-| `gather_qmm_swiglu` local validation complete | Done |
-| Open MLX GitHub Discussion with motivation + benchmarks | Next |
-| Submit PR with primitive + tests + benchmark | After discussion feedback |
-| `add_rms_norm` local prototype | After `gather_qmm_swiglu` lands |
+## Release policy (ZMLX)
+
+- **Stable (default)**: stock MLX, only token‑identical patches enabled.
+- **Fast (opt‑in)**: dev MLX allowed; experimental kernels are opt‑in and must be validated.
+- **Edge (opt‑in)**: nightly/dev MLX + experimental kernels for local testing only.
+
+ZMLX should auto‑detect dev MLX features (e.g. `mx.gather_qmm_swiglu`) and only enable them when present.
+
+## Roadmap (sequenced)
+
+1. **Dev‑MLX delivery**: publish a reproducible dev‑MLX build path (wheel or source) and a runtime capability check.
+2. **Qwen3‑30B‑A3B (base + instruct)**: run token‑parity + perf on stock MLX vs dev MLX and record results in capsules.
+3. **Capsules + docs**: update README/CLAUDE with release policy and dev‑MLX behavior.
+4. **Upstream `mx.fast.swiglu`**: submit the small, general PR once tests are ready.
+5. **`add_rms_norm`**: submit only if the benchmark shows no existing fusion.
+6. **MoE RFC**: open an MLX Discussion for `gather_qmm_swiglu` before any PR.

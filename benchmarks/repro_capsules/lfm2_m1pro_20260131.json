@@ -5,7 +5,7 @@
     "memory_gb": 16,
     "macos": "14.6.1",
     "mlx_version": "0.30.4",
-    "zmlx_version": "0.7.1",
+    "zmlx_version": "0.7.11",
     "git_commit": "7de879eb0d1514230a43eac23e4f86799cfe4bb8",
     "python": "3.10.0",
     "command_4bit": "python -m zmlx.validate mlx-community/LFM2-8B-A1B-4bit --max-tokens 500 --runs 5",

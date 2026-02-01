@@ -76,6 +76,7 @@ def _model_family(model: nn.Module) -> str:
 _FIDELITY_EXCLUDES: dict[str, set[str]] = {
     "qwen": {"moe_mlp", "swiglu_mlp", "residual_norm"},
     "gpt_oss": {"moe_mlp", "residual_norm"},
+    "mixtral": {"moe_mlp"},
 }
 
 # ---------------------------------------------------------------------------
@@ -200,7 +201,7 @@ def patch(
     # Only when using default pattern selection (no explicit patterns=).
     # Pass patterns=[...] explicitly to override.
     family = _model_family(model)
-    fidelity_risks = _FIDELITY_EXCLUDES.get(family, set())
+    fidelity_risks = set(_FIDELITY_EXCLUDES.get(family, set()))
     if not explicit and fidelity_risks:
         before_names = {p.name for p in selected}
         selected = [p for p in selected if p.name not in fidelity_risks]

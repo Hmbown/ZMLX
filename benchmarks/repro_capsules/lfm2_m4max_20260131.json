@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "date": "2026-01-31",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.1",
+    "zmlx_version": "0.7.11",
+    "git_commit": "139993e",
+    "python": "3.12",
+    "command_4bit": "python -m zmlx.validate mlx-community/LFM2-8B-A1B-4bit --max-tokens 500 --runs 5",
+    "command_8bit": "python -m zmlx.validate mlx-community/LFM2-8B-A1B-8bit-MLX --max-tokens 500 --runs 5"
+  },
+  "lfm2_8b_a1b_4bit": {
+    "model": "mlx-community/LFM2-8B-A1B-4bit",
+    "max_tokens": 500,
+    "gen_tokens": 430,
+    "runs": 5,
+    "fidelity": {"matched": 430, "total": 430, "verdict": "PASS"},
+    "baseline": {
+      "prefill_tok_s": [245.6, 736.6, 739.8, 737.4, 741.0],
+      "decode_tok_s": [221.1, 223.9, 223.7, 223.9, 223.7],
+      "median_prefill": 737.4,
+      "median_decode": 223.7,
+      "peak_mem_gb": 5.30
+    },
+    "patched": {
+      "patterns": ["swiglu_mlp", "geglu_mlp", "moe_mlp"],
+      "modules_patched": 24,
+      "prefill_tok_s": [562.4, 750.2, 757.5, 757.7, 755.4],
+      "decode_tok_s": [249.2, 250.3, 250.3, 249.9, 250.4],
+      "median_prefill": 755.4,
+      "median_decode": 250.3,
+      "peak_mem_gb": 5.30
+    },
+    "summary": {
+      "decode_speedup": 1.119,
+      "prefill_change": 0.024
+    }
+  },
+  "lfm2_8b_a1b_8bit": {
+    "model": "mlx-community/LFM2-8B-A1B-8bit-MLX",
+    "max_tokens": 500,
+    "gen_tokens": 500,
+    "runs": 5,
+    "fidelity": {"matched": 500, "total": 500, "verdict": "PASS"},
+    "baseline": {
+      "prefill_tok_s": [516.7, 558.0, 557.6, 560.0, 556.5],
+      "decode_tok_s": [151.7, 152.5, 152.5, 152.6, 152.4],
+      "median_prefill": 557.6,
+      "median_decode": 152.5,
+      "peak_mem_gb": 9.45
+    },
+    "patched": {
+      "patterns": ["swiglu_mlp", "geglu_mlp", "moe_mlp"],
+      "modules_patched": 24,
+      "prefill_tok_s": [565.8, 562.1, 564.4, 565.9, 563.4],
+      "decode_tok_s": [164.2, 164.2, 164.3, 164.3, 164.4],
+      "median_prefill": 564.4,
+      "median_decode": 164.3,
+      "peak_mem_gb": 9.45
+    },
+    "summary": {
+      "decode_speedup": 1.077,
+      "prefill_change": 0.012
+    }
+  }
+}
