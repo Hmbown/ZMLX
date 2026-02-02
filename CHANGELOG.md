@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.13] - 2026-02-02
+
+### Added
+
+- **GLM model detection**: `_is_glm_moe_block` in `moe_mlp` pattern, with opt-in fused SwiGLU via `ZMLX_GLM_FUSED_SWIGLU` env var.
+- **Experimental MoE stream pool**: `ZMLX_MOE_STREAMS=N` env var for multi-stream expert dispatch.
+- **GLM-4.7-Flash-4bit validation**: 0.955x decode, FAIL fidelity (diverges at token 1). Added to auto-excludes and "Tested (no gain)" table.
+
+### Fixed
+
+- **Numerically stable sigmoid**: `kk_sigmoid` in `msl.py` now uses `abs+branch` to avoid overflow on large negative inputs.
+- **SwiGLU native dtype**: forward and backward kernels use native dtype with `kk_sigmoid` helper instead of always casting to float32.
+
+### Changed
+
+- **GLM auto-excluded**: `moe_mlp` and `swiglu_mlp` excluded for GLM models (token fidelity failure). Override with explicit `patterns=[...]`.
+- **README**: tighter install section, docs as table, prose polish.
+- **Gitignore**: removed `AGENTS.md`, `UPSTREAM_PLAN.md`, `IMPLEMENTATION_SUMMARY.md` from tracking.
+
 ## [0.7.12] - 2026-02-01
 
 ### Added

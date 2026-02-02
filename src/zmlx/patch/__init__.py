@@ -74,11 +74,12 @@ def _model_family(model: nn.Module) -> str:
 
 
 # Patterns known to break token fidelity per model family.
-# Validated with `python -m zmlx.validate` (200-token greedy, Jan 2026).
+# Validated with `python -m zmlx.validate` (200-token greedy).
 _FIDELITY_EXCLUDES: dict[str, set[str]] = {
     "qwen": {"swiglu_mlp", "residual_norm"},
     "gpt_oss": {"residual_norm"},
     "mixtral": {"moe_mlp"},
+    "glm": {"moe_mlp", "swiglu_mlp"},
 }
 
 # ---------------------------------------------------------------------------

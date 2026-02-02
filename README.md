@@ -370,6 +370,7 @@ Requires the custom MLX kernel build (see `mlx_local/`). Token-identical, valida
 
 | Model | Status | Notes |
 |:--|:--|:--|
+| GLM-4.7-Flash-4bit | 0.955x, FAIL | `@mx.compile` gating; auto-excluded |
 | Nemotron-3-Nano-30B-A3B-NVFP4 | 0.999x, PASS | Hybrid Mamba-MoE, bandwidth-limited at 19.4 GB |
 | LFM2.5-1.2B-Thinking-MLX-8bit | 0.997x, PASS | Dense model, no matched MoE patterns |
 | Qwen3-30B-A3B-Instruct-2507-4bit | 0.98x, PASS | No gain on stock MLX; custom kernel required for speedup |

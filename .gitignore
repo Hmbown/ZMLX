@@ -41,6 +41,8 @@ CLAUDE.md
 HANDOFF_PROMPT.md
 REVIEW_PROMPT.md
 IMPLEMENTATION_SUMMARY.md
+AGENTS.md
+UPSTREAM_PLAN.md
 benchmarks/results/
 
 # Local-only directories (not shipped)
