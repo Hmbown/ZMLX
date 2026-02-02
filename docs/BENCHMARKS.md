@@ -89,3 +89,7 @@ python3 -m zmlx.validate <model> --max-tokens 1000 --runs 15
 
 - Quick sanity after adding fused down‑projection + combine (200 tokens, 3 runs, custom MLX): Qwen3‑30B‑A3B‑Instruct‑2507‑4bit **1.042x**, PASS. This is not directly comparable to the 1000‑token/15‑run baseline and will be re‑run.
 - Qwen3 minimal profile (`--patch-profile qwen3`, 1000 tokens, 15 runs, custom MLX): base 331.7 / 109.4 → patched 333.4 / 116.3, **1.063x**, PASS. This is below the 1.078x baseline and needs further tuning before adoption.
+- Qwen3 default profile (custom MLX, 1000 tokens, 15 runs): base 333.2 / 111.2 → patched 333.3 / 116.8, **1.050x**, PASS. This is below the earlier 1.078x result and may indicate regression or run‑to‑run variance.
+- LFM2‑8B‑A1B‑4bit (stock MLX, 1000 tokens, 15 runs) after fused down‑proj+combine: base 738.5 / 221.1 → patched 739.3 / 245.6, **1.111x**, PASS (no regression vs prior).
+- GPT‑OSS‑20B‑MXFP4‑Q4 (stock MLX, 1000 tokens, 15 runs) after fused down‑proj+combine: base 319.9 / 121.1 → patched 319.1 / 122.1, **1.008x**, PASS (no regression vs prior).
+- Multi‑queue overlap microbench (custom MLX) with `MLX_MAX_OPS_PER_BUFFER=1` shows **~1.01–1.02x**, indicating minimal overlap under current MLX eval/commit policy.
