@@ -103,7 +103,57 @@ LFM2-8B-A1B: **+5-12% decode**, token-identical, measured on M1 Pro and M4 Max. 
 
 </details>
 
+<details>
+<summary>Validation update — 2026-02-02 (M4 Max 36 GB)</summary>
+
+> macOS 26.1 · MLX 0.30.4 · ZMLX 0.7.12 · Python 3.14.2 · Apple M4 Max
+>
+> 1000 tokens, runs=15, greedy decoding (`python -m zmlx.validate`)
+
+**Stock MLX (ZMLX only)**
+
+| Model | Baseline decode | Patched decode | Speedup | Fidelity |
+|:--|--:|--:|--:|:--|
+| LFM2-8B-A1B-4bit | 223.5 tok/s | 249.4 tok/s | 1.116x | PASS |
+| LFM2-8B-A1B-8bit-MLX | 151.8 tok/s | 162.5 tok/s | 1.071x | PASS |
+| GPT-OSS-20B-MXFP4-Q4 | 121.8 tok/s | 122.9 tok/s | 1.008x | PASS |
+
+**Custom MLX kernel (optional)**
+
+| Model | Baseline decode | Patched decode | Speedup | Fidelity |
+|:--|--:|--:|--:|:--|
+| Qwen3-30B-A3B-Instruct-2507-4bit | 108.0 tok/s | 116.5 tok/s | 1.078x | PASS |
+
+</details>
+
 Full methodology and raw data: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+
+---
+
+## Custom MLX Kernel (optional)
+
+Qwen3 speedups currently require a small custom MLX kernel patch (included in `mlx_local/`).
+
+**Build (one-time)**
+
+```bash
+cd /Volumes/VIXinSSD/ZMLX/mlx_local
+# Limit CPU usage during build if desired:
+# CMAKE_BUILD_PARALLEL_LEVEL=4 python3 setup.py build_ext --inplace
+python3 setup.py build_ext --inplace
+```
+
+**Use**
+
+```bash
+export PYTHONPATH=/Volumes/VIXinSSD/ZMLX/mlx_local/python:/Volumes/VIXinSSD/ZMLX/src:$PYTHONPATH
+HF_HOME=/Volumes/VIXinSSD/hf_cache python3 -m zmlx.validate mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit --max-tokens 1000 --runs 15
+```
+
+**Safety**
+
+- The **build step** is the only CPU-heavy operation; cap it with `CMAKE_BUILD_PARALLEL_LEVEL`.
+- Runtime uses the same MLX threading behavior as stock; remove `mlx_local/python` from `PYTHONPATH` to revert.
 
 ---
 
@@ -160,7 +210,7 @@ model = smart_patch(model, sample)
 
 ## Model Support
 
-### Stable
+### Stable (stock MLX)
 
 Token-identical output, measurable decode improvement. Safe to use without further validation.
 
@@ -168,15 +218,23 @@ Token-identical output, measurable decode improvement. Safe to use without furth
 |:--|:--|:--|:--|
 | **LFM2-8B-A1B-4bit** | **+9-12%** | token-identical | `moe_mlp` + `swiglu_mlp` |
 | **LFM2-8B-A1B-8bit** | **+5-8%** | token-identical | `moe_mlp` + `swiglu_mlp` |
-| **Qwen3-30B-A3B-4bit** | **+7%** | token-identical | `moe_mlp` |
 | **GPT-OSS-20B-MXFP4-Q4** | **+1%** | token-identical | `moe_mlp` |
 
-### Tested (no gain)
+### Stable (custom MLX kernel)
+
+Token-identical output, measurable decode improvement when using the custom MLX kernel build (see `mlx_local/` for the current patch).
+
+| Model | Decode speedup | Fidelity | Patterns |
+|:--|:--|:--|:--|
+| **Qwen3-30B-A3B-Instruct-2507-4bit** | **+7-8%** | token-identical | `moe_mlp` |
+
+### Tested (no gain, stock MLX)
 
 | Model | Status | Notes |
 |:--|:--|:--|
 | Nemotron-3-Nano-30B-A3B-NVFP4 | 0.999x, PASS | Hybrid Mamba-MoE, bandwidth-limited at 19.4 GB |
 | LFM2.5-1.2B-Thinking-MLX-8bit | 0.997x, PASS | Dense model, no matched MoE patterns |
+| Qwen3-30B-A3B-Instruct-2507-4bit | 0.98x, PASS | No gain on stock MLX; custom kernel required for speedup |
 | Qwen3-4B-4bit (dense) | diverges at token 18 | Dense model, patches not expected to help |
 | Llama-3.2-1B-4bit | 0.98x, PASS | Dense model, bandwidth-bound |
 
