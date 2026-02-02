@@ -242,6 +242,16 @@ For unlisted models: `python -m zmlx.validate <model>`.
 
 ---
 
+## Future Projects
+
+- **Forced MoE parallelization** — explore true multi‑queue GPU overlap (per‑stream command queues + MTLEvent sync) for concurrent expert execution.
+- **Fused down‑projection + combine** — remove `(B, K, D)` materialization for MoE decode.
+- **Qwen3 patch profile** — moe‑only default to minimize overhead on Qwen3.
+- **Combine kernel tuning** — specialize `moe_combine_fp32` for K=8 and threadgroup sizes on M‑series GPUs.
+- **Prefill optimizations** — large‑M attention/GEMM fusions and compile‑graph experiments.
+
+---
+
 ## Toolkit
 
 ZMLX is also a Metal kernel authoring toolkit for MLX:
