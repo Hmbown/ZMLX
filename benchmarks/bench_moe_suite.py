@@ -7,7 +7,7 @@ and aggregates a suite summary for overnight runs.
 Example:
   python benchmarks/bench_moe_suite.py \\
     --model-list benchmarks/moe_models.txt \\
-    --cache-dir /Volumes/VIXinSSD/TEST \\
+    --cache-dir .benchmarks/hf_cache \\
     --runs 3 --max-tokens 200
 """
 
@@ -83,7 +83,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--cache-dir",
-        default="/Volumes/VIXinSSD/TEST",
+        default=os.environ.get("HF_HOME", ".benchmarks/hf_cache"),
         help="HF cache directory (keeps models off main drive)",
     )
     parser.add_argument("--runs", type=int, default=3)

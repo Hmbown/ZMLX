@@ -137,7 +137,7 @@ Qwen3 speedups currently require a small custom MLX kernel patch (included in `m
 **Build (one-time)**
 
 ```bash
-cd /Volumes/VIXinSSD/ZMLX/mlx_local
+cd mlx_local
 # Limit CPU usage during build if desired:
 # CMAKE_BUILD_PARALLEL_LEVEL=4 python3 setup.py build_ext --inplace
 python3 setup.py build_ext --inplace
@@ -146,8 +146,9 @@ python3 setup.py build_ext --inplace
 **Use**
 
 ```bash
-export PYTHONPATH=/Volumes/VIXinSSD/ZMLX/mlx_local/python:/Volumes/VIXinSSD/ZMLX/src:$PYTHONPATH
-HF_HOME=/Volumes/VIXinSSD/hf_cache python3 -m zmlx.validate mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit --max-tokens 1000 --runs 15
+# From the ZMLX repo root:
+export PYTHONPATH=$(pwd)/mlx_local/python:$(pwd)/src:$PYTHONPATH
+python3 -m zmlx.validate mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit --max-tokens 1000 --runs 15
 ```
 
 **Safety**
