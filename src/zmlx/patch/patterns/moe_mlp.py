@@ -26,7 +26,7 @@ from typing import Any
 import mlx.core as mx
 import mlx.nn as nn
 
-from ...kernels import moe
+from ...kernels import moe, transformer
 from ...kernels.fused_moe import has_gather_qmm_swiglu
 from .._registry import register
 from .._types import PatchConfig
@@ -45,6 +45,14 @@ def _is_gpt_oss_block(mod: Any) -> bool:
     cls = mod.__class__
     mod_path = getattr(cls, "__module__", "") or ""
     return "gpt_oss" in mod_path
+
+
+def _is_lfm2_moe_block(mod: Any) -> bool:
+    """Return True if this module looks like an LFM2 MoE block."""
+    cls = mod.__class__
+    mod_path = getattr(cls, "__module__", "") or ""
+    combined = f"{mod_path} {cls.__name__}".lower()
+    return "lfm2" in combined or "lfm" in combined
 
 
 def _gating(
@@ -153,6 +161,44 @@ def _is_standard_swiglu_activation(switch_mlp: Any) -> bool:
     return False
 
 
+def _is_lora_like(mod: Any) -> bool:
+    """Return True if *mod* looks like a LoRA/DoRA wrapper."""
+    cls = mod.__class__
+    name = cls.__name__.lower()
+    mod_path = (getattr(cls, "__module__", "") or "").lower()
+    return "lora" in name or "dora" in name or "lora" in mod_path or "dora" in mod_path
+
+
+def _flatten_for_fused_combine(
+    act: Any,
+    gate: Any,
+    indices: Any,
+) -> tuple[Any, Any, Any, tuple[int, ...]] | None:
+    """Normalize MoE tensors to 3D for gather_qmm_combine helpers."""
+    if act.ndim != indices.ndim + 1:
+        return None
+    if gate.shape != indices.shape:
+        return None
+    if act.shape[:-1] != indices.shape:
+        return None
+    k = indices.shape[-1]
+    act_flat = act.reshape(-1, k, act.shape[-1])
+    gate_flat = gate.reshape(-1, k)
+    indices_flat = indices.reshape(-1, k)
+    return act_flat, gate_flat, indices_flat, gate.shape[:-1]
+
+
+def _prepare_downproj_weights(weights: Any, d_in: int) -> Any | None:
+    """Normalize SwitchLinear weights to (E, D_in, D_out) layout."""
+    if weights.ndim != 3:
+        return None
+    if weights.shape[1] == d_in:
+        return weights
+    if weights.shape[2] == d_in:
+        return mx.swapaxes(weights, 1, 2)
+    return None
+
+
 def _can_fuse_switch_mlp(switch_mlp: Any) -> bool:
     """Return True if the switch_mlp can use gather_qmm_swiglu.
 
@@ -243,6 +289,84 @@ def _fused_switch_mlp_call(
     return x_out.squeeze(-2)
 
 
+def _try_fused_downproj_combine(
+    switch_mlp: Any,
+    x: Any,
+    indices: Any,
+    gate: Any,
+    *,
+    require_fp32: bool,
+) -> Any | None:
+    """Attempt fused down-projection + combine for SwitchGLU modules."""
+    if not _is_standard_swiglu_activation(switch_mlp):
+        return None
+
+    gate_proj = getattr(switch_mlp, "gate_proj", None)
+    up_proj = getattr(switch_mlp, "up_proj", None)
+    down_proj = getattr(switch_mlp, "down_proj", None)
+    if gate_proj is None or up_proj is None or down_proj is None:
+        return None
+
+    if _is_lora_like(down_proj):
+        return None
+    if getattr(down_proj, "bias", None) is not None:
+        return None
+
+    is_quantized = _is_quantized_switch_linear(down_proj)
+    if is_quantized:
+        if not hasattr(mx, "gather_qmm"):
+            return None
+        if getattr(down_proj, "mode", "affine") != "affine":
+            return None
+
+    if require_fp32 and gate.dtype != mx.float32:
+        return None
+
+    try:
+        gate_act = gate_proj(x, indices)
+        up_act = up_proj(x, indices)
+        activated = transformer.swiglu2(gate_act, up_act)
+    except Exception:
+        return None
+    flat = _flatten_for_fused_combine(activated, gate, indices)
+    if flat is None:
+        return None
+    act_flat, gate_flat, indices_flat, out_shape = flat
+
+    if require_fp32 and (act_flat.dtype != mx.float32 or gate_flat.dtype != mx.float32):
+        return None
+    if indices_flat.dtype != mx.uint32:
+        indices_flat = indices_flat.astype(mx.uint32)
+
+    if is_quantized:
+        biases = down_proj.get("biases") if hasattr(down_proj, "get") else None
+        out_flat = moe.gather_qmm_combine_quantized(
+            act_flat,
+            down_proj.weight,
+            down_proj.scales,
+            biases,
+            gate_flat,
+            indices_flat,
+            group_size=down_proj.group_size,
+            bits=down_proj.bits,
+        )
+    else:
+        weights = getattr(down_proj, "weight", None)
+        if weights is None:
+            return None
+        weights = _prepare_downproj_weights(weights, act_flat.shape[-1])
+        if weights is None:
+            return None
+        out_flat = moe.gather_qmm_combine(
+            act_flat,
+            weights,
+            gate_flat,
+            indices_flat,
+        )
+
+    return out_flat.reshape((*out_shape, out_flat.shape[-1]))
+
+
 class _MoEMLPPattern:
     @property
     def name(self) -> str:
@@ -301,12 +425,13 @@ class _MoEMLPPattern:
                 )
 
         is_qwen3 = _is_qwen3_moe_block(module)
+        is_lfm2 = _is_lfm2_moe_block(module)
         is_gpt_oss = _is_gpt_oss_block(module)
         use_exact_combine = is_qwen3
 
         def patched_call(self_mod: Any, x: Any) -> Any:
             # 1. Gating — preserve the model's original logic exactly.
-            indices, weights = _gating(
+            indices, gate_weights = _gating(
                 self_mod,
                 x,
                 _gate_attr,
@@ -316,19 +441,33 @@ class _MoEMLPPattern:
             )
 
             # 2. Expert Execution
+            expert_outputs = None
             if switch_mlp is not None:
-                if _use_fused_swiglu:
-                    # Fused path: gather_qmm_swiglu for small token counts,
-                    # falls back to original for large M.
-                    expert_outputs = _fused_switch_mlp_call(
+                fused_out = None
+                if is_qwen3 or is_lfm2:
+                    fused_out = _try_fused_downproj_combine(
                         switch_mlp,
                         x,
                         indices,
-                        max_tokens=fused_swiglu_max_tokens,
+                        gate_weights,
+                        require_fp32=use_exact_combine,
                     )
+
+                if fused_out is not None:
+                    y = fused_out
                 else:
-                    # Qwen3/GLM/LFM2 style: vectorized experts (SwitchGLU)
-                    expert_outputs = switch_mlp(x, indices)
+                    if _use_fused_swiglu:
+                        # Fused path: gather_qmm_swiglu for small token counts,
+                        # falls back to original for large M.
+                        expert_outputs = _fused_switch_mlp_call(
+                            switch_mlp,
+                            x,
+                            indices,
+                            max_tokens=fused_swiglu_max_tokens,
+                        )
+                    else:
+                        # Qwen3/GLM/LFM2 style: vectorized experts (SwitchGLU)
+                        expert_outputs = switch_mlp(x, indices)
             else:
                 # Mixtral/DeepSeek style: list of expert modules
                 experts = getattr(self_mod, "experts", None)
@@ -346,17 +485,18 @@ class _MoEMLPPattern:
                             expert_outputs[mask, k] = expert(x[mask])
 
             # 3. Combine
-            if is_gpt_oss:
-                # GPT-OSS: match MLX's dtype promotion and sum order.
-                if weights.dtype == mx.float32:
-                    y = moe.moe_combine_fp32(expert_outputs, weights)
+            if expert_outputs is not None:
+                if is_gpt_oss:
+                    # GPT-OSS: match MLX's dtype promotion and sum order.
+                    if gate_weights.dtype == mx.float32:
+                        y = moe.moe_combine_fp32(expert_outputs, gate_weights)
+                    else:
+                        y = moe.moe_combine_exact(expert_outputs, gate_weights)
+                elif use_exact_combine:
+                    y = moe.moe_combine_exact(expert_outputs, gate_weights)
                 else:
-                    y = moe.moe_combine_exact(expert_outputs, weights)
-            elif use_exact_combine:
-                y = moe.moe_combine_exact(expert_outputs, weights)
-            else:
-                # Fused Combine: weighted sum of expert outputs in one kernel
-                y = moe.moe_combine(expert_outputs, weights)
+                    # Fused Combine: weighted sum of expert outputs in one kernel
+                    y = moe.moe_combine(expert_outputs, gate_weights)
 
             # 4. Shared experts (GLM-4, DeepSeek-V3): additive dense path
             shared = getattr(self_mod, "shared_experts", None)
