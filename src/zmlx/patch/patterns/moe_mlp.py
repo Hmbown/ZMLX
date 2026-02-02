@@ -353,7 +353,11 @@ class _MoEMLPPattern:
                 else:
                     y = moe.moe_combine_exact(expert_outputs, weights)
             elif use_exact_combine:
-                y = moe.moe_combine_exact(expert_outputs, weights)
+                # Qwen3: match MLX dtype promotion if weights are float32.
+                if weights.dtype == mx.float32:
+                    y = moe.moe_combine_fp32(expert_outputs, weights)
+                else:
+                    y = moe.moe_combine_exact(expert_outputs, weights)
             else:
                 # Fused Combine: weighted sum of expert outputs in one kernel
                 y = moe.moe_combine(expert_outputs, weights)
