@@ -164,6 +164,14 @@ All reductions operate over the **last dimension**.
 | `moe_dispatch(x, indices)` | Fused token-to-expert dispatch |
 | `moe_combine(experts, weights)` | Fused expert-output combination and weighting |
 
+## Fused MoE (`zmlx.kernels.fused_moe`)
+
+Thin wrappers around MLX C++ fused primitives (not custom Metal kernels).
+
+| Kernel | Description |
+|:--- |:--- |
+| `gather_qmm_swiglu(...)` | Fused gather + quantized matmul + SwiGLU (requires MLX fused op availability) |
+
 ## Image (`zmlx.kernels.image`)
 
 | Kernel | Description |

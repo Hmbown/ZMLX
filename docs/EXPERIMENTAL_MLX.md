@@ -1,6 +1,6 @@
 # Experimental MLX Fork (Optional)
 
-This document describes ZMLX’s **optional** custom‑MLX work. You do **not** need any of this for the stable, stock‑MLX results in the README. It exists for research and upstream prototyping only.
+This document describes ZMLX’s **optional** custom‑MLX work. You do **not** need any of this for the stock‑MLX results in the README. The README also includes an opt‑in custom‑MLX Qwen3 section that depends on this fork. It exists for research and upstream prototyping only.
 
 ## What this is
 
@@ -8,7 +8,7 @@ ZMLX includes a local MLX fork in `mlx_local/` for experiments that require MLX 
 
 ## When to use it
 
-Only if you are experimenting with C++ Metal primitives or trying to fuse operations that MLX doesn’t expose in Python. The stable results for LFM2, Qwen3, and GPT‑OSS do **not** rely on this.
+Only if you are experimenting with C++ Metal primitives or trying to fuse operations that MLX doesn’t expose in Python. The stock‑MLX results for LFM2 and GPT‑OSS do **not** rely on this; the opt‑in Qwen3 section in the README does.
 
 ## Key primitive: `gather_qmm_swiglu`
 

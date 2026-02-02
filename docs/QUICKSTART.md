@@ -8,7 +8,7 @@ Go from a math formula to a tested, benchmarked, differentiable Metal kernel in 
 pip install zmlx
 ```
 
-Requires macOS on Apple Silicon (M-series), Python >= 3.10, mlx >= 0.30.0.
+Requires macOS 14+ on Apple Silicon (M-series), Python >= 3.10, mlx >= 0.30.0.
 
 ## Step 1: Define a Custom Op
 

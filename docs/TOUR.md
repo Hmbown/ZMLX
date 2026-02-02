@@ -8,7 +8,7 @@ A quick walkthrough of what ZMLX does and how to verify it.
 pip install zmlx
 ```
 
-Requires macOS on Apple Silicon, Python >= 3.10, MLX >= 0.30.0.
+Requires macOS 14+ on Apple Silicon, Python >= 3.10, MLX >= 0.30.0.
 
 ## 2. Patch a model
 
