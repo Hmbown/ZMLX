@@ -47,12 +47,12 @@ pip install zmlx
 
 ## Benchmarks — Stable mode (stock MLX)
 
-LFM2-8B-A1B: **+5-12% decode**, token-identical, measured on M1 Pro and M4 Max. Prefill neutral by design (fused kernels activate only at M <= 32).
+LFM2-8B-A1B: **+5-12% decode**, token-identical, measured on M1 Pro and M4 Max. Prefill neutral by design (fused SwiGLU dispatch activates only at M <= 32).
 
 <details>
 <summary>LFM2-8B-A1B on M1 Pro 16 GB</summary>
 
-> macOS 14.6.1 · MLX 0.30.4 · ZMLX 0.7.11 · Python 3.10.0 · commit `7de879e`
+> macOS 14.6.1 · MLX 0.30.4 · ZMLX 0.7.12 · Python 3.10.0 · commit `7de879e`
 >
 > **Repro capsule:** [`benchmarks/repro_capsules/lfm2_m1pro_20260131.json`](benchmarks/repro_capsules/lfm2_m1pro_20260131.json) · **Print report:** `python -m zmlx.bench.report <capsule.json>`
 
@@ -79,7 +79,7 @@ LFM2-8B-A1B: **+5-12% decode**, token-identical, measured on M1 Pro and M4 Max. 
 <details>
 <summary>LFM2-8B-A1B on M4 Max 36 GB</summary>
 
-> macOS 26.1 · MLX 0.30.1 · ZMLX 0.7.11 · Python 3.12 · commit `139993e`
+> macOS 26.1 · MLX 0.30.1 · ZMLX 0.7.12 · Python 3.12 · commit `139993e`
 >
 > **Repro capsule:** [`benchmarks/repro_capsules/lfm2_m4max_20260131.json`](benchmarks/repro_capsules/lfm2_m4max_20260131.json) · **Print report:** `python -m zmlx.bench.report <capsule.json>`
 
@@ -122,7 +122,7 @@ LFM2-8B-A1B: **+5-12% decode**, token-identical, measured on M1 Pro and M4 Max. 
 
 | Model | Base prompt | Patched prompt | Base decode | Patched decode | Decode speedup | Fidelity |
 |:--|--:|--:|--:|--:|--:|:--|
-| Qwen3-30B-A3B-Instruct-2507-4bit | 331.0 tok/s | 332.3 tok/s | 108.0 tok/s | 116.5 tok/s | 1.078x | PASS |
+| Qwen3-30B-A3B-Instruct-2507-4bit | 333.2 tok/s | 333.3 tok/s | 111.2 tok/s | 116.8 tok/s | 1.050x | PASS |
 
 </details>
 
@@ -185,7 +185,7 @@ Replaces the separate element-wise multiply and reduce-sum with a single kernel 
 
 ### Why prefill is unaffected
 
-All fused kernels are guarded with a sequence length check (`M <= 32`). During prefill, M equals the prompt length (typically hundreds or thousands of tokens). At this scale, the compute-to-dispatch ratio is high and the standard MLX path is already efficient. The guards ensure ZMLX never regresses prefill performance.
+The fused SwiGLU expert dispatch is guarded with a sequence length check (`M <= 32`). During prefill, M equals the prompt length (typically hundreds or thousands of tokens). At this scale, the compute-to-dispatch ratio is high and the standard MLX path is already efficient. The guard ensures ZMLX never regresses prefill performance.
 
 ### Correctness guarantee
 
@@ -228,7 +228,7 @@ Token-identical output, measurable decode improvement when using the custom MLX 
 
 | Model | Decode speedup | Fidelity | Patterns |
 |:--|:--|:--|:--|
-| **Qwen3-30B-A3B-Instruct-2507-4bit** | **+7-8%** | token-identical | `moe_mlp` |
+| **Qwen3-30B-A3B-Instruct-2507-4bit** | **+5-8%** | token-identical | `moe_mlp` |
 
 ### Tested (no gain, stock MLX)
 
@@ -247,8 +247,6 @@ For unlisted models: `python -m zmlx.validate <model>`.
 ## Future Projects
 
 - **Forced MoE parallelization** — explore true multi‑queue GPU overlap (per‑stream command queues + MTLEvent sync) for concurrent expert execution.
-- **Fused down‑projection + combine** — remove `(B, K, D)` materialization for MoE decode.
-- **Qwen3 patch profile** — moe‑only default to minimize overhead on Qwen3.
 - **Combine kernel tuning** — specialize `moe_combine_fp32` for K=8 and threadgroup sizes on M‑series GPUs.
 - **Prefill optimizations** — large‑M attention/GEMM fusions and compile‑graph experiments.
 
@@ -405,7 +403,7 @@ zmlx.bench.compare(
 
 ## Precision
 
-All Python-level Metal kernels compute internally in **float32** regardless of input dtype. When exact dtype behavior matters (e.g., bfloat16 accumulation order), ZMLX provides specialized kernels to match MLX’s semantics.
+Most Python-level Metal kernels compute internally in **float32** regardless of input dtype. The main exception is `moe_combine_exact`, which accumulates in the input dtype to match MLX's bfloat16 semantics for Qwen3. When exact dtype behavior matters, ZMLX provides these specialized kernels to match MLX's accumulation order.
 
 ---
 
