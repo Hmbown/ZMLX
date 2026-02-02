@@ -112,17 +112,17 @@ LFM2-8B-A1B: **+5-12% decode**, token-identical, measured on M1 Pro and M4 Max. 
 
 **Stock MLX (ZMLX only)**
 
-| Model | Baseline decode | Patched decode | Speedup | Fidelity |
-|:--|--:|--:|--:|:--|
-| LFM2-8B-A1B-4bit | 223.5 tok/s | 249.4 tok/s | 1.116x | PASS |
-| LFM2-8B-A1B-8bit-MLX | 151.8 tok/s | 162.5 tok/s | 1.071x | PASS |
-| GPT-OSS-20B-MXFP4-Q4 | 121.8 tok/s | 122.9 tok/s | 1.008x | PASS |
+| Model | Base prompt | Patched prompt | Base decode | Patched decode | Decode speedup | Fidelity |
+|:--|--:|--:|--:|--:|--:|:--|
+| LFM2-8B-A1B-4bit | 742.8 tok/s | 756.7 tok/s | 223.5 tok/s | 249.4 tok/s | 1.116x | PASS |
+| LFM2-8B-A1B-8bit-MLX | 555.3 tok/s | 552.1 tok/s | 151.8 tok/s | 162.5 tok/s | 1.071x | PASS |
+| GPT-OSS-20B-MXFP4-Q4 | 320.1 tok/s | 317.9 tok/s | 121.8 tok/s | 122.9 tok/s | 1.008x | PASS |
 
 **Custom MLX kernel (optional)**
 
-| Model | Baseline decode | Patched decode | Speedup | Fidelity |
-|:--|--:|--:|--:|:--|
-| Qwen3-30B-A3B-Instruct-2507-4bit | 108.0 tok/s | 116.5 tok/s | 1.078x | PASS |
+| Model | Base prompt | Patched prompt | Base decode | Patched decode | Decode speedup | Fidelity |
+|:--|--:|--:|--:|--:|--:|:--|
+| Qwen3-30B-A3B-Instruct-2507-4bit | 331.0 tok/s | 332.3 tok/s | 108.0 tok/s | 116.5 tok/s | 1.078x | PASS |
 
 </details>
 
