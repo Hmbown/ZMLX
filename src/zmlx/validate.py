@@ -124,6 +124,7 @@ def _bench_config(
     model_path: str,
     label: str,
     patterns: list[str] | None,
+    profile: str | None,
     prompt: str,
     max_tokens: int,
     runs: int,
@@ -140,9 +141,12 @@ def _bench_config(
     model, tokenizer = loaded[0], loaded[1]
 
     patched_count = 0
-    if patterns is None:
+    if patterns is None and profile is None:
         print("  Applying: patch(model) with model-aware defaults")
         zmlx_patch(model, verbose=True)
+    elif profile is not None:
+        print(f"  Applying: patch(model, profile={profile!r})")
+        zmlx_patch(model, profile=profile, verbose=True)
     elif patterns:
         print(f"  Applying patterns: {patterns}")
         zmlx_patch(model, patterns=patterns, verbose=True)
@@ -205,6 +209,12 @@ def main() -> None:
         default=None,
         help="ZMLX patch patterns to apply (default: FUSED_ACTIVATIONS)",
     )
+    parser.add_argument(
+        "--patch-profile",
+        type=str,
+        default=None,
+        help="Patch profile to apply (e.g., qwen3)",
+    )
     parser.add_argument("--max-tokens", type=int, default=200, help="Tokens to generate")
     parser.add_argument("--runs", type=int, default=3, help="Timed runs per config")
     parser.add_argument(
@@ -218,11 +228,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.patterns is not None and args.patch_profile is not None:
+        raise SystemExit("Use either --patterns or --patch-profile, not both.")
+
     # --- Baseline ---
     baseline = _bench_config(
         model_path=args.model,
         label="Baseline (unpatched)",
         patterns=[],
+        profile=None,
         prompt=args.prompt,
         max_tokens=args.max_tokens,
         runs=args.runs,
@@ -233,6 +247,7 @@ def main() -> None:
         model_path=args.model,
         label="ZMLX Patched",
         patterns=args.patterns,
+        profile=args.patch_profile,
         prompt=args.prompt,
         max_tokens=args.max_tokens,
         runs=args.runs,
@@ -250,7 +265,11 @@ def main() -> None:
     print("  VALIDATION REPORT")
     print(f"{'='*60}")
     print(f"  Model:    {args.model}")
-    print(f"  Patterns: {args.patterns or '(default FUSED_ACTIVATIONS)'}")
+    if args.patch_profile:
+        patterns_label = f"profile={args.patch_profile}"
+    else:
+        patterns_label = args.patterns or "(default FUSED_ACTIVATIONS)"
+    print(f"  Patterns: {patterns_label}")
     print(f"  Tokens:   {args.max_tokens} greedy (temp=0)")
     print()
 
