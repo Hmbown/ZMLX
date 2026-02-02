@@ -153,11 +153,12 @@ def _get_moe_stream_pool() -> list[mx.Stream] | None:
         return None
     if count <= 1:
         return None
-    if not mx.is_available(mx.gpu):
+    gpu = mx.Device(mx.gpu)
+    if not mx.is_available(gpu):
         return None
-    streams = [mx.default_stream(mx.gpu)]
+    streams = [mx.default_stream(gpu)]
     for _ in range(count - 1):
-        streams.append(mx.new_stream(mx.gpu))
+        streams.append(mx.new_stream(gpu))
     return streams
 
 
