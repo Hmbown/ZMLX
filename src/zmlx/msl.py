@@ -19,7 +19,8 @@ using namespace metal;
 
 template <typename T>
 inline T kk_sigmoid(T x) {
-    return T(1) / (T(1) + metal::exp(-x));
+    T y = T(1) / (T(1) + metal::exp(metal::abs(x)));
+    return (x < T(0)) ? y : T(1) - y;
 }
 
 template <typename T>

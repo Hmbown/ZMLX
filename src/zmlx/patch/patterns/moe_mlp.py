@@ -21,6 +21,7 @@ Also handles ``shared_experts`` (additive dense MLP) when present.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import mlx.core as mx
@@ -53,6 +54,25 @@ def _is_lfm2_moe_block(mod: Any) -> bool:
     mod_path = getattr(cls, "__module__", "") or ""
     combined = f"{mod_path} {cls.__name__}".lower()
     return "lfm2" in combined or "lfm" in combined
+
+
+def _is_glm_moe_block(mod: Any) -> bool:
+    """Return True if this module looks like a GLM MoE block."""
+    cls = mod.__class__
+    mod_path = (getattr(cls, "__module__", "") or "").lower()
+    name = cls.__name__.lower()
+    return "glm" in mod_path or "glm" in name
+
+
+def _glm_allow_fused_swiglu() -> bool:
+    """Return True if GLM should use fused SwiGLU (experimental)."""
+    raw = os.environ.get("ZMLX_GLM_FUSED_SWIGLU")
+    if raw is None:
+        return False
+    try:
+        return int(raw) != 0
+    except ValueError:
+        return False
 
 
 def _gating(
@@ -119,6 +139,26 @@ def _gating(
 # Max token count for the fused path.  Beyond this the fused kernel regresses
 # vs the two-pass approach (benchmarked on M-series: ~0.5x at M=64).
 _FUSED_SWIGLU_MAX_TOKENS = 32
+_MOE_STREAMS_ENV = "ZMLX_MOE_STREAMS"
+
+
+def _get_moe_stream_pool() -> list[mx.Stream] | None:
+    """Return a deterministic GPU stream pool for MoE dispatch."""
+    raw = os.environ.get(_MOE_STREAMS_ENV)
+    if raw is None:
+        return None
+    try:
+        count = int(raw)
+    except ValueError:
+        return None
+    if count <= 1:
+        return None
+    if not mx.is_available(mx.gpu):
+        return None
+    streams = [mx.default_stream(mx.gpu)]
+    for _ in range(count - 1):
+        streams.append(mx.new_stream(mx.gpu))
+    return streams
 
 
 def _is_quantized_switch_linear(mod: Any) -> bool:
@@ -427,7 +467,18 @@ class _MoEMLPPattern:
         is_qwen3 = _is_qwen3_moe_block(module)
         is_lfm2 = _is_lfm2_moe_block(module)
         is_gpt_oss = _is_gpt_oss_block(module)
+        is_glm = _is_glm_moe_block(module)
         use_exact_combine = is_qwen3
+        if is_glm and _use_fused_swiglu and not _glm_allow_fused_swiglu():
+            if config.verbose:
+                print("  [moe_mlp] GLM detected: skipping fused SwiGLU (token safety)")
+            _use_fused_swiglu = False
+        moe_stream_pool = _get_moe_stream_pool()
+        if moe_stream_pool is not None and config.verbose:
+            print(
+                f"  [moe_mlp] MoE stream pool enabled "
+                f"({len(moe_stream_pool)} streams)"
+            )
 
         def patched_call(self_mod: Any, x: Any) -> Any:
             # 1. Gating — preserve the model's original logic exactly.
@@ -476,13 +527,30 @@ class _MoEMLPPattern:
                 B = indices.shape[0]
                 K = indices.shape[-1]
                 D = x.shape[-1]
-                expert_outputs = mx.zeros((B, K, D), dtype=x.dtype)
-
-                for i, expert in enumerate(experts):
-                    for k in range(K):
-                        mask = indices[:, k] == i
-                        if mask.any():
-                            expert_outputs[mask, k] = expert(x[mask])
+                if moe_stream_pool is None:
+                    expert_outputs = mx.zeros((B, K, D), dtype=x.dtype)
+                    for i, expert in enumerate(experts):
+                        for k in range(K):
+                            mask = indices[:, k] == i
+                            if mask.any():
+                                expert_outputs[mask, k] = expert(x[mask])
+                else:
+                    stream_count = len(moe_stream_pool)
+                    stream_outputs: list[mx.array] = []
+                    for stream in moe_stream_pool:
+                        with mx.stream(stream):
+                            stream_outputs.append(mx.zeros((B, K, D), dtype=x.dtype))
+                    for i, expert in enumerate(experts):
+                        stream_index = i % stream_count
+                        stream = moe_stream_pool[stream_index]
+                        with mx.stream(stream):
+                            for k in range(K):
+                                mask = indices[:, k] == i
+                                if mask.any():
+                                    stream_outputs[stream_index][mask, k] = expert(x[mask])
+                    expert_outputs = stream_outputs[0]
+                    for out in stream_outputs[1:]:
+                        expert_outputs = expert_outputs + out
 
             # 3. Combine
             if expert_outputs is not None:

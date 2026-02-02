@@ -25,9 +25,9 @@ def _swiglu_fwd_kernel(d: int) -> Any:
         uint col = gid % {D};
         uint base = row * {2 * D};
         
-        float a = (float)inp[base + col];
-        float b = (float)inp[base + col + {D}];
-        out[gid] = (T)(a * (1.0f / (1.0f + metal::exp(-a))) * b);
+        T a = inp[base + col];
+        T b = inp[base + col + {D}];
+        out[gid] = (T)(a * kk_sigmoid(a) * b);
     """
     return metal_kernel(
         name=f"kk_swiglu_fwd_D{D}",
@@ -49,16 +49,16 @@ def _swiglu_bwd_kernel(d: int) -> Any:
         uint col = gid % {D};
         uint base = row * {2 * D};
         
-        float a = (float)inp[base + col];
-        float b = (float)inp[base + col + {D}];
-        float g = (float)cotan[gid];
+        T a = inp[base + col];
+        T b = inp[base + col + {D}];
+        T g = cotan[gid];
 
-        float s = 1.0f / (1.0f + metal::exp(-a));
-        float swish = a * s;
+        T s = kk_sigmoid(a);
+        T swish = a * s;
 
         // d/da (a * s * b) = b * (s + a * s * (1 - s))
         // d/db (a * s * b) = a * s
-        dinp[base + col] = (T)(g * b * (s + swish * (1.0f - s)));
+        dinp[base + col] = (T)(g * b * (s + swish * (T(1) - s)));
         dinp[base + col + {D}] = (T)(g * swish);
     """
     return metal_kernel(
@@ -865,9 +865,9 @@ def dropout(x: Any, p: float, seed: int = 0, *, compute_dtype: Any | None = None
 def _swiglu2_fwd_kernel() -> Any:
     source = """
         uint gid = thread_position_in_grid.x;
-        float a = (float)gate[gid];
-        float b = (float)up[gid];
-        out[gid] = (T)(a * (1.0f / (1.0f + metal::exp(-a))) * b);
+        T a = gate[gid];
+        T b = up[gid];
+        out[gid] = (T)(a * kk_sigmoid(a) * b);
     """
     return metal_kernel(
         name="kk_swiglu2_fwd",
@@ -884,14 +884,14 @@ def _swiglu2_fwd_kernel() -> Any:
 def _swiglu2_bwd_kernel() -> Any:
     source = """
         uint gid = thread_position_in_grid.x;
-        float a = (float)gate[gid];
-        float b = (float)up[gid];
-        float g = (float)cotan[gid];
+        T a = gate[gid];
+        T b = up[gid];
+        T g = cotan[gid];
 
-        float s = 1.0f / (1.0f + metal::exp(-a));
-        float swish = a * s;
+        T s = kk_sigmoid(a);
+        T swish = a * s;
 
-        dgate[gid] = (T)(g * b * (s + swish * (1.0f - s)));
+        dgate[gid] = (T)(g * b * (s + swish * (T(1) - s)));
         dup[gid] = (T)(g * swish);
     """
     return metal_kernel(

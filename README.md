@@ -5,9 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform: macOS Apple Silicon](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-lightgrey.svg)](https://github.com/ml-explore/mlx)
 
-ZMLX extends [MLX](https://github.com/ml-explore/mlx) with custom Metal kernels for Apple Silicon. Author GPU kernels from Python expressions, use the 70+ kernel catalog, or `patch(model)` for MoE decode speedups (+5-12% on LFM2-8B-A1B, token-identical, stock MLX). No model conversion, no config changes.
+ZMLX extends [MLX](https://github.com/ml-explore/mlx) with custom Metal kernels for Apple Silicon. Author GPU kernels from Python expressions, use the 70+ kernel catalog, or call `patch(model)` for MoE decode speedups — +5-12% on LFM2-8B-A1B, token-identical, stock MLX. No model conversion, no config changes.
 
-Quick start (after `pip install "zmlx[train]"`):
+**Quick start** (after `pip install "zmlx[train]"`):
 
 ```python
 import mlx_lm
@@ -31,21 +31,16 @@ python -m zmlx.validate mlx-community/LFM2-8B-A1B-4bit --max-tokens 200 --runs 3
 
 ## Install
 
-**Requirements**: macOS 14+ (Apple Silicon), Python >= 3.10, MLX >= 0.30.0
+**Requirements:** macOS 14+ (Apple Silicon), Python >= 3.10, MLX >= 0.30.0
 
 ```bash
-pip install "zmlx[train]"
+pip install "zmlx[train]"    # includes mlx-lm for model patching
+pip install zmlx              # kernel authoring only
 ```
 
-Includes `mlx-lm` and everything needed for model patching. For kernel authoring only:
+Large model downloads use the Hugging Face cache — set `HF_HOME` to control the location.
 
-```bash
-pip install zmlx
-```
-
-Large model downloads use the Hugging Face cache; set `HF_HOME` to control the location.
-
-From source:
+**From source:**
 
 ```bash
 git clone https://github.com/Hmbown/ZMLX.git
@@ -55,18 +50,13 @@ pip install -e ".[dev]"
 
 ## Default mode (stock MLX)
 
-| Mode | What you need | What you get |
-|:--|:--|:--|
-| **Stable** (default) | Stock MLX + `zmlx` | Token-identical output, real decode speedups |
-
-`patch()` auto-detects which patterns are safe for your model family.
-Optional custom-MLX builds for Qwen3 are documented below.
+`patch()` auto-detects which patterns are safe for your model family. In the default **Stable** mode, you get token-identical output with real decode speedups using stock MLX — nothing else required. Optional custom-MLX builds for Qwen3 are documented below.
 
 ---
 
 ## Benchmarks — Stable mode (stock MLX)
 
-LFM2-8B-A1B: **+5-12% decode**, token-identical, measured on M1 Pro and M4 Max. Prefill neutral by design (fused SwiGLU dispatch activates only at M <= 32).
+LFM2-8B-A1B: **+5-12% decode throughput**, token-identical, measured on M1 Pro and M4 Max. Prefill is neutral by design — the fused SwiGLU dispatch only activates at M <= 32.
 
 <details>
 <summary>LFM2-8B-A1B on M1 Pro 16 GB</summary>
@@ -151,14 +141,14 @@ Full methodology and raw data: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 ## Toolkit
 
-ZMLX is also a Metal kernel authoring toolkit for MLX:
+Beyond model patching, ZMLX is a Metal kernel authoring toolkit for MLX:
 
 - **70+ kernel catalog** — SwiGLU, GeGLU, fused dropout, MoE gating, RMSNorm, RoPE, quantization
 - **One-line kernel authoring** — `elementwise("x * tanh(log(1 + exp(x)))")` compiles to Metal
 - **Automatic gradients** — custom VJP backward passes as Metal kernels via `mx.custom_function`
 - **Benchmarking** — `zmlx.bench.compare()` for side-by-side timing, `zmlx.bench.report` for repro capsules
-- **Training utilities** — `zmlx train` CLI for fine-tuning with fused kernels (opt-in)
-- **Zig frontend** — optional Zig API via a C++ shim (see `docs/ARCHITECTURE.md`)
+- **Training** — `zmlx train` CLI for fine-tuning with fused kernels (opt-in)
+- **Zig frontend** — optional Zig API via C++ shim (see `docs/ARCHITECTURE.md`)
 
 ```python
 from zmlx.api import elementwise
@@ -278,7 +268,7 @@ zmlx.bench.compare(
 
 ### The problem: dispatch overhead in MoE decode
 
-In Mixture-of-Experts models, each token is routed to a subset of expert networks. During decode (generating one token at a time), the computation per expert is small — a few matrix multiplies on a single row vector. But the standard inference path dispatches multiple Metal kernels per expert per layer:
+In Mixture-of-Experts models, each token is routed to a subset of expert networks. During decode (one token at a time), the computation per expert is small — a few matrix multiplies on a single row vector. But the standard path dispatches multiple Metal kernels per expert per layer:
 
 1. **Gating:** `softmax(logits)` → `argpartition` → `gather` → `normalize` — 4 dispatches
 2. **Expert execution:** gate projection, up projection, SwiGLU activation, down projection — per expert
@@ -360,7 +350,7 @@ Keep `mlx_local/python` before `src` in `PYTHONPATH` so the custom MLX build is 
 
 ### Stable (stock MLX)
 
-Token-identical output, measurable decode improvement. Safe to use without further validation.
+Token-identical output, measurable decode improvement. Safe to use as-is.
 
 | Model | Decode speedup | Fidelity | Patterns |
 |:--|:--|:--|:--|
@@ -370,7 +360,7 @@ Token-identical output, measurable decode improvement. Safe to use without furth
 
 ### Custom MLX kernel (opt-in)
 
-Token-identical output, measurable decode improvement when using the custom MLX kernel build (see `mlx_local/` for the current patch). Recent validated range is ~1.050x–1.063x; expect some run-to-run variance.
+Requires the custom MLX kernel build (see `mlx_local/`). Token-identical, validated at ~1.050-1.063x with some run-to-run variance.
 
 | Model | Decode speedup | Fidelity | Patterns |
 |:--|:--|:--|:--|
@@ -411,26 +401,28 @@ For unlisted models: `python -m zmlx.validate <model>`.
 
 ## Precision
 
-Most Python-level Metal kernels compute internally in **float32** regardless of input dtype. The main exception is `moe_combine_exact`, which accumulates in the input dtype to match MLX's bfloat16 semantics for Qwen3. When exact dtype behavior matters, ZMLX provides these specialized kernels to match MLX's accumulation order.
+Most kernels compute internally in **float32** regardless of input dtype. The exception is `moe_combine_exact`, which accumulates in the input dtype to match MLX's bfloat16 semantics for Qwen3.
 
 ---
 
 ## Documentation
 
-- [`docs/TOUR.md`](docs/TOUR.md) — Quick walkthrough and orientation
-- [`docs/QUICKSTART.md`](docs/QUICKSTART.md) — 5-minute tutorial
-- [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — Recipes for common patterns
-- [`docs/KERNELS.md`](docs/KERNELS.md) — Complete kernel catalog
-- [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) — Detailed benchmark methodology
-- [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) — Optional custom‑MLX experiments
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Design philosophy
-- [`UPSTREAM_PLAN.md`](UPSTREAM_PLAN.md) — What belongs upstream in MLX
+| Doc | What's inside |
+|:--|:--|
+| [`docs/TOUR.md`](docs/TOUR.md) | Quick walkthrough and orientation |
+| [`docs/QUICKSTART.md`](docs/QUICKSTART.md) | 5-minute tutorial |
+| [`docs/COOKBOOK.md`](docs/COOKBOOK.md) | Recipes for common patterns |
+| [`docs/KERNELS.md`](docs/KERNELS.md) | Complete kernel catalog |
+| [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Benchmark methodology and raw data |
+| [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) | Optional custom-MLX experiments |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Design philosophy |
+| [`UPSTREAM_PLAN.md`](UPSTREAM_PLAN.md) | What belongs upstream in MLX |
 
 ---
 
 ## Acknowledgments
 
-ZMLX is built on [MLX](https://github.com/ml-explore/mlx) by Apple machine learning research. If you use ZMLX in your work, please also cite MLX:
+Built on [MLX](https://github.com/ml-explore/mlx) by Apple machine learning research. If you use ZMLX in your work, please also cite MLX:
 
 ```bibtex
 @software{mlx2023,
