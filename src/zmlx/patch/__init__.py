@@ -121,6 +121,7 @@ def patch(
     model: nn.Module,
     *,
     mode: str | None = None,
+    profile: str | None = None,
     patterns: list[str] | None = None,
     exclude: list[str] | None = None,
     compute_dtype: str = "float32",
@@ -141,6 +142,8 @@ def patch(
             avoid regressions.  ``"training"`` selects
             :data:`TRAINING_RECOMMENDED` — adds norm fusions that benefit
             backward passes.  Ignored if ``patterns`` is provided explicitly.
+        profile: Optional profile name that selects a curated pattern set.
+            Overrides ``mode`` when provided (unless ``patterns`` is set).
         patterns: Explicit list of pattern names.  Overrides ``mode`` when
             both are given.  ``None`` falls through to ``mode`` selection.
         exclude: Pattern names to skip.
@@ -160,6 +163,7 @@ def patch(
         patch(model)                    # inference (safe default)
         patch(model, mode="training")   # training preset
         patch(model, patterns=["swiglu_mlp", "moe_mlp"])  # explicit
+        patch(model, profile="qwen3")   # Qwen3 minimal (moe only)
 
     .. versionadded:: 0.6.0
         ``mode`` parameter for workload-aware preset selection.
@@ -173,6 +177,10 @@ def patch(
         "inference": FUSED_ACTIVATIONS,
         "training": TRAINING_RECOMMENDED,
     }
+    _PROFILES = {
+        "qwen3": ["moe_mlp"],
+        "qwen3-minimal": ["moe_mlp"],
+    }
 
     config = PatchConfig(
         compute_dtype=compute_dtype,
@@ -181,11 +189,19 @@ def patch(
         verbose=verbose,
     )
 
-    # Resolve patterns: explicit patterns > mode > default (inference)
+    # Resolve patterns: explicit patterns > profile > mode > default (inference)
     explicit = patterns is not None
+    profiled = profile is not None
     if explicit:
         assert patterns is not None  # mypy narrowing
         selected = [get_pattern(name) for name in patterns]
+    elif profile is not None:
+        if profile not in _PROFILES:
+            raise ValueError(
+                f"Unknown profile {profile!r}. Expected one of: "
+                f"{', '.join(sorted(_PROFILES))}"
+            )
+        selected = [get_pattern(name) for name in _PROFILES[profile]]
     elif mode is not None:
         if mode not in _MODES:
             raise ValueError(
@@ -204,7 +220,7 @@ def patch(
     # Pass patterns=[...] explicitly to override.
     family = _model_family(model)
     fidelity_risks = set(_FIDELITY_EXCLUDES.get(family, set()))
-    if not explicit and fidelity_risks:
+    if not explicit and not profiled and fidelity_risks:
         before_names = {p.name for p in selected}
         selected = [p for p in selected if p.name not in fidelity_risks]
         removed = before_names - {p.name for p in selected}
@@ -213,7 +229,7 @@ def patch(
                 f"[zmlx.patch] {family} model detected — excluded {sorted(removed)} "
                 f"(known fidelity issues). Override with patterns=[...]."
             )
-    elif explicit and fidelity_risks:
+    elif (explicit or profiled) and fidelity_risks:
         requested_risky = {p.name for p in selected} & fidelity_risks
         if requested_risky:
             print(

@@ -368,6 +368,7 @@ def load(
     quantize: str | None = None,
     patch: bool = True,
     patch_patterns: list[str] | None = None,
+    patch_profile: str | None = None,
     dtype: str = "float16",
     verbose: bool = False,
 ) -> tuple[nn.Module, Any]:
@@ -416,6 +417,7 @@ def load(
         zmlx_patch(
             model,
             patterns=patch_patterns,
+            profile=patch_profile,
             compute_dtype=dtype,
             verbose=verbose,
         )

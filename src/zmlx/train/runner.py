@@ -62,6 +62,7 @@ def train(config: Any) -> dict[str, Any]:
         patch(
             model,
             patterns=config.patch_patterns,
+            profile=config.patch_profile,
             exclude=config.patch_exclude,
             compute_dtype=config.patch_compute_dtype,
             threadgroup=config.patch_threadgroup,

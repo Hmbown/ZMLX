@@ -61,6 +61,7 @@ class TrainConfig:
     # --- ZMLX Patching ---
     patch: bool = True
     patch_patterns: list[str] | None = None
+    patch_profile: str | None = None
     patch_exclude: list[str] | None = None
     patch_compute_dtype: str = "float32"
     patch_threadgroup: int = 256

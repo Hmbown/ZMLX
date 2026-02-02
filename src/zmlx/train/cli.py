@@ -55,6 +55,7 @@ def _build_parser() -> argparse.ArgumentParser:
     train_p.add_argument("--no-patch", action="store_true", help="Disable ZMLX patching")
     train_p.add_argument("--no-fused-loss", action="store_true", help="Disable fused cross-entropy")
     train_p.add_argument("--patch-verbose", action="store_true")
+    train_p.add_argument("--patch-profile", type=str, default=None, help="Patch profile (e.g., qwen3)")
 
     # Config file
     train_p.add_argument("--config", type=str, default=None, help="YAML config file")

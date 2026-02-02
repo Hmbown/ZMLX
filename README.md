@@ -52,7 +52,7 @@ LFM2-8B-A1B: **+5-12% decode**, token-identical, measured on M1 Pro and M4 Max. 
 <details>
 <summary>LFM2-8B-A1B on M1 Pro 16 GB</summary>
 
-> macOS 14.6.1 · MLX 0.30.4 · ZMLX 0.7.12 · Python 3.10.0 · commit `7de879e`
+> macOS 14.6.1 · MLX 0.30.4 · ZMLX 0.7.11 · Python 3.10.0 · commit `7de879e`
 >
 > **Repro capsule:** [`benchmarks/repro_capsules/lfm2_m1pro_20260131.json`](benchmarks/repro_capsules/lfm2_m1pro_20260131.json) · **Print report:** `python -m zmlx.bench.report <capsule.json>`
 
@@ -72,14 +72,14 @@ LFM2-8B-A1B: **+5-12% decode**, token-identical, measured on M1 Pro and M4 Max. 
 | Decode | 72.8 tok/s | 76.4 tok/s | **+5.0%** |
 | Prefill | 180.5 tok/s | 182.8 tok/s | +1.3% (neutral) |
 | Fidelity | — | 500/500 | token-identical |
-| Peak memory | — | 9.5 GB | |
+| Peak memory | — | 9.45 GB | |
 
 </details>
 
 <details>
 <summary>LFM2-8B-A1B on M4 Max 36 GB</summary>
 
-> macOS 26.1 · MLX 0.30.1 · ZMLX 0.7.12 · Python 3.12 · commit `139993e`
+> macOS 26.1 · MLX 0.30.1 · ZMLX 0.7.11 · Python 3.12 · commit `139993e`
 >
 > **Repro capsule:** [`benchmarks/repro_capsules/lfm2_m4max_20260131.json`](benchmarks/repro_capsules/lfm2_m4max_20260131.json) · **Print report:** `python -m zmlx.bench.report <capsule.json>`
 
@@ -201,6 +201,7 @@ from zmlx.patch import patch, smart_patch
 patch(model)                       # auto-detect, apply safe defaults
 patch(model, patterns=["moe_mlp"]) # force specific pattern (overrides safety)
 patch(model, mode="training")      # add norm fusions for backward pass
+patch(model, profile="qwen3")      # Qwen3 minimal (moe-only)
 
 # Auto-benchmark: apply only patterns that actually help
 sample = mx.array([tokenizer.encode("Hello")])
