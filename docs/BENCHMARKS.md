@@ -88,3 +88,4 @@ python3 -m zmlx.validate <model> --max-tokens 1000 --runs 15
 ### Notes
 
 - Quick sanity after adding fused down‑projection + combine (200 tokens, 3 runs, custom MLX): Qwen3‑30B‑A3B‑Instruct‑2507‑4bit **1.042x**, PASS. This is not directly comparable to the 1000‑token/15‑run baseline and will be re‑run.
+- Qwen3 minimal profile (`--patch-profile qwen3`, 1000 tokens, 15 runs, custom MLX): base 331.7 / 109.4 → patched 333.4 / 116.3, **1.063x**, PASS. This is below the 1.078x baseline and needs further tuning before adoption.
