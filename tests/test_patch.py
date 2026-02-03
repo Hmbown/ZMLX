@@ -117,6 +117,26 @@ def test_list_patterns():
     assert "geglu_mlp" in names
 
 
+def test_family_perf_excludes():
+    from zmlx.patch import _apply_family_excludes
+
+    class Dummy:
+        def __init__(self, name: str):
+            self.name = name
+
+    selected = [Dummy("moe_mlp"), Dummy("swiglu_mlp"), Dummy("geglu_mlp")]
+    filtered = _apply_family_excludes(selected, family="qwen", allow_perf_risk=False)
+    filtered_names = {p.name for p in filtered}
+    assert "moe_mlp" not in filtered_names
+    assert "swiglu_mlp" not in filtered_names
+    assert "geglu_mlp" in filtered_names
+
+    filtered_allow = _apply_family_excludes(selected, family="qwen", allow_perf_risk=True)
+    filtered_allow_names = {p.name for p in filtered_allow}
+    assert "moe_mlp" in filtered_allow_names
+    assert "swiglu_mlp" not in filtered_allow_names
+
+
 # --- RMSNorm pattern ---
 
 

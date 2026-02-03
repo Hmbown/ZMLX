@@ -78,6 +78,15 @@ def _quantized_swiglu_gemv_kernel(
     k_packed = k // elements_per_word
     groups_per_row = k // group_size
     mask = (1 << bits) - 1
+    hi_mask = "0xCu" if bits == 4 else "0xC0u"
+    low_mask = "0x3u" if bits == 4 else "0x3Fu"
+    max_low = 3 if bits == 4 else 63
+    hi_mask = "0xCu" if bits == 4 else "0xC0u"
+    low_mask = "0x3u" if bits == 4 else "0x3Fu"
+    max_low = 3 if bits == 4 else 63
+    hi_mask = "0xCu" if bits == 4 else "0xC0u"
+    low_mask = "0x3u" if bits == 4 else "0x3Fu"
+    max_low = 3 if bits == 4 else 63
 
     source = f"""
         constexpr uint M = {m};
@@ -88,6 +97,12 @@ def _quantized_swiglu_gemv_kernel(
         constexpr uint GROUPS = {groups_per_row};
         constexpr uint ELEMENTS = {elements_per_word};
         constexpr uint MASK = {mask}u;
+        constexpr uint HI_MASK = {hi_mask};
+        constexpr uint LOW_MASK = {low_mask};
+        constexpr float MAX_LOW = {float(max_low)}f;
+        constexpr uint HI_MASK = {hi_mask};
+        constexpr uint LOW_MASK = {low_mask};
+        constexpr float MAX_LOW = {float(max_low)}f;
 
         uint gid = thread_position_in_grid.x;
         uint row = gid / N;
@@ -181,6 +196,534 @@ def fused_quantized_swiglu_gemv(
         up_biases,
         template=[("T", cd)],
         grid=(int(M) * int(N), 1, 1),
+        output_shapes=[(int(M), int(N))],
+        output_dtypes=[cd],
+    )[0]
+
+
+@cache
+def _quantized_swiglu_gemv_progressive_kernel(
+    m: int,
+    n: int,
+    k: int,
+    *,
+    bits: int,
+    group_size: int,
+) -> Any:
+    if bits not in (4, 8):
+        raise ValueError(f"Unsupported bits for progressive SwiGLU GEMV: {bits}")
+    if group_size <= 0:
+        raise ValueError("group_size must be > 0")
+    if k % group_size != 0:
+        raise ValueError("group_size must evenly divide K")
+
+    elements_per_word = 32 // bits
+    if k % elements_per_word != 0:
+        raise ValueError("K must be divisible by elements_per_word")
+
+    k_packed = k // elements_per_word
+    groups_per_row = k // group_size
+    mask = (1 << bits) - 1
+    hi_mask = "0xCu" if bits == 4 else "0xC0u"
+    low_mask = "0x3u" if bits == 4 else "0x3Fu"
+    max_low = 3 if bits == 4 else 63
+
+    source = f"""
+        constexpr uint M = {m};
+        constexpr uint N = {n};
+        constexpr uint K = {k};
+        constexpr uint K_PACKED = {k_packed};
+        constexpr uint GROUP = {group_size};
+        constexpr uint GROUPS = {groups_per_row};
+        constexpr uint ELEMENTS = {elements_per_word};
+        constexpr uint MASK = {mask}u;
+        constexpr uint HI_MASK = {hi_mask};
+        constexpr uint LOW_MASK = {low_mask};
+        constexpr float MAX_LOW = {float(max_low)}f;
+
+        uint gid = thread_position_in_grid.x;
+        uint row = gid / N;
+        uint col = gid % N;
+
+        if (row < M && col < N) {{
+            float acc_gate = 0.0f;
+            float acc_up = 0.0f;
+            float err_gate = 0.0f;
+            float err_up = 0.0f;
+
+            uint w_row = col * K_PACKED;
+            uint s_row = col * GROUPS;
+            uint x_row = row * K;
+
+            float eps = (float)epsilon[0];
+
+            // Pass 1: hi2 only + error bound
+            for (uint i = 0; i < K; ++i) {{
+                uint pack_idx = i / ELEMENTS;
+                uint shift = (i % ELEMENTS) * {bits};
+                uint q_gate = (gate_w[w_row + pack_idx] >> shift) & MASK;
+                uint q_up = (up_w[w_row + pack_idx] >> shift) & MASK;
+
+                uint group_idx = i / GROUP;
+                float scale_g = (float)gate_scales[s_row + group_idx];
+                float scale_u = (float)up_scales[s_row + group_idx];
+                float abs_scale_g = metal::abs(scale_g);
+                float abs_scale_u = metal::abs(scale_u);
+
+                float xv = (float)x[x_row + i];
+                float absx = metal::abs(xv);
+                err_gate += absx * abs_scale_g * MAX_LOW;
+                err_up += absx * abs_scale_u * MAX_LOW;
+
+                uint q_gate_hi = q_gate & HI_MASK;
+                uint q_up_hi = q_up & HI_MASK;
+
+                float gate_val = (float)q_gate_hi * scale_g + (float)gate_biases[s_row + group_idx];
+                float up_val = (float)q_up_hi * scale_u + (float)up_biases[s_row + group_idx];
+                acc_gate += gate_val * xv;
+                acc_up += up_val * xv;
+            }}
+
+            // Pass 2: refine low bits only if needed
+            if (eps >= 0.0f && (err_gate > eps || err_up > eps)) {{
+                for (uint i = 0; i < K; ++i) {{
+                    uint pack_idx = i / ELEMENTS;
+                    uint shift = (i % ELEMENTS) * {bits};
+                    uint q_gate = (gate_w[w_row + pack_idx] >> shift) & LOW_MASK;
+                    uint q_up = (up_w[w_row + pack_idx] >> shift) & LOW_MASK;
+
+                    uint group_idx = i / GROUP;
+                    float scale_g = (float)gate_scales[s_row + group_idx];
+                    float scale_u = (float)up_scales[s_row + group_idx];
+                    float xv = (float)x[x_row + i];
+
+                    acc_gate += (float)q_gate * scale_g * xv;
+                    acc_up += (float)q_up * scale_u * xv;
+                }}
+            }}
+
+            float outv = (acc_gate * kk_sigmoid(acc_gate)) * acc_up;
+            out[gid] = (T)outv;
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_qswiglu_prog_M{m}_N{n}_K{k}_b{bits}",
+        input_names=[
+            "x",
+            "gate_w",
+            "gate_scales",
+            "gate_biases",
+            "up_w",
+            "up_scales",
+            "up_biases",
+            "epsilon",
+        ],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+@cache
+def _quantized_swiglu_gemv_progressive_pg_kernel(
+    m: int,
+    n: int,
+    k: int,
+    *,
+    bits: int,
+    group_size: int,
+) -> Any:
+    if bits not in (4, 8):
+        raise ValueError(f"Unsupported bits for progressive SwiGLU GEMV: {bits}")
+    if group_size <= 0:
+        raise ValueError("group_size must be > 0")
+    if k % group_size != 0:
+        raise ValueError("group_size must evenly divide K")
+
+    elements_per_word = 32 // bits
+    if k % elements_per_word != 0:
+        raise ValueError("K must be divisible by elements_per_word")
+
+    k_packed = k // elements_per_word
+    groups_per_row = k // group_size
+    mask = (1 << bits) - 1
+    hi_mask = "0xCu" if bits == 4 else "0xC0u"
+    low_mask = "0x3u" if bits == 4 else "0x3Fu"
+    max_low = 3 if bits == 4 else 63
+
+    source = f"""
+        constexpr uint M = {m};
+        constexpr uint N = {n};
+        constexpr uint K = {k};
+        constexpr uint K_PACKED = {k_packed};
+        constexpr uint GROUP = {group_size};
+        constexpr uint GROUPS = {groups_per_row};
+        constexpr uint ELEMENTS = {elements_per_word};
+        constexpr uint MASK = {mask}u;
+        constexpr uint HI_MASK = {hi_mask};
+        constexpr uint LOW_MASK = {low_mask};
+        constexpr float MAX_LOW = {float(max_low)}f;
+
+        uint gid = thread_position_in_grid.x;
+        uint row = gid / N;
+        uint col = gid % N;
+
+        if (row < M && col < N) {{
+            float acc_gate = 0.0f;
+            float acc_up = 0.0f;
+            float err_gate[GROUPS];
+            float err_up[GROUPS];
+            for (uint g = 0; g < GROUPS; ++g) {{
+                err_gate[g] = 0.0f;
+                err_up[g] = 0.0f;
+            }}
+
+            uint w_row = col * K_PACKED;
+            uint s_row = col * GROUPS;
+            uint x_row = row * K;
+
+            float eps = (float)epsilon[0];
+
+            // Pass 1: hi2 only + per-group error bound
+            for (uint i = 0; i < K; ++i) {{
+                uint pack_idx = i / ELEMENTS;
+                uint shift = (i % ELEMENTS) * {bits};
+                uint q_gate = (gate_w[w_row + pack_idx] >> shift) & MASK;
+                uint q_up = (up_w[w_row + pack_idx] >> shift) & MASK;
+
+                uint group_idx = i / GROUP;
+                float scale_g = (float)gate_scales[s_row + group_idx];
+                float scale_u = (float)up_scales[s_row + group_idx];
+                float abs_scale_g = metal::abs(scale_g);
+                float abs_scale_u = metal::abs(scale_u);
+
+                float xv = (float)x[x_row + i];
+                float absx = metal::abs(xv);
+                err_gate[group_idx] += absx * abs_scale_g * MAX_LOW;
+                err_up[group_idx] += absx * abs_scale_u * MAX_LOW;
+
+                uint q_gate_hi = q_gate & HI_MASK;
+                uint q_up_hi = q_up & HI_MASK;
+
+                float gate_val = (float)q_gate_hi * scale_g + (float)gate_biases[s_row + group_idx];
+                float up_val = (float)q_up_hi * scale_u + (float)up_biases[s_row + group_idx];
+                acc_gate += gate_val * xv;
+                acc_up += up_val * xv;
+            }}
+
+            if (eps >= 0.0f) {{
+                for (uint i = 0; i < K; ++i) {{
+                    uint group_idx = i / GROUP;
+                    if (err_gate[group_idx] <= eps && err_up[group_idx] <= eps) {{
+                        continue;
+                    }}
+                    uint pack_idx = i / ELEMENTS;
+                    uint shift = (i % ELEMENTS) * {bits};
+                    uint q_gate = (gate_w[w_row + pack_idx] >> shift) & LOW_MASK;
+                    uint q_up = (up_w[w_row + pack_idx] >> shift) & LOW_MASK;
+
+                    float scale_g = (float)gate_scales[s_row + group_idx];
+                    float scale_u = (float)up_scales[s_row + group_idx];
+                    float xv = (float)x[x_row + i];
+
+                    acc_gate += (float)q_gate * scale_g * xv;
+                    acc_up += (float)q_up * scale_u * xv;
+                }}
+            }}
+
+            float outv = (acc_gate * kk_sigmoid(acc_gate)) * acc_up;
+            out[gid] = (T)outv;
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_qswiglu_prog_pg_M{m}_N{n}_K{k}_b{bits}",
+        input_names=[
+            "x",
+            "gate_w",
+            "gate_scales",
+            "gate_biases",
+            "up_w",
+            "up_scales",
+            "up_biases",
+            "epsilon",
+        ],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+@cache
+def _quantized_swiglu_gemv_progressive_tg_kernel(
+    m: int,
+    n: int,
+    k: int,
+    *,
+    bits: int,
+    group_size: int,
+    tg: int,
+) -> Any:
+    if bits not in (4, 8):
+        raise ValueError(f"Unsupported bits for progressive SwiGLU GEMV: {bits}")
+    if group_size <= 0:
+        raise ValueError("group_size must be > 0")
+    if k % group_size != 0:
+        raise ValueError("group_size must evenly divide K")
+    if tg <= 0:
+        raise ValueError("threadgroup must be > 0")
+
+    elements_per_word = 32 // bits
+    if k % elements_per_word != 0:
+        raise ValueError("K must be divisible by elements_per_word")
+
+    k_packed = k // elements_per_word
+    groups_per_row = k // group_size
+    mask = (1 << bits) - 1
+    hi_mask = "0xCu" if bits == 4 else "0xC0u"
+    low_mask = "0x3u" if bits == 4 else "0x3Fu"
+    max_low = 3 if bits == 4 else 63
+
+    source = f"""
+        constexpr uint M = {m};
+        constexpr uint N = {n};
+        constexpr uint K = {k};
+        constexpr uint K_PACKED = {k_packed};
+        constexpr uint GROUP = {group_size};
+        constexpr uint GROUPS = {groups_per_row};
+        constexpr uint ELEMENTS = {elements_per_word};
+        constexpr uint MASK = {mask}u;
+        constexpr uint HI_MASK = {hi_mask};
+        constexpr uint LOW_MASK = {low_mask};
+        constexpr float MAX_LOW = {float(max_low)}f;
+        constexpr uint TG = {tg};
+
+        uint gid = thread_position_in_grid.x;
+        uint tid = thread_position_in_threadgroup.x;
+        uint group = gid / TG;
+        uint row = group / N;
+        uint col = group % N;
+
+        threadgroup float buf_gate[TG];
+        threadgroup float buf_up[TG];
+        threadgroup float buf_err_gate[TG];
+        threadgroup float buf_err_up[TG];
+        threadgroup float buf_gate_lo[TG];
+        threadgroup float buf_up_lo[TG];
+        threadgroup uint do_refine;
+
+        if (row < M) {{
+            float acc_gate = 0.0f;
+            float acc_up = 0.0f;
+            float err_gate = 0.0f;
+            float err_up = 0.0f;
+
+            uint w_row = col * K_PACKED;
+            uint s_row = col * GROUPS;
+            uint x_row = row * K;
+
+            float eps = (float)epsilon[0];
+
+            // Pass 1: hi2 only + error bound
+            for (uint i = tid; i < K; i += TG) {{
+                uint pack_idx = i / ELEMENTS;
+                uint shift = (i % ELEMENTS) * {bits};
+                uint q_gate = (gate_w[w_row + pack_idx] >> shift) & MASK;
+                uint q_up = (up_w[w_row + pack_idx] >> shift) & MASK;
+
+                uint group_idx = i / GROUP;
+                float scale_g = (float)gate_scales[s_row + group_idx];
+                float scale_u = (float)up_scales[s_row + group_idx];
+                float abs_scale_g = metal::abs(scale_g);
+                float abs_scale_u = metal::abs(scale_u);
+
+                float xv = (float)x[x_row + i];
+                float absx = metal::abs(xv);
+                err_gate += absx * abs_scale_g * MAX_LOW;
+                err_up += absx * abs_scale_u * MAX_LOW;
+
+                uint q_gate_hi = q_gate & HI_MASK;
+                uint q_up_hi = q_up & HI_MASK;
+
+                float gate_val = (float)q_gate_hi * scale_g + (float)gate_biases[s_row + group_idx];
+                float up_val = (float)q_up_hi * scale_u + (float)up_biases[s_row + group_idx];
+                acc_gate += gate_val * xv;
+                acc_up += up_val * xv;
+            }}
+
+            buf_gate[tid] = acc_gate;
+            buf_up[tid] = acc_up;
+            buf_err_gate[tid] = err_gate;
+            buf_err_up[tid] = err_up;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+
+            for (uint stride = TG / 2; stride > 0; stride >>= 1) {{
+                if (tid < stride) {{
+                    buf_gate[tid] += buf_gate[tid + stride];
+                    buf_up[tid] += buf_up[tid + stride];
+                    buf_err_gate[tid] += buf_err_gate[tid + stride];
+                    buf_err_up[tid] += buf_err_up[tid + stride];
+                }}
+                threadgroup_barrier(mem_flags::mem_threadgroup);
+            }}
+
+            if (tid == 0) {{
+                do_refine = (eps >= 0.0f && (buf_err_gate[0] > eps || buf_err_up[0] > eps)) ? 1u : 0u;
+            }}
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+
+            if (do_refine == 1u) {{
+                float acc_gate_lo = 0.0f;
+                float acc_up_lo = 0.0f;
+                for (uint i = tid; i < K; i += TG) {{
+                    uint pack_idx = i / ELEMENTS;
+                    uint shift = (i % ELEMENTS) * {bits};
+                    uint q_gate = (gate_w[w_row + pack_idx] >> shift) & LOW_MASK;
+                    uint q_up = (up_w[w_row + pack_idx] >> shift) & LOW_MASK;
+
+                    uint group_idx = i / GROUP;
+                    float scale_g = (float)gate_scales[s_row + group_idx];
+                    float scale_u = (float)up_scales[s_row + group_idx];
+                    float xv = (float)x[x_row + i];
+
+                    acc_gate_lo += (float)q_gate * scale_g * xv;
+                    acc_up_lo += (float)q_up * scale_u * xv;
+                }}
+                buf_gate_lo[tid] = acc_gate_lo;
+                buf_up_lo[tid] = acc_up_lo;
+
+                threadgroup_barrier(mem_flags::mem_threadgroup);
+
+                for (uint stride = TG / 2; stride > 0; stride >>= 1) {{
+                    if (tid < stride) {{
+                        buf_gate_lo[tid] += buf_gate_lo[tid + stride];
+                        buf_up_lo[tid] += buf_up_lo[tid + stride];
+                    }}
+                    threadgroup_barrier(mem_flags::mem_threadgroup);
+                }}
+            }}
+
+            if (tid == 0) {{
+                float gate_total = buf_gate[0];
+                float up_total = buf_up[0];
+                if (do_refine == 1u) {{
+                    gate_total += buf_gate_lo[0];
+                    up_total += buf_up_lo[0];
+                }}
+                float outv = (gate_total * kk_sigmoid(gate_total)) * up_total;
+                out[group] = (T)outv;
+            }}
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_qswiglu_prog_tg_M{m}_N{n}_K{k}_b{bits}_tg{tg}",
+        input_names=[
+            "x",
+            "gate_w",
+            "gate_scales",
+            "gate_biases",
+            "up_w",
+            "up_scales",
+            "up_biases",
+            "epsilon",
+        ],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def fused_quantized_swiglu_gemv_progressive(
+    x: Any,
+    gate_w: Any,
+    gate_scales: Any,
+    gate_biases: Any,
+    up_w: Any,
+    up_scales: Any,
+    up_biases: Any,
+    *,
+    group_size: int,
+    bits: int,
+    epsilon: float,
+    threadgroup: int | None = None,
+    per_group: bool = False,
+    compute_dtype: Any | None = None,
+) -> Any:
+    """Progressive quantized GEMV + SwiGLU with error-bounded refinement.
+
+    When error bound <= epsilon, only hi2 bits are used. Otherwise, low bits
+    are refined in a second pass. Intended for decode-like shapes.
+    """
+    if x.ndim != 2:
+        raise ValueError("fused_quantized_swiglu_gemv_progressive expects 2D input (M, K)")
+    if gate_w.shape != up_w.shape:
+        raise ValueError("gate_w and up_w must have the same shape")
+    if gate_scales.shape != up_scales.shape or gate_biases.shape != up_biases.shape:
+        raise ValueError("gate/up scales and biases must match")
+
+    M, K = x.shape
+    N, K_packed = gate_w.shape
+    elements_per_word = 32 // bits
+    if K != K_packed * elements_per_word:
+        raise ValueError("Input K does not match packed weight shape")
+
+    cd = compute_dtype or mx.float32
+    eps = mx.array([float(epsilon)], dtype=mx.float32)
+    if threadgroup is None:
+        if per_group:
+            k = _quantized_swiglu_gemv_progressive_pg_kernel(
+                int(M),
+                int(N),
+                int(K),
+                bits=bits,
+                group_size=group_size,
+            )
+        else:
+            k = _quantized_swiglu_gemv_progressive_kernel(int(M), int(N), int(K), bits=bits, group_size=group_size)
+        return k(
+            x,
+            gate_w,
+            gate_scales,
+            gate_biases,
+            up_w,
+            up_scales,
+            up_biases,
+            eps,
+            template=[("T", cd)],
+            grid=(int(M) * int(N), 1, 1),
+            output_shapes=[(int(M), int(N))],
+            output_dtypes=[cd],
+        )[0]
+
+    if per_group:
+        raise ValueError("per_group refinement is only supported in the non-threadgroup kernel")
+
+    tg = int(threadgroup)
+    k = _quantized_swiglu_gemv_progressive_tg_kernel(
+        int(M),
+        int(N),
+        int(K),
+        bits=bits,
+        group_size=group_size,
+        tg=tg,
+    )
+    return k(
+        x,
+        gate_w,
+        gate_scales,
+        gate_biases,
+        up_w,
+        up_scales,
+        up_biases,
+        eps,
+        template=[("T", cd)],
+        grid=(int(M) * int(N) * tg, 1, 1),
+        threadgroup=(tg, 1, 1),
         output_shapes=[(int(M), int(N))],
         output_dtypes=[cd],
     )[0]
@@ -310,6 +853,124 @@ def dequantize_affine_packed_gelu(
     )
     out_shape = _affine_packed_output_shape(x, bits)
     grid = _affine_packed_grid(x, bits)
+    return k(
+        x,
+        scales,
+        biases,
+        template=[("T", cd)],
+        grid=(grid, 1, 1),
+        output_shapes=[out_shape],
+        output_dtypes=[cd],
+    )[0]
+
+
+@cache
+def _dequant_affine_packed_hi2_kernel(
+    *,
+    group_size: int,
+    act_expr: str = "val",
+) -> Any:
+    if group_size <= 0:
+        raise ValueError("group_size must be > 0")
+
+    bits = 4
+    elements_per_word = 32 // bits
+    mask = 0xF
+    hi_mask = 0xC
+    source = f"""
+        uint gid = thread_position_in_grid.x;
+        uint pack_idx = gid / {elements_per_word};
+        uint shift = (gid % {elements_per_word}) * {bits};
+        uint q = (inp[pack_idx] >> shift) & {mask}u;
+        uint q_hi = q & {hi_mask}u;
+        uint group_idx = gid / {group_size};
+        float scale = (float)scales[group_idx];
+        float bias = (float)biases[group_idx];
+        float val = (float)q_hi * scale + bias;
+        out[gid] = (T)({act_expr});
+    """
+    return metal_kernel(
+        name=f"kk_dequant_affine_hi2_g{group_size}_{hash(act_expr) % 10000}",
+        input_names=["inp", "scales", "biases"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+@cache
+def _dequant_affine_packed_lo2_kernel(
+    *,
+    group_size: int,
+    act_expr: str = "val",
+) -> Any:
+    if group_size <= 0:
+        raise ValueError("group_size must be > 0")
+
+    bits = 4
+    elements_per_word = 32 // bits
+    mask = 0x3
+    source = f"""
+        uint gid = thread_position_in_grid.x;
+        uint pack_idx = gid / {elements_per_word};
+        uint shift = (gid % {elements_per_word}) * {bits};
+        uint q = (inp[pack_idx] >> shift) & 0xFu;
+        uint q_lo = q & {mask}u;
+        uint group_idx = gid / {group_size};
+        float scale = (float)scales[group_idx];
+        float val = (float)q_lo * scale;
+        out[gid] = (T)({act_expr});
+    """
+    return metal_kernel(
+        name=f"kk_dequant_affine_lo2_g{group_size}_{hash(act_expr) % 10000}",
+        input_names=["inp", "scales", "biases"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def dequantize_affine_packed_hi2(
+    x: Any,
+    scales: Any,
+    biases: Any,
+    *,
+    group_size: int = 64,
+    compute_dtype: Any | None = None,
+) -> Any:
+    """Dequantize affine-packed weights using only the top 2 bits."""
+    cd = compute_dtype or mx.float32
+    k = _dequant_affine_packed_hi2_kernel(group_size=group_size)
+    out_shape = _affine_packed_output_shape(x, 4)
+    grid = _affine_packed_grid(x, 4)
+    return k(
+        x,
+        scales,
+        biases,
+        template=[("T", cd)],
+        grid=(grid, 1, 1),
+        output_shapes=[out_shape],
+        output_dtypes=[cd],
+    )[0]
+
+
+def dequantize_affine_packed_lo2_delta(
+    x: Any,
+    scales: Any,
+    biases: Any,
+    *,
+    group_size: int = 64,
+    compute_dtype: Any | None = None,
+) -> Any:
+    """Dequantize affine-packed weights using only the low 2 bits (delta)."""
+    cd = compute_dtype or mx.float32
+    k = _dequant_affine_packed_lo2_kernel(group_size=group_size)
+    out_shape = _affine_packed_output_shape(x, 4)
+    grid = _affine_packed_grid(x, 4)
     return k(
         x,
         scales,
@@ -624,7 +1285,10 @@ __all__ = [
     "dequantize_affine_packed",
     "dequantize_affine_packed_silu",
     "dequantize_affine_packed_gelu",
+    "dequantize_affine_packed_hi2",
+    "dequantize_affine_packed_lo2_delta",
     "fused_quantized_swiglu_gemv",
+    "fused_quantized_swiglu_gemv_progressive",
     "fused_swiglu_quant",
     "dequantize_fp8",
     "dequantize_nf4",

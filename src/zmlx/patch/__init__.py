@@ -30,6 +30,7 @@ Use ``smart_patch`` to automatically benchmark and keep only beneficial patterns
 
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import Callable
 from typing import Any
@@ -81,6 +82,25 @@ _FIDELITY_EXCLUDES: dict[str, set[str]] = {
     "mixtral": {"moe_mlp"},
     "glm": {"moe_mlp", "swiglu_mlp"},
 }
+
+# Patterns known to regress performance per model family.
+_PERF_EXCLUDES: dict[str, set[str]] = {
+    "qwen": {"moe_mlp"},
+}
+
+
+def _apply_family_excludes(
+    selected: list[Any],
+    *,
+    family: str,
+    allow_perf_risk: bool,
+) -> list[Any]:
+    excludes = set(_FIDELITY_EXCLUDES.get(family, set()))
+    if not allow_perf_risk:
+        excludes |= _PERF_EXCLUDES.get(family, set())
+    if not excludes:
+        return selected
+    return [p for p in selected if p.name not in excludes]
 
 # ---------------------------------------------------------------------------
 # Presets — curated pattern lists for common scenarios
@@ -221,14 +241,28 @@ def patch(
     # Pass patterns=[...] explicitly to override.
     family = _model_family(model)
     fidelity_risks = set(_FIDELITY_EXCLUDES.get(family, set()))
-    if not explicit and not profiled and fidelity_risks:
+    perf_risks = set(_PERF_EXCLUDES.get(family, set()))
+    allow_perf_risk = os.environ.get("ZMLX_PATCH_ALLOW_PERF_RISK", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    auto_excludes = set(fidelity_risks)
+    if not allow_perf_risk:
+        auto_excludes |= perf_risks
+
+    if not explicit and not profiled and auto_excludes:
         before_names = {p.name for p in selected}
-        selected = [p for p in selected if p.name not in fidelity_risks]
+        selected = [p for p in selected if p.name not in auto_excludes]
         removed = before_names - {p.name for p in selected}
         if removed:
+            note = "known fidelity issues"
+            if perf_risks and not allow_perf_risk:
+                note = "known fidelity/perf issues"
             print(
                 f"[zmlx.patch] {family} model detected — excluded {sorted(removed)} "
-                f"(known fidelity issues). Override with patterns=[...]."
+                f"({note}). Override with patterns=[...] or set "
+                f"ZMLX_PATCH_ALLOW_PERF_RISK=1."
             )
     elif (explicit or profiled) and fidelity_risks:
         requested_risky = {p.name for p in selected} & fidelity_risks

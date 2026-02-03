@@ -24,7 +24,6 @@ from pathlib import Path
 
 import mlx.core as mx
 
-
 DEFAULT_MODEL = "mlx-community/Mixtral-8x7B-Instruct-v0.1-4bit"
 DEFAULT_STREAMS = "1,2,4,8"
 DEFAULT_PROMPT = (
@@ -304,8 +303,8 @@ def _parse_streams(raw: str) -> list[int]:
             continue
         try:
             values.append(int(part))
-        except ValueError:
-            raise SystemExit(f"Invalid stream count: {part}")
+        except ValueError as err:
+            raise SystemExit(f"Invalid stream count: {part}") from err
     if not values:
         return [1]
     return values

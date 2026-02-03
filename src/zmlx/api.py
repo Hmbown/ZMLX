@@ -651,6 +651,7 @@ def generate(
     _check_mlx_lm()
     import mlx_lm
     from mlx_lm.sample_utils import make_sampler
+
     from .kv_cache import kv_cache_kwargs
 
     sampler = make_sampler(temp=float(temp))

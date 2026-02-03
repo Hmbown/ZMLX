@@ -9,12 +9,12 @@ Only the activation is fused; linear layers are left untouched (quantized-safe).
 
 from __future__ import annotations
 
-from typing import Any
 import os
+from typing import Any
 
 import mlx.nn as nn
 
-from ...kernels import transformer, quant
+from ...kernels import quant, transformer
 from .._registry import register
 from .._types import PatchConfig
 
@@ -35,7 +35,17 @@ def _is_silu_activation(module: Any) -> bool:
 
 
 _QSWIGLU_ENV = "ZMLX_FUSED_QSWIGLU"
+_QSWIGLU_MODE_ENV = "ZMLX_FUSED_QSWIGLU_MODE"
+_QSWIGLU_PROGRESSIVE_ENV = "ZMLX_FUSED_QSWIGLU_PROGRESSIVE"
+_QSWIGLU_EPS_ENV = "ZMLX_FUSED_QSWIGLU_EPS"
+_QSWIGLU_TG_ENV = "ZMLX_FUSED_QSWIGLU_TG"
+_QSWIGLU_PER_GROUP_ENV = "ZMLX_FUSED_QSWIGLU_PER_GROUP"
 _QSWIGLU_MAX_TOKENS_ENV = "ZMLX_FUSED_QSWIGLU_MAX_TOKENS"
+_QSWIGLU_MAX_OUT_ENV = "ZMLX_FUSED_QSWIGLU_MAX_OUT"
+_QSWIGLU_MAX_IN_ENV = "ZMLX_FUSED_QSWIGLU_MAX_IN"
+_QSWIGLU_TG_MIN_EPS_ENV = "ZMLX_FUSED_QSWIGLU_TG_MIN_EPS"
+_QSWIGLU_TG_ALLOWLIST_ENV = "ZMLX_FUSED_QSWIGLU_TG_ALLOWLIST"
+_QSWIGLU_TG_DENY_FAMILY_ENV = "ZMLX_FUSED_QSWIGLU_TG_DENY_FAMILY"
 
 
 def _is_quantized_linear(module: Any) -> bool:
@@ -50,6 +60,94 @@ def _parse_int_env(name: str, default: int) -> int:
         return int(raw)
     except ValueError as exc:
         raise ValueError(f"Invalid {name}={raw!r}; expected integer.") from exc
+
+
+def _parse_float_env(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"Invalid {name}={raw!r}; expected float.") from exc
+
+
+def _parse_shape_allowlist(raw: str | None, *, default: str) -> set[tuple[int, int]] | None:
+    """Parse a comma-separated KxN allowlist string.
+
+    Returns None to allow all shapes. Entries are "KxN" pairs.
+    """
+    if raw is None or raw.strip() == "":
+        raw = default
+    raw = raw.strip()
+    if raw in {"*", "all", "any"}:
+        return None
+    allow: set[tuple[int, int]] = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "x" not in part:
+            raise ValueError(f"Invalid {_QSWIGLU_TG_ALLOWLIST_ENV} entry {part!r}; expected KxN.")
+        k_str, n_str = part.split("x", 1)
+        try:
+            allow.add((int(k_str), int(n_str)))
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid {_QSWIGLU_TG_ALLOWLIST_ENV} entry {part!r}; expected integer KxN."
+            ) from exc
+    return allow
+
+
+def _tg_progressive_allowed(tokens: int, n_in: int, n_out: int, eps: float) -> bool:
+    """Return True if TG progressive is allowed for the shape."""
+    if tokens != 1:
+        return False
+    min_eps = _parse_float_env(_QSWIGLU_TG_MIN_EPS_ENV, 10.0)
+    if eps < min_eps:
+        return False
+    allowlist = _parse_shape_allowlist(
+        os.environ.get(_QSWIGLU_TG_ALLOWLIST_ENV),
+        default="2048x7168",
+    )
+    if allowlist is None:
+        return True
+    return (int(n_in), int(n_out)) in allowlist
+
+
+def _tg_family_allowed(module: Any) -> bool:
+    raw = os.environ.get(_QSWIGLU_TG_DENY_FAMILY_ENV, "lfm")
+    tokens = [tok.strip().lower() for tok in raw.split(",") if tok.strip()]
+    if not tokens:
+        return True
+    mod_name = (module.__class__.__module__ or "").lower()
+    cls_name = module.__class__.__name__.lower()
+    for tok in tokens:
+        if tok in mod_name or tok in cls_name:
+            return False
+    return True
+
+
+def _progressive_enabled() -> bool:
+    raw = os.environ.get(_QSWIGLU_PROGRESSIVE_ENV, "")
+    return raw.strip() not in ("", "0", "false", "False")
+
+
+def _per_group_enabled() -> bool:
+    raw = os.environ.get(_QSWIGLU_PER_GROUP_ENV, "")
+    return raw.strip() not in ("", "0", "false", "False")
+
+
+def _get_qswiglu_mode() -> str:
+    raw = os.environ.get(_QSWIGLU_ENV)
+    if raw is not None:
+        if raw.strip() in ("", "0", "false", "False"):
+            return "off"
+        return "force"
+    mode = os.environ.get(_QSWIGLU_MODE_ENV, "off").strip().lower()
+    if mode not in {"off", "auto", "force"}:
+        raise ValueError(f"Invalid {_QSWIGLU_MODE_ENV}={mode!r}; expected off|auto|force.")
+    return mode
 
 
 def _flatten_x(x: Any) -> tuple[Any, tuple[int, ...], int]:
@@ -74,9 +172,14 @@ def _can_fuse_quant_swiglu(
     gate_proj: Any,
     up_proj: Any,
     *,
+    mode: str,
+    max_out: int,
+    max_in: int,
     max_tokens: int,
     x: Any,
 ) -> bool:
+    if mode == "off":
+        return False
     if not (_is_quantized_linear(gate_proj) and _is_quantized_linear(up_proj)):
         return False
     if gate_proj.mode != "affine" or up_proj.mode != "affine":
@@ -89,11 +192,16 @@ def _can_fuse_quant_swiglu(
         return False
 
     x_flat, prefix, _ = _flatten_x(x)
+    if x_flat.ndim != 2:
+        return False
     tokens = _total_tokens(prefix) if prefix else int(x_flat.shape[0])
     if tokens > max_tokens:
         return False
-    if x_flat.ndim != 2:
-        return False
+    if mode == "auto":
+        n_out = int(gate_proj.weight.shape[0])
+        n_in = int(x_flat.shape[1])
+        if n_out > max_out or n_in > max_in:
+            return False
     return True
 
 
@@ -121,24 +229,69 @@ class _SwiGLUMLPPattern:
         original_call = module.__call__.__func__ if hasattr(module.__call__, "__func__") else None
 
         def patched_call(self_mod: Any, x: Any) -> Any:
-            use_quant_fused = os.environ.get(_QSWIGLU_ENV, "").strip() not in ("", "0", "false", "False")
-            if use_quant_fused:
+            mode = _get_qswiglu_mode()
+            if mode != "off":
                 max_tokens = _parse_int_env(_QSWIGLU_MAX_TOKENS_ENV, 1)
+                max_out = _parse_int_env(_QSWIGLU_MAX_OUT_ENV, 2048)
+                max_in = _parse_int_env(_QSWIGLU_MAX_IN_ENV, 2048)
+                eps = _parse_float_env(_QSWIGLU_EPS_ENV, 0.0)
+                tg = _parse_int_env(_QSWIGLU_TG_ENV, 0)
+                per_group = _per_group_enabled()
                 gate_proj = self_mod.gate_proj
                 up_proj = self_mod.up_proj
-                if _can_fuse_quant_swiglu(gate_proj, up_proj, max_tokens=max_tokens, x=x):
+                if _can_fuse_quant_swiglu(
+                    gate_proj,
+                    up_proj,
+                    mode=mode,
+                    max_out=max_out,
+                    max_in=max_in,
+                    max_tokens=max_tokens,
+                    x=x,
+                ):
                     x_flat, prefix, orig_ndim = _flatten_x(x)
-                    fused = quant.fused_quantized_swiglu_gemv(
-                        x_flat,
-                        gate_proj.weight,
-                        gate_proj.scales,
-                        gate_proj.biases,
-                        up_proj.weight,
-                        up_proj.scales,
-                        up_proj.biases,
-                        group_size=gate_proj.group_size,
-                        bits=gate_proj.bits,
-                    )
+                    if _progressive_enabled() and tg > 0:
+                        if not _tg_family_allowed(self_mod):
+                            gate = gate_proj(x)
+                            up = up_proj(x)
+                            activated = transformer.swiglu2(gate, up)
+                            return self_mod.down_proj(activated)
+                        tokens = _total_tokens(prefix) if prefix else int(x_flat.shape[0])
+                        n_out = int(gate_proj.weight.shape[0])
+                        n_in = int(x_flat.shape[1])
+                        if not _tg_progressive_allowed(tokens, n_in, n_out, eps):
+                            gate = gate_proj(x)
+                            up = up_proj(x)
+                            activated = transformer.swiglu2(gate, up)
+                            return self_mod.down_proj(activated)
+                    if _progressive_enabled():
+                        if per_group and tg > 0:
+                            tg = 0
+                        fused = quant.fused_quantized_swiglu_gemv_progressive(
+                            x_flat,
+                            gate_proj.weight,
+                            gate_proj.scales,
+                            gate_proj.biases,
+                            up_proj.weight,
+                            up_proj.scales,
+                            up_proj.biases,
+                            group_size=gate_proj.group_size,
+                            bits=gate_proj.bits,
+                            epsilon=eps,
+                            threadgroup=(tg if tg > 0 else None),
+                            per_group=per_group,
+                        )
+                    else:
+                        fused = quant.fused_quantized_swiglu_gemv(
+                            x_flat,
+                            gate_proj.weight,
+                            gate_proj.scales,
+                            gate_proj.biases,
+                            up_proj.weight,
+                            up_proj.scales,
+                            up_proj.biases,
+                            group_size=gate_proj.group_size,
+                            bits=gate_proj.bits,
+                        )
                     if orig_ndim == 1:
                         activated = fused.reshape(fused.shape[-1])
                     elif prefix:

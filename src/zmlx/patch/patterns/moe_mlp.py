@@ -138,7 +138,7 @@ def _gating(
 
 # Max token count for the fused path.  Beyond this the fused kernel regresses
 # vs the two-pass approach (benchmarked on M-series: ~0.5x at M=64).
-_FUSED_SWIGLU_MAX_TOKENS = 32
+_FUSED_SWIGLU_MAX_TOKENS = 1
 _MOE_STREAMS_ENV = "ZMLX_MOE_STREAMS"
 _MOE_STREAMS_REDUCE_ENV = "ZMLX_MOE_STREAMS_REDUCE"
 
@@ -322,6 +322,11 @@ def _can_fuse_switch_mlp(switch_mlp: Any) -> bool:
     return True
 
 
+def _should_fuse_swiglu_tokens(total_tokens: int, max_tokens: int) -> bool:
+    """Return True when fused SwiGLU should be used for the token count."""
+    return total_tokens <= max_tokens
+
+
 def _fused_switch_mlp_call(
     switch_mlp: Any,
     x: mx.array,
@@ -340,7 +345,7 @@ def _fused_switch_mlp_call(
     total_tokens = 1
     for d in indices.shape:
         total_tokens *= d
-    if total_tokens > max_tokens:
+    if not _should_fuse_swiglu_tokens(total_tokens, max_tokens):
         return switch_mlp._zmlx_original_switch_call(x, indices)
 
     gate_proj = switch_mlp.gate_proj
