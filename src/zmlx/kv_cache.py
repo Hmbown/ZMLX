@@ -7,8 +7,8 @@ bandwidth-saving decode paths without changing defaults.
 
 from __future__ import annotations
 
-from typing import Any
 import os
+from typing import Any
 
 
 def _parse_int_env(name: str) -> int | None:
@@ -61,4 +61,3 @@ def kv_cache_kwargs(
         "kv_group_size": int(group),
         "quantized_kv_start": int(start),
     }
-

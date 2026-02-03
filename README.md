@@ -52,6 +52,10 @@ pip install -e ".[dev]"
 
 `patch()` auto-detects which patterns are safe for your model family. In the default **Stable** mode, you get token-identical output with real decode speedups using stock MLX — nothing else required. Optional custom-MLX builds for Qwen3 are documented below.
 
+Model-family safeguards:
+- Qwen: `moe_mlp` is disabled by default due to recent decode regressions. Override with `ZMLX_PATCH_ALLOW_PERF_RISK=1`.
+- LFM: TG progressive is denied by default via `ZMLX_FUSED_QSWIGLU_TG_DENY_FAMILY=lfm`.
+
 ---
 
 ## Benchmarks — Stable mode (stock MLX)
@@ -136,6 +140,21 @@ LFM2-8B-A1B: **+5-12% decode throughput**, token-identical, measured on M1 Pro a
 </details>
 
 Full methodology and raw data: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+
+---
+
+## SLIME/TPU⁰ Status (Feb 3, 2026)
+
+Recent findings (decode focus, runs=5 unless noted):
+- LFM2‑8B‑A1B (eps=10, TG=64, progressive): **+8.0% decode**, prompt ‑2.2%.
+- LFM2.5‑1.2B (eps=10, TG=64, progressive): **+0.1% decode**, prompt +2.0% (neutral).
+- Qwen3‑30B‑A3B (local MLX, runs=5): **regressed** with `moe_mlp` (‑4.5% decode), fused SwiGLU **much worse** (‑70% decode).
+- Default safety: Qwen `moe_mlp` remains disabled; fused SwiGLU max tokens is **1** (decode‑only).
+
+Next experiments:
+- Add refine‑rate instrumentation to tighten bounds vs skip cost.
+- Re‑evaluate Qwen3 MoE only at M=1 with an even tighter fused‑SwiGLU gate or keep it disabled.
+- Try Qwen3‑Coder‑Next MLX quantizations, including `NexVeridian/Qwen3-Coder-Next-3bit` (not yet benchmarked).
 
 ---
 
@@ -291,7 +310,7 @@ Replaces the separate element-wise multiply and reduce-sum with a single kernel 
 
 ### Why prefill is unaffected
 
-The fused SwiGLU expert dispatch is guarded with a sequence length check (`M <= 32`). During prefill, M equals the prompt length (typically hundreds or thousands of tokens). At this scale, the compute-to-dispatch ratio is high and the standard MLX path is already efficient. The guard ensures ZMLX never regresses prefill performance.
+The fused SwiGLU expert dispatch is guarded with a sequence length check (`M <= 1`). During prefill, M equals the prompt length (typically hundreds or thousands of tokens). At this scale, the compute-to-dispatch ratio is high and the standard MLX path is already efficient. The guard ensures ZMLX never regresses prefill performance.
 
 ### Correctness guarantee
 

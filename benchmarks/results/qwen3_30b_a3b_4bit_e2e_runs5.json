@@ -1,0 +1,173 @@
+{
+  "model": "mlx-community/Qwen3-30B-A3B-4bit",
+  "mlx_version": "0.30.4.dev20260201+2f324cc",
+  "device": "Device(gpu, 0)",
+  "device_meta": {
+    "family": "M4",
+    "variant": "",
+    "gpu_cores": 10,
+    "memory_gb": 36,
+    "has_ray_tracing": true
+  },
+  "git_sha": "4d57f6bf15f1236c2068f8c0703ef55787ccb9b3",
+  "quantization": {
+    "bits": 4,
+    "group_size": 64,
+    "mode": null
+  },
+  "runs": 5,
+  "max_tokens": 256,
+  "fused_max_tokens": 1,
+  "results": [
+    {
+      "label": "Baseline",
+      "runs": [
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 357.62111151657575,
+          "gen_tokens": 256,
+          "gen_tps": 113.51077943765979,
+          "peak_memory_gb": 17.249785664,
+          "total_sec": 2.415044750000561
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 370.73457191925763,
+          "gen_tokens": 256,
+          "gen_tps": 113.86700310106853,
+          "peak_memory_gb": 17.249785664,
+          "total_sec": 2.4045805000005203
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 368.239951507336,
+          "gen_tokens": 256,
+          "gen_tps": 113.75905809278231,
+          "peak_memory_gb": 17.249785664,
+          "total_sec": 2.407990040999721
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 368.86727934839394,
+          "gen_tokens": 256,
+          "gen_tps": 112.96389799580507,
+          "peak_memory_gb": 17.249785664,
+          "total_sec": 2.4233350409995182
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 368.84907644060115,
+          "gen_tokens": 256,
+          "gen_tps": 111.70672072810149,
+          "peak_memory_gb": 17.249785664,
+          "total_sec": 2.45049491699956
+        }
+      ],
+      "median_prompt_tps": 368.84907644060115,
+      "median_gen_tps": 113.51077943765979,
+      "peak_memory_gb": 17.249785664,
+      "prompt_tokens": 38,
+      "gen_tokens": 256
+    },
+    {
+      "label": "ZMLX (gating+combine)",
+      "runs": [
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 347.5107825497778,
+          "gen_tokens": 256,
+          "gen_tps": 108.36662479159942,
+          "peak_memory_gb": 17.24983072,
+          "total_sec": 2.5301820829999997
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 361.41197839227493,
+          "gen_tokens": 256,
+          "gen_tps": 108.65220457835595,
+          "peak_memory_gb": 17.249847104,
+          "total_sec": 2.5176719170003707
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 362.8262264896872,
+          "gen_tokens": 256,
+          "gen_tps": 108.22457255595725,
+          "peak_memory_gb": 17.249847104,
+          "total_sec": 2.5295197079994978
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 363.9961485760599,
+          "gen_tokens": 256,
+          "gen_tps": 108.70911083450625,
+          "peak_memory_gb": 17.249847104,
+          "total_sec": 2.5137817080003515
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 363.10675939562435,
+          "gen_tokens": 256,
+          "gen_tps": 108.02010415664148,
+          "peak_memory_gb": 17.249847104,
+          "total_sec": 2.5291364169997905
+        }
+      ],
+      "median_prompt_tps": 362.8262264896872,
+      "median_gen_tps": 108.36662479159942,
+      "peak_memory_gb": 17.249847104,
+      "prompt_tokens": 38,
+      "gen_tokens": 256
+    },
+    {
+      "label": "ZMLX + fused SwiGLU",
+      "runs": [
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 148.10782471050427,
+          "gen_tokens": 256,
+          "gen_tps": 33.618328003289754,
+          "peak_memory_gb": 17.249847104,
+          "total_sec": 7.9405449579999186
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 158.16975351512264,
+          "gen_tokens": 256,
+          "gen_tps": 33.922151733052274,
+          "peak_memory_gb": 17.249847104,
+          "total_sec": 7.858315208000022
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 116.4194431878828,
+          "gen_tokens": 256,
+          "gen_tps": 33.64932388579664,
+          "peak_memory_gb": 17.249847104,
+          "total_sec": 8.003552542000762
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 113.45935211807333,
+          "gen_tokens": 256,
+          "gen_tps": 34.18177878556864,
+          "peak_memory_gb": 17.249847104,
+          "total_sec": 7.894585000000006
+        },
+        {
+          "prompt_tokens": 38,
+          "prompt_tps": 127.66545394113258,
+          "gen_tokens": 256,
+          "gen_tps": 34.819917499220615,
+          "peak_memory_gb": 17.249847104,
+          "total_sec": 7.7122258749996035
+        }
+      ],
+      "median_prompt_tps": 127.66545394113258,
+      "median_gen_tps": 33.922151733052274,
+      "peak_memory_gb": 17.249847104,
+      "prompt_tokens": 38,
+      "gen_tokens": 256
+    }
+  ]
+}

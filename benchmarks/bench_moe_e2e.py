@@ -19,15 +19,25 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import re
 import statistics
+import subprocess
 import time
+from pathlib import Path
 
 import mlx.core as mx
+
+try:
+    from zmlx.device import detect_device
+except Exception:
+    detect_device = None
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 DEFAULT_MODEL = "mlx-community/Qwen3-30B-A3B-4bit"
+OUTPUT_DIR = Path("benchmarks/results")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 PROMPT = (
     "Explain the key differences between mixture-of-experts (MoE) and dense "
@@ -39,10 +49,52 @@ PROMPT = (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def load_model(model_path: str):
+def _git_sha() -> str:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception:
+        return "unknown"
+
+
+def _device_meta() -> dict[str, object]:
+    if detect_device is None:
+        return {}
+    device = detect_device()
+    return {
+        "family": device.family,
+        "variant": device.variant,
+        "gpu_cores": device.gpu_cores,
+        "memory_gb": device.memory_gb,
+        "has_ray_tracing": device.has_ray_tracing,
+    }
+
+
+def _infer_quant_meta(model_path: str, config: dict | None) -> dict[str, object]:
+    bits = None
+    group_size = None
+    mode = None
+    if isinstance(config, dict):
+        quant = config.get("quantization") or config.get("quantization_config")
+        if isinstance(quant, dict):
+            bits = quant.get("bits", bits)
+            group_size = quant.get("group_size", group_size)
+            mode = quant.get("mode", quant.get("quantization_mode", mode))
+    match = re.search(r"-(\d)bit", model_path)
+    if match and bits is None:
+        bits = int(match.group(1))
+    match = re.search(r"(?:g|gs)(\d+)", model_path)
+    if match and group_size is None:
+        group_size = int(match.group(1))
+    return {"bits": bits, "group_size": group_size, "mode": mode}
+
+
+def load_model(model_path: str, *, return_config: bool = False):
     """Load model + tokenizer."""
     import mlx_lm
     print(f"  Loading {model_path} ...")
+    if return_config:
+        model, tokenizer, config = mlx_lm.load(model_path, return_config=True)
+        return model, tokenizer, config
     model, tokenizer = mlx_lm.load(model_path)
     return model, tokenizer
 
@@ -105,12 +157,13 @@ def bench_config(
         )
 
     if not runs:
-        return {"label": label}
+        return {"label": label, "runs": []}
 
     return {
         "label": label,
-        "prompt_tps": statistics.median(r["prompt_tps"] for r in runs),
-        "gen_tps": statistics.median(r["gen_tps"] for r in runs),
+        "runs": runs,
+        "median_prompt_tps": statistics.median(r["prompt_tps"] for r in runs),
+        "median_gen_tps": statistics.median(r["gen_tps"] for r in runs),
         "peak_memory_gb": max(r.get("peak_memory_gb", 0) for r in runs),
         "prompt_tokens": runs[0].get("prompt_tokens", 0),
         "gen_tokens": runs[0].get("gen_tokens", 0),
@@ -187,7 +240,7 @@ def main():
     print(f"\n{'=' * 60}")
     print("CONFIG 1: Baseline (vanilla mlx_lm)")
     print(f"{'=' * 60}")
-    model, tokenizer = load_model(args.model)
+    model, tokenizer, model_config = load_model(args.model, return_config=True)
     r1 = bench_config(model, tokenizer, "Baseline", args.runs, args.max_tokens)
     results.append(r1)
     del model, tokenizer
@@ -253,28 +306,32 @@ def main():
     print("-" * 75)
     for r in results:
         label = r.get("label", "?")
-        pt = r.get("prompt_tps", 0)
-        gt = r.get("gen_tps", 0)
+        pt = r.get("median_prompt_tps", 0)
+        gt = r.get("median_gen_tps", 0)
         mem = r.get("peak_memory_gb", 0)
         print(f"{label:<35} {pt:>14.1f} {gt:>14.1f} {mem:>12.2f}")
 
     # Speedup table
-    base_prompt = baseline.get("prompt_tps", 0)
-    base_gen = baseline.get("gen_tps", 0)
+    base_prompt = baseline.get("median_prompt_tps", 0)
+    base_gen = baseline.get("median_gen_tps", 0)
     if base_prompt > 0 and base_gen > 0:
         print(f"\n{'Config':<35} {'Prompt Speedup':>14} {'Decode Speedup':>14}")
         print("-" * 63)
         for r in results[1:]:
             label = r.get("label", "?")
-            ps = r.get("prompt_tps", 0) / base_prompt
-            gs = r.get("gen_tps", 0) / base_gen
+            ps = r.get("median_prompt_tps", 0) / base_prompt
+            gs = r.get("median_gen_tps", 0) / base_gen
             print(f"{label:<35} {ps:>13.2f}x {gs:>13.2f}x")
 
     if args.json_out:
+        quant_meta = _infer_quant_meta(args.model, model_config)
         payload = {
             "model": args.model,
             "mlx_version": mx.__version__,
             "device": str(mx.default_device()),
+            "device_meta": _device_meta(),
+            "git_sha": _git_sha(),
+            "quantization": quant_meta,
             "runs": args.runs,
             "max_tokens": args.max_tokens,
             "fused_max_tokens": args.fused_max_tokens,

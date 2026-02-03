@@ -8,11 +8,21 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
+import json
+import subprocess
 import sys
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 import mlx.core as mx
 import mlx.nn as nn
+
+try:
+    from zmlx.device import detect_device
+except Exception:  # pragma: no cover - optional logging only
+    detect_device = None
 
 
 def _quantize_experts(n_experts, N, K, bits, group_size, dtype=mx.float16):
@@ -27,9 +37,41 @@ def _quantize_experts(n_experts, N, K, bits, group_size, dtype=mx.float16):
     return mx.stack(w_list), mx.stack(s_list), mx.stack(b_list)
 
 
-def bench_one(name, fn, warmup=20, iters=200):
-    """Benchmark a single function, return median ms."""
-    # Warmup
+def _git_sha() -> str:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception:
+        return "unknown"
+
+
+def _device_meta() -> dict[str, object]:
+    if detect_device is None:
+        return {}
+    device = detect_device()
+    return {
+        "family": device.family,
+        "variant": device.variant,
+        "gpu_cores": device.gpu_cores,
+        "memory_gb": device.memory_gb,
+        "has_ray_tracing": device.has_ray_tracing,
+    }
+
+
+def _append_json(path: Path, records: list[dict]) -> None:
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            data = []
+    else:
+        data = []
+    if not isinstance(data, list):
+        data = []
+    data.extend(records)
+    path.write_text(json.dumps(data, indent=2))
+
+
+def _bench_once(fn, *, warmup: int, iters: int) -> float:
     for _ in range(warmup):
         out = fn()
         if isinstance(out, (tuple, list)):
@@ -51,14 +93,18 @@ def bench_one(name, fn, warmup=20, iters=200):
             mx.eval(out)
         if callable(sync):
             sync()
-        times.append((time.perf_counter() - t0) * 1e6)  # microseconds
+        times.append((time.perf_counter() - t0) * 1e6)
 
     times.sort()
-    median = times[len(times) // 2]
-    p10 = times[int(len(times) * 0.1)]
-    p90 = times[int(len(times) * 0.9)]
-    print(f"  {name:.<45} {median:8.1f} us  (p10={p10:.1f}, p90={p90:.1f})")
-    return median
+    return times[len(times) // 2]
+
+
+def _multi_run(fn, *, outer_runs: int, warmup: int, iters: int) -> tuple[float, list[float]]:
+    medians = []
+    for _ in range(outer_runs):
+        medians.append(_bench_once(fn, warmup=warmup, iters=iters))
+    medians.sort()
+    return medians[len(medians) // 2], medians
 
 
 def bench_shape(
@@ -70,6 +116,9 @@ def bench_shape(
     group_size: int = 64,
     n_selected: int = 2,
     dtype=mx.float16,
+    outer_runs: int = 3,
+    warmup: int = 20,
+    iters: int = 200,
 ):
     """Benchmark fused vs naive for a specific shape."""
     gate_w, gate_s, gate_b = _quantize_experts(n_experts, N, K, bits, group_size, dtype)
@@ -103,14 +152,31 @@ def bench_shape(
             transpose=True, group_size=group_size, bits=bits,
         )
 
-    t_naive = bench_one("naive (2x gather_qmm + SwiGLU)", naive)
-    t_fused = bench_one("fused (gather_qmm_swiglu)", fused)
+    t_naive, naive_runs = _multi_run(naive, outer_runs=outer_runs, warmup=warmup, iters=iters)
+    t_fused, fused_runs = _multi_run(fused, outer_runs=outer_runs, warmup=warmup, iters=iters)
     speedup = t_naive / t_fused if t_fused > 0 else float("inf")
+    print(
+        f"  naive  {t_naive:8.1f} us (median of {outer_runs}, min={min(naive_runs):.1f}, max={max(naive_runs):.1f})"
+    )
+    print(
+        f"  fused  {t_fused:8.1f} us (median of {outer_runs}, min={min(fused_runs):.1f}, max={max(fused_runs):.1f})"
+    )
     print(f"  => Speedup: {speedup:.2f}x")
-    return t_naive, t_fused, speedup
+    return t_naive, t_fused, speedup, naive_runs, fused_runs
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--outer-runs", type=int, default=3)
+    parser.add_argument("--warmup", type=int, default=20)
+    parser.add_argument("--iters", type=int, default=200)
+    parser.add_argument("--log-json", type=str, default="")
+    parser.add_argument("--tag", type=str, default="")
+    parser.add_argument("--model", type=str, default="microbench")
+    parser.add_argument("--skip-prefill", action="store_true")
+    parser.add_argument("--skip-quant", action="store_true")
+    args = parser.parse_args()
+
     if not hasattr(mx, "gather_qmm_swiglu"):
         print("ERROR: mx.gather_qmm_swiglu not available in this MLX build")
         sys.exit(1)
@@ -135,10 +201,47 @@ def main():
     ]
 
     results = []
-    for label, *args in configs:
+    records = []
+    timestamp = datetime.now(timezone.utc).isoformat()
+    sha = _git_sha()
+    device_meta = _device_meta()
+    for label, *cfg in configs:
         print(f"\n{label}:")
-        t_n, t_f, s = bench_shape(*args)
+        t_n, t_f, s, n_runs, f_runs = bench_shape(
+            *cfg,
+            outer_runs=args.outer_runs,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
         results.append((label, t_n, t_f, s))
+        n_experts, M, K, N, bits, group_size, n_selected = cfg
+        records.append(
+            {
+                "timestamp": timestamp,
+                "kind": "gather_qmm_swiglu",
+                "model": args.model,
+                "label": label,
+                "shape": {"M": M, "K": K, "N": N},
+                "n_experts": n_experts,
+                "n_selected": n_selected,
+                "bits": bits,
+                "group_size": group_size,
+                "epsilon": None,
+                "threadgroup": 0,
+                "naive_time_us": t_n,
+                "fused_time_us": t_f,
+                "speedup_x": s,
+                "naive_times_us": n_runs,
+                "fused_times_us": f_runs,
+                "outer_runs": args.outer_runs,
+                "warmup": args.warmup,
+                "iters": args.iters,
+                "mlx_version": mx.__version__,
+                "git_sha": sha,
+                "device": device_meta,
+                "tag": args.tag or None,
+            }
+        )
 
     # -----------------------------------------------------------------------
     # Prefill shapes (M > 1) — throughput-sensitive
@@ -154,10 +257,44 @@ def main():
         ("M=64, K=2048, N=1024", 8, 64, 2048, 1024, 4, 64, 2),
     ]
 
-    for label, *args in prefill_configs:
-        print(f"\n{label}:")
-        t_n, t_f, s = bench_shape(*args)
-        results.append((label, t_n, t_f, s))
+    if not args.skip_prefill:
+        for label, *cfg in prefill_configs:
+            print(f"\n{label}:")
+            t_n, t_f, s, n_runs, f_runs = bench_shape(
+                *cfg,
+                outer_runs=args.outer_runs,
+                warmup=args.warmup,
+                iters=args.iters,
+            )
+            results.append((label, t_n, t_f, s))
+            n_experts, M, K, N, bits, group_size, n_selected = cfg
+            records.append(
+                {
+                    "timestamp": timestamp,
+                    "kind": "gather_qmm_swiglu",
+                    "model": args.model,
+                    "label": label,
+                    "shape": {"M": M, "K": K, "N": N},
+                    "n_experts": n_experts,
+                    "n_selected": n_selected,
+                    "bits": bits,
+                    "group_size": group_size,
+                    "epsilon": None,
+                    "threadgroup": 0,
+                    "naive_time_us": t_n,
+                    "fused_time_us": t_f,
+                    "speedup_x": s,
+                    "naive_times_us": n_runs,
+                    "fused_times_us": f_runs,
+                    "outer_runs": args.outer_runs,
+                    "warmup": args.warmup,
+                    "iters": args.iters,
+                    "mlx_version": mx.__version__,
+                    "git_sha": sha,
+                    "device": device_meta,
+                    "tag": args.tag or None,
+                }
+            )
 
     # -----------------------------------------------------------------------
     # Quantization variants
@@ -174,10 +311,44 @@ def main():
         ("8-bit, gs=64", 8, 1, 2048, 1024, 8, 64, 2),
     ]
 
-    for label, *args in quant_configs:
-        print(f"\n{label}:")
-        t_n, t_f, s = bench_shape(*args)
-        results.append((label, t_n, t_f, s))
+    if not args.skip_quant:
+        for label, *cfg in quant_configs:
+            print(f"\n{label}:")
+            t_n, t_f, s, n_runs, f_runs = bench_shape(
+                *cfg,
+                outer_runs=args.outer_runs,
+                warmup=args.warmup,
+                iters=args.iters,
+            )
+            results.append((label, t_n, t_f, s))
+            n_experts, M, K, N, bits, group_size, n_selected = cfg
+            records.append(
+                {
+                    "timestamp": timestamp,
+                    "kind": "gather_qmm_swiglu",
+                    "model": args.model,
+                    "label": label,
+                    "shape": {"M": M, "K": K, "N": N},
+                    "n_experts": n_experts,
+                    "n_selected": n_selected,
+                    "bits": bits,
+                    "group_size": group_size,
+                    "epsilon": None,
+                    "threadgroup": 0,
+                    "naive_time_us": t_n,
+                    "fused_time_us": t_f,
+                    "speedup_x": s,
+                    "naive_times_us": n_runs,
+                    "fused_times_us": f_runs,
+                    "outer_runs": args.outer_runs,
+                    "warmup": args.warmup,
+                    "iters": args.iters,
+                    "mlx_version": mx.__version__,
+                    "git_sha": sha,
+                    "device": device_meta,
+                    "tag": args.tag or None,
+                }
+            )
 
     # -----------------------------------------------------------------------
     # Summary table
@@ -190,6 +361,11 @@ def main():
     print("-" * 70)
     for label, t_n, t_f, s in results:
         print(f"{label:<40} {t_n:>9.1f}us {t_f:>9.1f}us {s:>9.2f}x")
+
+    if args.log_json:
+        path = Path(args.log_json)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _append_json(path, records)
 
 
 if __name__ == "__main__":
