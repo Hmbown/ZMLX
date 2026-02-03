@@ -1,8 +1,8 @@
 # ZMLX Roadmap
 
-> **Updated:** January 30, 2025  
-> **Status:** Following contact from Awni Hannun (Apple MLX team)  
-> **Current Version:** 0.6.3
+> **Updated:** February 3, 2026  
+> **Status:** Moonshot feasibility captured; focus on shipping P0/P1 while prototyping experimental tracks.  
+> **Current Version:** 0.7.13
 
 This roadmap prioritizes features based on technical impact, user demand, and strategic alignment with MLX ecosystem growth.
 
@@ -63,6 +63,22 @@ This section captures which moonshot ideas can be folded into the current roadma
    - **Next step:** Keep as research note only; do not schedule until a concrete path exists.
 
 ---
+
+## Moonshot Delivery Track (Long-Horizon)
+
+This track turns the moonshot feasibility list into a multi-phase plan that can run alongside the P0/P1 roadmap. Each phase ends with an explicit decision gate so we can extend work only when prerequisites are met.
+
+| Phase | Horizon | Focus | Exit Criteria | Dependencies |
+|:-----:|:-------:|:------|:--------------|:-------------|
+| A | 0-3 months | Ship ZMLX-scope wins: dequant+activation (Phase 1), paged KV cache MVP, thermal-aware autotuning telemetry. | Benchmarks show >= 5% decode gain or memory savings without regressions; MVP paged KV supports block size 256 + context 4096; throttling detection verified on at least two chips. | None (ZMLX-only). |
+| B | 3-6 months | Expand ZMLX-scope: dequant+RMSNorm/RoPE (Phases 2-3), paged KV + paged attention integration, autotune profile adaptation. | Bit-exact agreement vs `mx.dequantize` within tolerance; paged attention baseline parity; autotune profile cache v3 stored per device. | Flash attention groundwork, autotune cache updates. |
+| C | 6-12 months | MLX-coordination prototypes: graph-level fusion spike, model-specific kernel cache tracer, speculative decode design doc + POC. | Experimental flags behind feature gates; prototype measurements show launch reduction or kernel reuse benefits; draft/verify APIs confirmed feasible. | MLX graph/IR hooks, shape tracing, sampling hooks. |
+| D | 12-18 months | MLX-dependent build-out: speculative decode fusion, graph-level fusion expansion. | End-to-end decode speedup >= 10% on supported models; stability validated in benchmark regression suite. | MLX C++/IR support; stable sampling APIs. |
+| E | 18+ months | Research watchlist: NE+GPU hybrid scheduling, ray-tracing attention. | Clear MLX primitives or Apple hardware support published; minimal interface scaffolding approved. | MLX NE roadmap, Metal ray-tracing integration. |
+
+**Decision Gates**
+- Promote a moonshot item to P0/P1 only after the exit criteria and dependencies are met.
+- If MLX APIs stall, keep MLX-dependent items in prototype or design-only status and re-evaluate quarterly.
 
 ## P0: Critical Path (Next 4-6 Weeks)
 

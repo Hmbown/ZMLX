@@ -56,6 +56,272 @@ def dequantize_silu_int8(x: Any, scale: Any, *, compute_dtype: Any | None = None
 
 
 @cache
+def _quantized_swiglu_gemv_kernel(
+    m: int,
+    n: int,
+    k: int,
+    *,
+    bits: int,
+    group_size: int,
+) -> Any:
+    if bits not in (4, 8):
+        raise ValueError(f"Unsupported bits for quantized SwiGLU GEMV: {bits}")
+    if group_size <= 0:
+        raise ValueError("group_size must be > 0")
+    if k % group_size != 0:
+        raise ValueError("group_size must evenly divide K")
+
+    elements_per_word = 32 // bits
+    if k % elements_per_word != 0:
+        raise ValueError("K must be divisible by elements_per_word")
+
+    k_packed = k // elements_per_word
+    groups_per_row = k // group_size
+    mask = (1 << bits) - 1
+
+    source = f"""
+        constexpr uint M = {m};
+        constexpr uint N = {n};
+        constexpr uint K = {k};
+        constexpr uint K_PACKED = {k_packed};
+        constexpr uint GROUP = {group_size};
+        constexpr uint GROUPS = {groups_per_row};
+        constexpr uint ELEMENTS = {elements_per_word};
+        constexpr uint MASK = {mask}u;
+
+        uint gid = thread_position_in_grid.x;
+        uint row = gid / N;
+        uint col = gid % N;
+
+        if (row < M && col < N) {{
+            float acc_gate = 0.0f;
+            float acc_up = 0.0f;
+            uint w_row = col * K_PACKED;
+            uint s_row = col * GROUPS;
+            uint x_row = row * K;
+
+            for (uint i = 0; i < K; ++i) {{
+                uint pack_idx = i / ELEMENTS;
+                uint shift = (i % ELEMENTS) * {bits};
+                uint q_gate = (gate_w[w_row + pack_idx] >> shift) & MASK;
+                uint q_up = (up_w[w_row + pack_idx] >> shift) & MASK;
+                uint group_idx = i / GROUP;
+
+                float gate_val = (float)q_gate * (float)gate_scales[s_row + group_idx] + (float)gate_biases[s_row + group_idx];
+                float up_val = (float)q_up * (float)up_scales[s_row + group_idx] + (float)up_biases[s_row + group_idx];
+                float xv = (float)x[x_row + i];
+                acc_gate += gate_val * xv;
+                acc_up += up_val * xv;
+            }}
+
+            float outv = (acc_gate * kk_sigmoid(acc_gate)) * acc_up;
+            out[gid] = (T)outv;
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_qswiglu_gemv_M{m}_N{n}_K{k}_b{bits}",
+        input_names=[
+            "x",
+            "gate_w",
+            "gate_scales",
+            "gate_biases",
+            "up_w",
+            "up_scales",
+            "up_biases",
+        ],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def fused_quantized_swiglu_gemv(
+    x: Any,
+    gate_w: Any,
+    gate_scales: Any,
+    gate_biases: Any,
+    up_w: Any,
+    up_scales: Any,
+    up_biases: Any,
+    *,
+    group_size: int,
+    bits: int,
+    compute_dtype: Any | None = None,
+) -> Any:
+    """Reference fused quantized GEMV + SwiGLU for decode-like shapes.
+
+    This is a naive dot-product kernel (one thread per output element).
+    Only intended for small-token decode paths where kernel fusion can
+    outweigh the lack of tiling.
+    """
+    if x.ndim != 2:
+        raise ValueError("fused_quantized_swiglu_gemv expects 2D input (M, K)")
+    if gate_w.shape != up_w.shape:
+        raise ValueError("gate_w and up_w must have the same shape")
+    if gate_scales.shape != up_scales.shape or gate_biases.shape != up_biases.shape:
+        raise ValueError("gate/up scales and biases must match")
+
+    M, K = x.shape
+    N, K_packed = gate_w.shape
+    elements_per_word = 32 // bits
+    if K != K_packed * elements_per_word:
+        raise ValueError("Input K does not match packed weight shape")
+
+    cd = compute_dtype or mx.float32
+    k = _quantized_swiglu_gemv_kernel(int(M), int(N), int(K), bits=bits, group_size=group_size)
+    return k(
+        x,
+        gate_w,
+        gate_scales,
+        gate_biases,
+        up_w,
+        up_scales,
+        up_biases,
+        template=[("T", cd)],
+        grid=(int(M) * int(N), 1, 1),
+        output_shapes=[(int(M), int(N))],
+        output_dtypes=[cd],
+    )[0]
+
+@cache
+def _dequant_affine_packed_kernel(
+    *,
+    bits: int,
+    group_size: int,
+    act_expr: str = "val",
+) -> Any:
+    if bits not in (2, 3, 4, 5, 6, 8):
+        raise ValueError(f"Unsupported bits for affine packed dequant: {bits}")
+    if group_size <= 0:
+        raise ValueError("group_size must be > 0")
+
+    elements_per_word = 32 // bits
+    mask = (1 << bits) - 1
+    source = f"""
+        uint gid = thread_position_in_grid.x;
+        uint pack_idx = gid / {elements_per_word};
+        uint shift = (gid % {elements_per_word}) * {bits};
+        uint q = (inp[pack_idx] >> shift) & {mask}u;
+        uint group_idx = gid / {group_size};
+        float scale = (float)scales[group_idx];
+        float bias = (float)biases[group_idx];
+        float val = (float)q * scale + bias;
+        out[gid] = (T)({act_expr});
+    """
+    return metal_kernel(
+        name=f"kk_dequant_affine_b{bits}_g{group_size}_{hash(act_expr) % 10000}",
+        input_names=["inp", "scales", "biases"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def _affine_packed_output_shape(x: Any, bits: int) -> tuple[int, ...]:
+    elements_per_word = 32 // bits
+    if x.ndim == 0:
+        raise ValueError("affine packed dequant expects at least 1D input")
+    out_last = x.shape[-1] * elements_per_word
+    return (*x.shape[:-1], out_last)
+
+
+def _affine_packed_grid(x: Any, bits: int) -> int:
+    elements_per_word = 32 // bits
+    return int(x.size * elements_per_word)
+
+
+def dequantize_affine_packed(
+    x: Any,
+    scales: Any,
+    biases: Any,
+    *,
+    bits: int = 4,
+    group_size: int = 64,
+    compute_dtype: Any | None = None,
+) -> Any:
+    """Dequantize MLX affine-packed uint32 weights.
+
+    Mirrors ``mx.dequantize`` for affine-packed weights, returning a dense
+    float tensor. Supports bits {2,3,4,5,6,8}.
+    """
+    cd = compute_dtype or mx.float32
+    k = _dequant_affine_packed_kernel(bits=bits, group_size=group_size)
+    out_shape = _affine_packed_output_shape(x, bits)
+    grid = _affine_packed_grid(x, bits)
+    return k(
+        x,
+        scales,
+        biases,
+        template=[("T", cd)],
+        grid=(grid, 1, 1),
+        output_shapes=[out_shape],
+        output_dtypes=[cd],
+    )[0]
+
+
+def dequantize_affine_packed_silu(
+    x: Any,
+    scales: Any,
+    biases: Any,
+    *,
+    bits: int = 4,
+    group_size: int = 64,
+    compute_dtype: Any | None = None,
+) -> Any:
+    """Fused affine-packed dequant + SiLU."""
+    cd = compute_dtype or mx.float32
+    k = _dequant_affine_packed_kernel(
+        bits=bits,
+        group_size=group_size,
+        act_expr="kk_silu(val)",
+    )
+    out_shape = _affine_packed_output_shape(x, bits)
+    grid = _affine_packed_grid(x, bits)
+    return k(
+        x,
+        scales,
+        biases,
+        template=[("T", cd)],
+        grid=(grid, 1, 1),
+        output_shapes=[out_shape],
+        output_dtypes=[cd],
+    )[0]
+
+
+def dequantize_affine_packed_gelu(
+    x: Any,
+    scales: Any,
+    biases: Any,
+    *,
+    bits: int = 4,
+    group_size: int = 64,
+    compute_dtype: Any | None = None,
+) -> Any:
+    """Fused affine-packed dequant + GELU (tanh approximation)."""
+    cd = compute_dtype or mx.float32
+    k = _dequant_affine_packed_kernel(
+        bits=bits,
+        group_size=group_size,
+        act_expr="kk_gelu_tanh(val)",
+    )
+    out_shape = _affine_packed_output_shape(x, bits)
+    grid = _affine_packed_grid(x, bits)
+    return k(
+        x,
+        scales,
+        biases,
+        template=[("T", cd)],
+        grid=(grid, 1, 1),
+        output_shapes=[out_shape],
+        output_dtypes=[cd],
+    )[0]
+
+
+@cache
 def _dequant_int4_kernel() -> Any:
     source = """
         uint gid = thread_position_in_grid.x;
@@ -355,6 +621,10 @@ __all__ = [
     "dequantize_silu_int8",
     "dequantize_int4",
     "dequantize_blockwise",
+    "dequantize_affine_packed",
+    "dequantize_affine_packed_silu",
+    "dequantize_affine_packed_gelu",
+    "fused_quantized_swiglu_gemv",
     "fused_swiglu_quant",
     "dequantize_fp8",
     "dequantize_nf4",
