@@ -13,6 +13,8 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 - **Metal kernels from Python:** author custom ops from expressions (and optional custom VJPs for training), or use the 70+ kernel catalog.
 - **Tooling you can verify:** `python -m zmlx.validate` for token-fidelity + throughput, plus repro capsules for repeatable benchmarks.
 
+**Best current result (stock MLX):** LFM2-8B-A1B 4-bit/8-bit shows **+5–12% decode** with token-identical output. Details in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+
 ## Quick Start
 
 **Requirements:** macOS 14+ (Apple Silicon), Python >= 3.10, `mlx>=0.30.0`
