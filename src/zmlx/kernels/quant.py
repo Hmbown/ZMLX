@@ -81,12 +81,6 @@ def _quantized_swiglu_gemv_kernel(
     hi_mask = "0xCu" if bits == 4 else "0xC0u"
     low_mask = "0x3u" if bits == 4 else "0x3Fu"
     max_low = 3 if bits == 4 else 63
-    hi_mask = "0xCu" if bits == 4 else "0xC0u"
-    low_mask = "0x3u" if bits == 4 else "0x3Fu"
-    max_low = 3 if bits == 4 else 63
-    hi_mask = "0xCu" if bits == 4 else "0xC0u"
-    low_mask = "0x3u" if bits == 4 else "0x3Fu"
-    max_low = 3 if bits == 4 else 63
 
     source = f"""
         constexpr uint M = {m};
@@ -97,9 +91,6 @@ def _quantized_swiglu_gemv_kernel(
         constexpr uint GROUPS = {groups_per_row};
         constexpr uint ELEMENTS = {elements_per_word};
         constexpr uint MASK = {mask}u;
-        constexpr uint HI_MASK = {hi_mask};
-        constexpr uint LOW_MASK = {low_mask};
-        constexpr float MAX_LOW = {float(max_low)}f;
         constexpr uint HI_MASK = {hi_mask};
         constexpr uint LOW_MASK = {low_mask};
         constexpr float MAX_LOW = {float(max_low)}f;
