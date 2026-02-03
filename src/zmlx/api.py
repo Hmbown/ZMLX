@@ -643,19 +643,29 @@ def generate(
     *,
     max_tokens: int = 256,
     temp: float = 0.7,
+    kv_bits: int | None = None,
+    kv_group_size: int | None = None,
+    quantized_kv_start: int | None = None,
 ) -> str:
     """Generate text from a patched model."""
     _check_mlx_lm()
     import mlx_lm
     from mlx_lm.sample_utils import make_sampler
+    from .kv_cache import kv_cache_kwargs
 
     sampler = make_sampler(temp=float(temp))
+    kv_kwargs = kv_cache_kwargs(
+        kv_bits=kv_bits,
+        kv_group_size=kv_group_size,
+        quantized_kv_start=quantized_kv_start,
+    )
     result: str = mlx_lm.generate(
         model,
         tokenizer,
         prompt,
         max_tokens=max_tokens,
         sampler=sampler,
+        **kv_kwargs,
     )
     return result
 

@@ -35,6 +35,46 @@ python -m zmlx.validate <model> --max-tokens 500 --runs 5
 python -m zmlx.validate <model> --max-tokens 200 --runs 3
 ```
 
+### Quantized KV cache (opt-in)
+
+Use quantized KV cache to reduce decode bandwidth on dense models. This trades a
+small amount of accuracy for speed and memory savings, so keep it opt-in.
+
+```bash
+ZMLX_KV_BITS=8 ZMLX_KV_GROUP_SIZE=64 python -m zmlx.validate <model> --max-tokens 200 --runs 3
+```
+
+Equivalent CLI flags:
+
+```bash
+python -m zmlx.validate <model> --max-tokens 200 --runs 3 --kv-bits 8 --kv-group-size 64 --quantized-kv-start 0
+```
+
+### Stream pool experiments (list-of-experts MoE)
+
+Use `benchmarks/bench_moe_streams.py` to compare baseline vs patched across stream counts.
+This is intended for list-of-experts models (Mixtral/DeepSeek). SwitchGLU models ignore the
+stream pool.
+
+```bash
+python benchmarks/bench_moe_streams.py \
+  --model mlx-community/Mixtral-8x7B-Instruct-v0.1-4bit \
+  --streams 1,2,4,8 \
+  --runs 5 \
+  --max-tokens 500 \
+  --json-out benchmarks/repro_capsules/mixtral_streams.json
+```
+
+Optional: experiment with alternative stream reductions (non-default, may change rounding):
+
+```bash
+ZMLX_MOE_STREAMS_REDUCE=tree python benchmarks/bench_moe_streams.py \
+  --model mlx-community/Mixtral-8x7B-Instruct-v0.1-4bit \
+  --streams 2,4,8 \
+  --runs 3 \
+  --max-tokens 200
+```
+
 ## Why prefill is neutral
 
 All fused kernels are guarded with a sequence length check (`M <= 32`). During prefill, M equals the prompt length (typically hundreds or thousands of tokens). At this scale, the compute-to-dispatch ratio is high and the standard MLX path is already efficient. The guards ensure ZMLX never regresses prefill performance.

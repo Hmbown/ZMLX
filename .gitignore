@@ -43,6 +43,7 @@ REVIEW_PROMPT.md
 IMPLEMENTATION_SUMMARY.md
 AGENTS.md
 UPSTREAM_PLAN.md
+PARALLEL_MOE_PROMPT.md
 benchmarks/results/
 
 # Local-only directories (not shipped)

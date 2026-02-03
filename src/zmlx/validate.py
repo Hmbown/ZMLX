@@ -16,6 +16,7 @@ import argparse
 import gc
 import statistics
 from dataclasses import dataclass, field
+from typing import Any
 
 import mlx.core as mx
 
@@ -65,6 +66,7 @@ def _generate_greedy(
     tokenizer,
     prompt: str,
     max_tokens: int,
+    gen_kwargs: dict[str, Any] | None = None,
 ) -> _RunMetrics:
     """Generate tokens with greedy decoding and collect metrics."""
     import mlx_lm
@@ -73,11 +75,13 @@ def _generate_greedy(
     last = None
     token_ids: list[int] = []
 
+    kwargs = gen_kwargs or {}
     for resp in mlx_lm.stream_generate(
         model,
         tokenizer,
         prompt=prompt,
         max_tokens=max_tokens,
+        **kwargs,
     ):
         last = resp
         if hasattr(resp, "token"):
@@ -128,6 +132,7 @@ def _bench_config(
     prompt: str,
     max_tokens: int,
     runs: int,
+    gen_kwargs: dict[str, Any] | None,
 ) -> _ConfigResult:
     import mlx_lm
 
@@ -164,7 +169,7 @@ def _bench_config(
 
     for i in range(runs):
         print(f"  Run {i + 1}/{runs} ...", end="", flush=True)
-        m = _generate_greedy(model, tokenizer, prompt, max_tokens)
+        m = _generate_greedy(model, tokenizer, prompt, max_tokens, gen_kwargs)
         result.runs.append(m)
         print(
             f"  prompt={m.prompt_tps:.1f} tok/s  "
@@ -218,6 +223,24 @@ def main() -> None:
     parser.add_argument("--max-tokens", type=int, default=200, help="Tokens to generate")
     parser.add_argument("--runs", type=int, default=3, help="Timed runs per config")
     parser.add_argument(
+        "--kv-bits",
+        type=int,
+        default=None,
+        help="Quantize KV cache to N bits during generation (env: ZMLX_KV_BITS).",
+    )
+    parser.add_argument(
+        "--kv-group-size",
+        type=int,
+        default=None,
+        help="Group size for KV cache quantization (env: ZMLX_KV_GROUP_SIZE).",
+    )
+    parser.add_argument(
+        "--quantized-kv-start",
+        type=int,
+        default=None,
+        help="Step to begin using a quantized KV cache (env: ZMLX_QUANTIZED_KV_START).",
+    )
+    parser.add_argument(
         "--prompt",
         type=str,
         default=(
@@ -231,6 +254,14 @@ def main() -> None:
     if args.patterns is not None and args.patch_profile is not None:
         raise SystemExit("Use either --patterns or --patch-profile, not both.")
 
+    from zmlx.kv_cache import kv_cache_kwargs
+
+    gen_kwargs = kv_cache_kwargs(
+        kv_bits=args.kv_bits,
+        kv_group_size=args.kv_group_size,
+        quantized_kv_start=args.quantized_kv_start,
+    )
+
     # --- Baseline ---
     baseline = _bench_config(
         model_path=args.model,
@@ -240,6 +271,7 @@ def main() -> None:
         prompt=args.prompt,
         max_tokens=args.max_tokens,
         runs=args.runs,
+        gen_kwargs=gen_kwargs,
     )
 
     # --- Patched ---
@@ -251,6 +283,7 @@ def main() -> None:
         prompt=args.prompt,
         max_tokens=args.max_tokens,
         runs=args.runs,
+        gen_kwargs=gen_kwargs,
     )
 
     # --- Fidelity ---

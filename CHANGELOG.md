@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MoE stream benchmark script**: `benchmarks/bench_moe_streams.py` for baseline vs stream-count comparisons with optional Metal capture.
+- **Stream reduction selector**: `ZMLX_MOE_STREAMS_REDUCE=serial|tree|stack` (experimental, opt-in) to explore different accumulation orders.
+- **KV cache quantization hooks**: opt-in `ZMLX_KV_BITS`/CLI flags wired into `zmlx.validate` and `zmlx.generate` for bandwidth-focused decode experiments.
+
 ## [0.7.13] - 2026-02-02
 
 ### Added

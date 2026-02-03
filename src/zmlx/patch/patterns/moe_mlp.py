@@ -140,6 +140,7 @@ def _gating(
 # vs the two-pass approach (benchmarked on M-series: ~0.5x at M=64).
 _FUSED_SWIGLU_MAX_TOKENS = 32
 _MOE_STREAMS_ENV = "ZMLX_MOE_STREAMS"
+_MOE_STREAMS_REDUCE_ENV = "ZMLX_MOE_STREAMS_REDUCE"
 
 
 def _get_moe_stream_pool() -> list[mx.Stream] | None:
@@ -160,6 +161,46 @@ def _get_moe_stream_pool() -> list[mx.Stream] | None:
     for _ in range(count - 1):
         streams.append(mx.new_stream(gpu))
     return streams
+
+
+def _get_moe_stream_reduce() -> str:
+    """Return the reduction mode for stream outputs."""
+    raw = os.environ.get(_MOE_STREAMS_REDUCE_ENV, "").strip().lower()
+    if raw in {"tree", "stack"}:
+        return raw
+    return "serial"
+
+
+def _reduce_stream_outputs(stream_outputs: list[mx.array], mode: str) -> mx.array:
+    """Combine per-stream outputs into a single expert output tensor."""
+    if not stream_outputs:
+        raise ValueError("stream_outputs cannot be empty")
+
+    if mode == "stack":
+        # Experimental: stack + sum reduces Python overhead at cost of temp memory.
+        stacked = mx.stack(stream_outputs, axis=0)
+        return mx.sum(stacked, axis=0)
+
+    if mode == "tree":
+        # Experimental: pairwise tree reduction to shorten dependency chain.
+        outputs = stream_outputs
+        while len(outputs) > 1:
+            next_round: list[mx.array] = []
+            it = iter(outputs)
+            for left in it:
+                right = next(it, None)
+                if right is None:
+                    next_round.append(left)
+                else:
+                    next_round.append(left + right)
+            outputs = next_round
+        return outputs[0]
+
+    # Default: serial accumulation (most deterministic vs baseline)
+    out = stream_outputs[0]
+    for extra in stream_outputs[1:]:
+        out = out + extra
+    return out
 
 
 def _is_quantized_switch_linear(mod: Any) -> bool:
@@ -475,10 +516,13 @@ class _MoEMLPPattern:
                 print("  [moe_mlp] GLM detected: skipping fused SwiGLU (token safety)")
             _use_fused_swiglu = False
         moe_stream_pool = _get_moe_stream_pool()
+        moe_stream_reduce = None
+        if moe_stream_pool is not None:
+            moe_stream_reduce = _get_moe_stream_reduce()
         if moe_stream_pool is not None and config.verbose:
             print(
                 f"  [moe_mlp] MoE stream pool enabled "
-                f"({len(moe_stream_pool)} streams)"
+                f"({len(moe_stream_pool)} streams, reduce={moe_stream_reduce})"
             )
 
         def patched_call(self_mod: Any, x: Any) -> Any:
@@ -547,11 +591,12 @@ class _MoEMLPPattern:
                         with mx.stream(stream):
                             for k in range(K):
                                 mask = indices[:, k] == i
-                                if mask.any():
-                                    stream_outputs[stream_index][mask, k] = expert(x[mask])
-                    expert_outputs = stream_outputs[0]
-                    for out in stream_outputs[1:]:
-                        expert_outputs = expert_outputs + out
+                                # Avoid host sync from mask.any() so streams can overlap.
+                                stream_outputs[stream_index][mask, k] = expert(x[mask])
+                    expert_outputs = _reduce_stream_outputs(
+                        stream_outputs,
+                        moe_stream_reduce or "serial",
+                    )
 
             # 3. Combine
             if expert_outputs is not None:
