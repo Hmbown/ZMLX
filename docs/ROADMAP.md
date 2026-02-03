@@ -20,6 +20,47 @@ This roadmap prioritizes features based on technical impact, user demand, and st
 | **P2** | CPU/GPU Stream Scheduling | Medium | Medium | TBD |
 | **P3** | Paged KV Cache | Medium | High | TBD |
 | **P3** | Device Scheduling Profiler | Low | Medium | TBD |
+| **P3** | Transformer Block Fusion (MLX C++ deps) | High | Very High | TBD |
+| **P3** | Model-Specific JIT Kernel Cache | Medium | High | TBD |
+
+---
+
+## Moonshot Alignment & Feasibility (Demis Hassabis Analysis)
+
+This section captures which moonshot ideas can be folded into the current roadmap, what is feasible in ZMLX, and what requires upstream MLX C++ work or Apple hardware support.
+
+### Incorporate Now (Fits ZMLX Scope)
+
+1. **Fused dequant + compute** (already P1)
+   - **Feasibility:** High. Fits custom kernel library and patch system.
+   - **Next step:** Extend P1 task to include `dequant_rmsnorm` and `dequant_rope` after dequant+activation.
+2. **Paged KV cache MVP** (already P3)
+   - **Feasibility:** Medium. Pure Python + Metal kernels; UMA reduces complexity.
+   - **Next step:** Add a constrained MVP (block size 256, max context 4096) and integrate with `paged_attention`.
+3. **Thermal-aware autotuning**
+   - **Feasibility:** Medium. Requires runtime telemetry and profile adaptation.
+   - **Next step:** Add throttling detection and downshift threadgroup sizes when sustained clocks drop.
+
+### Medium-Term (Needs MLX Coordination or Extra Infra)
+
+4. **Graph-level fusion across layers**
+   - **Feasibility:** Medium-low in ZMLX alone. Requires MLX graph/IR hooks or a C++ extension.
+   - **Next step:** Prototype a "block fusion" path behind an experimental flag, document MLX prerequisites.
+5. **Model-specific kernel cache (shape-specialized)**
+   - **Feasibility:** Medium. Depends on a stable kernel cache key and shape tracing.
+   - **Next step:** Extend autotune cache with `(arch, seq_len, batch)` keying and compile-once logic.
+6. **Speculative decode kernel fusion**
+   - **Feasibility:** Medium. Needs draft/verify APIs and sampling hooks.
+   - **Next step:** Add a design doc with constraints, then prototype in experimental mode.
+
+### Long-Term (Research / Hardware-Dependent)
+
+7. **Neural Engine + GPU hybrid scheduling**
+   - **Feasibility:** Low today. MLX lacks NE execution primitives.
+   - **Next step:** Track Apple MLX NE roadmap; prepare interfaces but defer implementation.
+8. **Ray-tracing core attention mapping**
+   - **Feasibility:** Very low / research. Requires Metal ray-tracing pipeline integration.
+   - **Next step:** Keep as research note only; do not schedule until a concrete path exists.
 
 ---
 
@@ -119,7 +160,8 @@ model = zmlx.patch.auto_patch(model, sample)  # runtime pattern synthesis
 **Priority Order:**
 1. dequant + activation (silu, gelu) - **Phase 1**
 2. dequant + RMSNorm - **Phase 2**
-3. dequant + SwiGLU (gate+up fused) - **Phase 3**
+3. dequant + RoPE - **Phase 3**
+4. dequant + SwiGLU (gate+up fused) - **Phase 4**
 
 **Files:** `src/zmlx/msl.py`, `src/zmlx/kernels/quant.py`, `src/zmlx/codegen.py`
 
@@ -211,6 +253,39 @@ model = zmlx.patch.auto_patch(model, sample)  # runtime pattern synthesis
 - Only apply if end-to-end benchmark improves by >= 3%
 
 **Files:** `src/zmlx/schedule/profiler.py`, `policy.py`, `apply.py`, `cache.py`
+
+---
+
+### 9. Transformer Block Fusion (Experimental, MLX C++ Dependency)
+
+**Problem:** Kernel launch overhead dominates M=1 decode and small-tensor workloads.
+
+**Goal:** Compile entire transformer blocks into a single Metal kernel with threadgroup-resident intermediates.
+
+**Action Items:**
+- [ ] Prototype block-level fusion in a feature-flagged experimental mode
+- [ ] Identify MLX C++ primitives or hooks required for graph-level fusion
+- [ ] Implement a minimal fused block (RMSNorm → QKV → RoPE → Attention → O proj → RMSNorm → MLP)
+- [ ] Benchmark against layer-by-layer dispatch to quantify launch savings
+
+**Dependency:** Requires MLX C++ support for multi-op fusion or custom graph compiler hooks.
+
+**Files:** `docs/EXPERIMENTAL_MLX.md`, `src/zmlx/patch/experimental/`
+
+---
+
+### 10. Model-Specific JIT Kernel Cache
+
+**Problem:** Static kernels are generic; model/sequence-specialized kernels can improve throughput.
+
+**Goal:** Compile and cache kernels keyed by `(model_arch, seq_len, batch_size)` with trace-driven shape specialization.
+
+**Action Items:**
+- [ ] Extend autotune cache schema to capture model/shape keys
+- [ ] Add a lightweight tracer for symbolic shapes at model load
+- [ ] Implement compile-once + reuse flow for repeated decode shapes
+
+**Files:** `src/zmlx/autotune.py`, `src/zmlx/patch/_tracer.py`
 
 ---
 
