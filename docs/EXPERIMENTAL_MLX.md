@@ -1,40 +1,68 @@
-# Experimental MLX Fork (Optional)
+# Custom MLX Primitive (Optional)
 
-This document describes ZMLX’s **optional** custom‑MLX work. Most ZMLX patterns run on released MLX, but some MoE decode wins (notably GLM/Qwen3) currently depend on the fused primitive `mx.gather_qmm_swiglu`, which may not be exposed in your installed MLX build.
+This document describes `gather_qmm_swiglu`, a **custom C++ Metal primitive** implemented in `mlx_local/` as an extension to MLX. It is not part of released MLX and must be built locally.
 
 ## What this is
 
-ZMLX includes a local MLX fork in `mlx_local/` for experiments that require MLX internals (quantized matmul kernels, fused projections). These are intended for eventual upstream contribution.
+`mlx_local/` is a fork of upstream MLX (`ml-explore/mlx`, commit `2f324cc`) with ~800 lines of custom C++ and Metal shader code adding the `GatherQMMSwiGLU` primitive. This fuses **gate projection + up projection + SwiGLU activation** for quantized MoE experts into a single GPU dispatch, eliminating multiple kernel launches per expert per layer during decode.
+
+The primitive is exposed as `mx.gather_qmm_swiglu()` in Python when the custom build is active.
+
+## What it does
+
+During MoE decode, each active expert normally requires separate kernel launches for:
+1. Dequantize + matmul (gate projection)
+2. Dequantize + matmul (up projection)
+3. SiLU activation
+4. Elementwise multiply (gate * up)
+
+`gather_qmm_swiglu` fuses all four into a single Metal kernel launch per expert. At decode (M=1), where dispatch overhead dominates over compute, this reduces per-layer latency.
 
 ## When to use it
 
-- If you are experimenting with C++ Metal primitives or trying to fuse operations that MLX doesn’t expose in Python.
-- If you want MoE fused decode for models where ZMLX relies on `mx.gather_qmm_swiglu` but your installed MLX build does not expose it (as of MLX 0.30.4/0.30.5 releases).
+- If you want MoE decode speedups on GLM-4.7-Flash or Qwen3-30B-A3B (models where ZMLX auto-skips on stock MLX).
+- If you are prototyping fused MLX primitives for potential upstream contribution.
 
-## Key primitive: `gather_qmm_swiglu`
+On stock MLX (`pip install mlx`), ZMLX auto-detects that `gather_qmm_swiglu` is unavailable and skips the fused paths. No action needed.
 
-This is a C++ Metal primitive that fuses **gate projection + up projection + SwiGLU** for quantized MoE experts into a single kernel launch. Some MLX dev builds expose this as `mx.gather_qmm_swiglu`; the `mlx_local/` fork is useful when you want to prototype changes to the primitive itself or add new primitives.
+## Build
 
-## Known issue (Qwen3)
+```bash
+cd mlx_local
+python3 setup.py build_ext --inplace
+# Limit CPU usage during build if desired:
+# CMAKE_BUILD_PARALLEL_LEVEL=4 python3 setup.py build_ext --inplace
+```
 
-Historical note: early experiments with custom fused MoE implementations diverged on Qwen3 due to precision differences vs MLX’s reference path. ZMLX now prefers `mx.gather_qmm_swiglu` when available and keeps MoE fused paths guarded behind small-token heuristics. Always validate token fidelity on your hardware.
+Then make sure `mlx_local/python` is on your Python path before the stock MLX:
 
-## Experimental benchmarks (historical)
+```bash
+export PYTHONPATH=<REPO_ROOT>/mlx_local/python:<REPO_ROOT>/src:$PYTHONPATH
+python3 -c "import mlx.core as mx; print(hasattr(mx, 'gather_qmm_swiglu'))"  # should print True
+```
 
-Qwen3‑30B‑A3B (max_tokens=500, runs=3):
+## Validate
 
-| Config | Decode speedup | Fidelity | Notes |
-|:--|:--|:--|:--|
-| Early dev MLX + `moe_mlp` forced | +6.9% (base) / +8.9% (instruct) | FAIL | Diverged due to precision mismatch (since fixed) |
+```bash
+python3 -m zmlx.validate mlx-community/GLM-4.7-Flash-4bit --max-tokens 128 --runs 5
+python3 -m zmlx.validate mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit --max-tokens 128 --runs 5
+```
 
-## Prototype primitives
+Remove `mlx_local/python` from `PYTHONPATH` to revert to stock MLX.
 
-| Primitive | Status | Description |
-|:--|:--|:--|
-| `gather_qmm_swiglu` | Working | Fused gate+up+SwiGLU for quantized MoE experts |
-| `gather_qmm_combine` | Working | Fused down projection + weighted expert sum |
-| `add_rms_norm` | Planned | Fused residual add + RMSNorm |
+## Measured results (M4 Max 36 GB)
+
+| Model | Decode (baseline -> patched) | Change | Fidelity |
+|:--|--:|--:|:--|
+| GLM-4.7-Flash-4bit | 85.8 -> 92.8 tok/s | +8.1% | 128/128 identical |
+| Qwen3-30B-A3B-4bit | 117 -> 123 tok/s | +5.5% | 128/128 identical |
 
 ## Upstream plan
 
-See [`UPSTREAM_PLAN.md`](../UPSTREAM_PLAN.md) for what is intended to be upstreamed to MLX.
+See [`UPSTREAM_PLAN.md`](../UPSTREAM_PLAN.md). The intent is to contribute `gather_qmm_swiglu` to upstream MLX once it has been validated across more models and hardware.
+
+## Known constraints
+
+- N must be divisible by 8, K by 512.
+- Only `transpose=True` and `mode='affine'` are implemented.
+- CPU fallback exists but is not optimized (Metal GPU path only).
