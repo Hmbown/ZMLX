@@ -1,0 +1,1054 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 457d4bf..13af4c0 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -187,14 +187,22 @@ if(MLX_BUILD_METAL)
+   endif()
+   message(STATUS "Building with macOS SDK version ${MACOS_SDK_VERSION}")
+ 
+-  set(METAL_CPP_URL
+-      https://developer.apple.com/metal/cpp/files/metal-cpp_26.zip)
++  if(NOT DEFINED METAL_CPP_URL)
++    set(METAL_CPP_URL
++        https://developer.apple.com/metal/cpp/files/metal-cpp_26.zip)
++  endif()
++
++  set(MLX_METAL_MODULE_CACHE
++      "/tmp/clang_module_cache"
++      CACHE STRING "Module cache path for Metal toolchain")
++  set(XCRUN_FLAGS "-fmodules-cache-path=${MLX_METAL_MODULE_CACHE}")
+ 
+   if(NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")
+     if(${CMAKE_OSX_DEPLOYMENT_TARGET} LESS 14.0)
+       message(FATAL_ERROR "MLX requires macOS >= 14.0")
+     endif()
+-    set(XCRUN_FLAGS "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
++    set(XCRUN_FLAGS
++        "${XCRUN_FLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+   endif()
+   execute_process(
+     COMMAND
+diff --git a/mlx/backend/cpu/quantized.cpp b/mlx/backend/cpu/quantized.cpp
+index 3c3643a..cd5ff87 100644
+--- a/mlx/backend/cpu/quantized.cpp
++++ b/mlx/backend/cpu/quantized.cpp
+@@ -1,5 +1,7 @@
+ // Copyright © 2023 Apple Inc.
+ 
++#include <cmath>
++
+ #include "mlx/backend/common/unary.h"
+ #include "mlx/backend/cpu/copy.h"
+ #include "mlx/backend/cpu/encoder.h"
+@@ -14,6 +16,16 @@ namespace mlx::core {
+ 
+ namespace {
+ 
++template <typename T>
++void swiglu_cpu(const T* gate, const T* up, T* out, size_t size) {
++  for (size_t i = 0; i < size; ++i) {
++    float g = static_cast<float>(gate[i]);
++    float u = static_cast<float>(up[i]);
++    float sig = 1.0f / (1.0f + std::exp(-g));
++    out[i] = static_cast<T>(g * sig * u);
++  }
++}
++
+ array ensure_row_contiguous(
+     const array& arr,
+     cpu::CommandEncoder& encoder,
+@@ -1054,6 +1066,136 @@ void GatherQMM::eval_cpu(const std::vector<array>& inputs, array& out) {
+   }
+ }
+ 
++void GatherQMMSwiGLU::eval_cpu(const std::vector<array>& inputs, array& out) {
++  if (mode_ != QuantizationMode::Affine) {
++    throw std::invalid_argument(
++        "[gather_qmm_swiglu] Only affine quantization is supported on CPU.");
++  }
++  if (!transpose_) {
++    throw std::invalid_argument(
++        "[gather_qmm_swiglu] Only transpose=True is supported.");
++  }
++
++  auto& x_pre = inputs[0];
++  auto& gate_w_pre = inputs[1];
++  auto& gate_scales_pre = inputs[2];
++  auto& gate_biases_pre = inputs[3];
++  auto& up_w_pre = inputs[4];
++  auto& up_scales_pre = inputs[5];
++  auto& up_biases_pre = inputs[6];
++  auto& lhs_indices = inputs[7];
++  auto& rhs_indices = inputs[8];
++
++  auto& encoder = cpu::get_command_encoder(stream());
++  auto ensure_row_contiguous_last_dims = [s = stream(),
++                                          &encoder](const array& arr) {
++    auto stride_0 = arr.strides()[arr.ndim() - 2];
++    auto stride_1 = arr.strides()[arr.ndim() - 1];
++    if (stride_0 == arr.shape(-1) && stride_1 == 1) {
++      return arr;
++    } else {
++      auto arr_cpy = array(arr.shape(), arr.dtype(), nullptr, {});
++      copy_cpu(arr, arr_cpy, CopyType::General, s);
++      encoder.add_temporary(arr_cpy);
++      return arr_cpy;
++    }
++  };
++
++  auto x = ensure_row_contiguous_last_dims(x_pre);
++  auto gate_w = ensure_row_contiguous_last_dims(gate_w_pre);
++  auto gate_scales = ensure_row_contiguous_last_dims(gate_scales_pre);
++  auto gate_biases = ensure_row_contiguous_last_dims(gate_biases_pre);
++  auto up_w = ensure_row_contiguous_last_dims(up_w_pre);
++  auto up_scales = ensure_row_contiguous_last_dims(up_scales_pre);
++  auto up_biases = ensure_row_contiguous_last_dims(up_biases_pre);
++
++  out.set_data(allocator::malloc(out.nbytes()));
++
++  array gate_out(out.shape(), out.dtype(), nullptr, {});
++  gate_out.set_data(allocator::malloc(gate_out.nbytes()));
++  array up_out(out.shape(), out.dtype(), nullptr, {});
++  up_out.set_data(allocator::malloc(up_out.nbytes()));
++
++  encoder.set_input_array(x);
++  encoder.set_input_array(gate_w);
++  encoder.set_input_array(gate_scales);
++  encoder.set_input_array(gate_biases);
++  encoder.set_input_array(up_w);
++  encoder.set_input_array(up_scales);
++  encoder.set_input_array(up_biases);
++  encoder.set_input_array(lhs_indices);
++  encoder.set_input_array(rhs_indices);
++  encoder.set_output_array(out);
++  encoder.set_output_array(gate_out);
++  encoder.set_output_array(up_out);
++
++  encoder.dispatch([out = array::unsafe_weak_copy(out),
++                    gate_out = array::unsafe_weak_copy(gate_out),
++                    up_out = array::unsafe_weak_copy(up_out),
++                    x = array::unsafe_weak_copy(x),
++                    gate_w = array::unsafe_weak_copy(gate_w),
++                    gate_scales = array::unsafe_weak_copy(gate_scales),
++                    gate_biases = array::unsafe_weak_copy(gate_biases),
++                    up_w = array::unsafe_weak_copy(up_w),
++                    up_scales = array::unsafe_weak_copy(up_scales),
++                    up_biases = array::unsafe_weak_copy(up_biases),
++                    lhs_indices = array::unsafe_weak_copy(lhs_indices),
++                    rhs_indices = array::unsafe_weak_copy(rhs_indices),
++                    group_size_ = group_size_,
++                    bits_ = bits_,
++                    transpose_ = transpose_]() mutable {
++    _bs_qmm_dispatch(
++        gate_out,
++        x,
++        gate_w,
++        gate_scales,
++        gate_biases,
++        lhs_indices,
++        rhs_indices,
++        group_size_,
++        bits_,
++        transpose_);
++    _bs_qmm_dispatch(
++        up_out,
++        x,
++        up_w,
++        up_scales,
++        up_biases,
++        lhs_indices,
++        rhs_indices,
++        group_size_,
++        bits_,
++        transpose_);
++
++    switch (out.dtype()) {
++      case float32:
++        swiglu_cpu(
++            gate_out.data<float>(),
++            up_out.data<float>(),
++            out.data<float>(),
++            out.size());
++        break;
++      case float16:
++        swiglu_cpu(
++            gate_out.data<float16_t>(),
++            up_out.data<float16_t>(),
++            out.data<float16_t>(),
++            out.size());
++        break;
++      case bfloat16:
++        swiglu_cpu(
++            gate_out.data<bfloat16_t>(),
++            up_out.data<bfloat16_t>(),
++            out.data<bfloat16_t>(),
++            out.size());
++        break;
++      default:
++        throw std::invalid_argument(
++            "[gather_qmm_swiglu] Unsupported dtype for CPU output.");
++    }
++  });
++}
++
+ uint8_t to_fp8_e8m0(float x) {
+   if (!std::isfinite(x)) {
+     return 0xFF;
+diff --git a/mlx/backend/metal/custom_kernel.cpp b/mlx/backend/metal/custom_kernel.cpp
+index eec6645..9f181e0 100644
+--- a/mlx/backend/metal/custom_kernel.cpp
++++ b/mlx/backend/metal/custom_kernel.cpp
+@@ -1,5 +1,7 @@
+ // Copyright © 2024 Apple Inc.
+ 
++#include <algorithm>
++#include <cctype>
+ #include <iostream>
+ #include <regex>
+ 
+@@ -13,6 +15,51 @@
+ 
+ namespace mlx::core::fast {
+ 
++namespace {
++
++std::optional<int> parse_moe_combine_k(const std::string& name) {
++  if (name.find("kk_moe_combine") == std::string::npos) {
++    return std::nullopt;
++  }
++  auto k_pos = name.rfind("_K");
++  if (k_pos == std::string::npos) {
++    return std::nullopt;
++  }
++  k_pos += 2;
++  int k = 0;
++  while (k_pos < name.size() &&
++         std::isdigit(static_cast<unsigned char>(name[k_pos]))) {
++    k = (k * 10) + (name[k_pos] - '0');
++    k_pos++;
++  }
++  if (k == 0) {
++    return std::nullopt;
++  }
++  return k;
++}
++
++std::tuple<int, int, int> tune_moe_combine_threadgroup(
++    const std::string& name,
++    std::tuple<int, int, int> threadgroup,
++    std::tuple<int, int, int> grid) {
++  auto k = parse_moe_combine_k(name);
++  if (!k || *k != 8) {
++    return threadgroup;
++  }
++  auto [tx, ty, tz] = threadgroup;
++  auto [gx, gy, gz] = grid;
++  int desired = 128;
++  if (gx <= 32) {
++    desired = 32;
++  } else if (gx <= 64) {
++    desired = 64;
++  }
++  int tuned_tx = std::min({tx, gx, desired});
++  return {tuned_tx, ty, tz};
++}
++
++} // namespace
++
+ struct CustomKernelCache {
+   std::unordered_map<std::string, std::string> libraries;
+ };
+@@ -257,6 +304,9 @@ CustomKernelFunction metal_kernel(
+       throw std::invalid_argument(msg.str());
+     }
+ 
++    auto tuned_threadgroup = tune_moe_combine_threadgroup(
++        name, threadgroup, grid);
++
+     auto s = to_stream(s_);
+     if (s.device != Device::gpu) {
+       throw std::invalid_argument("[metal_kernel] Only supports the GPU.");
+@@ -313,7 +363,7 @@ CustomKernelFunction metal_kernel(
+             std::move(kernel_name),
+             std::move(kernel_source),
+             grid,
+-            threadgroup,
++            tuned_threadgroup,
+             shape_infos,
+             ensure_row_contiguous,
+             init_value,
+diff --git a/mlx/backend/metal/device.cpp b/mlx/backend/metal/device.cpp
+index de61b0f..8586635 100644
+--- a/mlx/backend/metal/device.cpp
++++ b/mlx/backend/metal/device.cpp
+@@ -35,8 +35,13 @@ auto get_metal_version() {
+ 
+ auto load_device() {
+   auto devices = MTL::CopyAllDevices();
+-  auto device = static_cast<MTL::Device*>(devices->object(0))
+-      ?: MTL::CreateSystemDefaultDevice();
++  MTL::Device* device = nullptr;
++  if (devices && devices->count() > 0) {
++    device = static_cast<MTL::Device*>(devices->object(0));
++  }
++  if (!device) {
++    device = MTL::CreateSystemDefaultDevice();
++  }
+   if (!device) {
+     throw std::runtime_error("Failed to load device");
+   }
+diff --git a/mlx/backend/metal/kernels/CMakeLists.txt b/mlx/backend/metal/kernels/CMakeLists.txt
+index 7d010e6..c66103d 100644
+--- a/mlx/backend/metal/kernels/CMakeLists.txt
++++ b/mlx/backend/metal/kernels/CMakeLists.txt
+@@ -21,6 +21,10 @@ function(build_kernel_base TARGET SRCFILE DEPS)
+   if(MLX_METAL_DEBUG)
+     set(METAL_FLAGS ${METAL_FLAGS} -gline-tables-only -frecord-sources)
+   endif()
++  if(DEFINED MLX_METAL_MODULE_CACHE)
++    set(METAL_FLAGS ${METAL_FLAGS}
++                    -fmodules-cache-path=${MLX_METAL_MODULE_CACHE})
++  endif()
+   if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND MLX_METAL_VERSION GREATER_EQUAL 320)
+     set(METAL_FLAGS ${METAL_FLAGS} -fmetal-enable-logging)
+   endif()
+diff --git a/mlx/backend/metal/kernels/quantized.h b/mlx/backend/metal/kernels/quantized.h
+index bf63981..b2109de 100644
+--- a/mlx/backend/metal/kernels/quantized.h
++++ b/mlx/backend/metal/kernels/quantized.h
+@@ -1940,6 +1940,203 @@ template <typename T, int group_size, int bits>
+       simd_lid);
+ }
+ 
++// ============================================================================
++// Fused gather_qmv_swiglu: two gather_qmv + silu(gate) * up in one kernel
++// Reads x once, loads both gate and up expert weights, applies SwiGLU inline.
++// Output dimension = out_vec_size (same as each individual projection).
++// ============================================================================
++
++template <typename T, int group_size, int bits>
++METAL_FUNC void gather_qmv_swiglu_fast_impl(
++    const device uint32_t* gate_w,
++    const device T* gate_scales,
++    const device T* gate_biases,
++    const device uint32_t* up_w,
++    const device T* up_scales,
++    const device T* up_biases,
++    const device T* x,
++    device T* y,
++    const constant int& in_vec_size,
++    const constant int& out_vec_size,
++    uint3 tid [[threadgroup_position_in_grid]],
++    uint simd_gid [[simdgroup_index_in_threadgroup]],
++    uint simd_lid [[thread_index_in_simdgroup]]) {
++  constexpr int packs_per_thread = bits == 2 ? 1 : 2;
++  constexpr int num_simdgroups = 2;
++  constexpr int results_per_simdgroup = 4;
++  constexpr int pack_factor = get_pack_factor<bits, 32>();
++  constexpr int bytes_per_pack = get_bytes_per_pack<bits, 32>();
++  constexpr int values_per_thread = pack_factor * packs_per_thread;
++  constexpr int block_size = values_per_thread * SIMD_SIZE;
++  constexpr int scale_step_per_thread = group_size / values_per_thread;
++
++  const device uint8_t* gate_ws = (const device uint8_t*)gate_w;
++  const device uint8_t* up_ws = (const device uint8_t*)up_w;
++
++  typedef float U;
++
++  thread U x_thread[values_per_thread];
++  thread U gate_result[results_per_simdgroup] = {0};
++  thread U up_result[results_per_simdgroup] = {0};
++
++  // Adjust positions
++  const int in_vec_size_w = in_vec_size * bytes_per_pack / pack_factor;
++  const int in_vec_size_g = in_vec_size / group_size;
++  const int out_row = tid.y * (num_simdgroups * results_per_simdgroup) +
++      simd_gid * results_per_simdgroup;
++
++  gate_ws += out_row * in_vec_size_w + simd_lid * packs_per_thread * bytes_per_pack;
++  gate_scales += out_row * in_vec_size_g + simd_lid / scale_step_per_thread;
++  gate_biases += out_row * in_vec_size_g + simd_lid / scale_step_per_thread;
++
++  up_ws += out_row * in_vec_size_w + simd_lid * packs_per_thread * bytes_per_pack;
++  up_scales += out_row * in_vec_size_g + simd_lid / scale_step_per_thread;
++  up_biases += out_row * in_vec_size_g + simd_lid / scale_step_per_thread;
++
++  x += tid.x * in_vec_size + simd_lid * values_per_thread;
++  y += tid.x * out_vec_size + out_row;
++
++  for (int k = 0; k < in_vec_size; k += block_size) {
++    // Load x once, use for both gate and up dot products
++    U sum = load_vector<T, U, values_per_thread, bits>(x, x_thread);
++
++    for (int row = 0; row < results_per_simdgroup; row++) {
++      // Gate projection dot product
++      auto gwl = (const device uint8_t*)(gate_ws + row * in_vec_size_w);
++      const device T* gsl = gate_scales + row * in_vec_size_g;
++      const device T* gbl = gate_biases + row * in_vec_size_g;
++      U gs = gsl[0];
++      U gb = gbl[0];
++      gate_result[row] += qdot<U, values_per_thread, bits>(gwl, x_thread, gs, gb, sum);
++
++      // Up projection dot product (reuses x_thread)
++      auto uwl = (const device uint8_t*)(up_ws + row * in_vec_size_w);
++      const device T* usl = up_scales + row * in_vec_size_g;
++      const device T* ubl = up_biases + row * in_vec_size_g;
++      U us = usl[0];
++      U ub = ubl[0];
++      up_result[row] += qdot<U, values_per_thread, bits>(uwl, x_thread, us, ub, sum);
++    }
++
++    gate_ws += block_size * bytes_per_pack / pack_factor;
++    gate_scales += block_size / group_size;
++    gate_biases += block_size / group_size;
++    up_ws += block_size * bytes_per_pack / pack_factor;
++    up_scales += block_size / group_size;
++    up_biases += block_size / group_size;
++    x += block_size;
++  }
++
++  // Reduce across simdgroup, apply SwiGLU, and write
++  for (int row = 0; row < results_per_simdgroup; row++) {
++    U g = simd_sum(gate_result[row]);
++    U u = simd_sum(up_result[row]);
++    if (simd_lid == 0) {
++      // SwiGLU: silu(gate) * up = gate * sigmoid(gate) * up
++      // Match MLX sigmoid: y = 1 / (1 + exp(abs(x))), then
++      // return y if x < 0 else 1 - y.
++      // Keep math in T to mirror MLX unary kernel behavior.
++      T g_t = static_cast<T>(g);
++      T u_t = static_cast<T>(u);
++      T y_t = (T)1 / ((T)1 + metal::exp(metal::abs(g_t)));
++      T sig = (g_t < (T)0) ? y_t : (T)1 - y_t;
++      T silu = g_t * sig;
++      y[row] = silu * u_t;
++    }
++  }
++}
++
++template <typename T, int group_size, int bits>
++[[kernel]] void affine_gather_qmv_swiglu_fast(
++    const device uint32_t* gate_w [[buffer(0)]],
++    const device T* gate_scales [[buffer(1)]],
++    const device T* gate_biases [[buffer(2)]],
++    const device uint32_t* up_w [[buffer(3)]],
++    const device T* up_scales [[buffer(4)]],
++    const device T* up_biases [[buffer(5)]],
++    const device T* x [[buffer(6)]],
++    const device uint32_t* lhs_indices [[buffer(7)]],
++    const device uint32_t* rhs_indices [[buffer(8)]],
++    device T* y [[buffer(9)]],
++    const constant int& in_vec_size [[buffer(10)]],
++    const constant int& out_vec_size [[buffer(11)]],
++    const constant int& x_batch_ndims [[buffer(12)]],
++    const constant int* x_shape [[buffer(13)]],
++    const constant int64_t* x_strides [[buffer(14)]],
++    const constant int& w_batch_ndims [[buffer(15)]],
++    const constant int* w_shape [[buffer(16)]],
++    const constant int64_t* w_strides [[buffer(17)]],
++    const constant int64_t* s_strides [[buffer(18)]],
++    const constant int64_t* b_strides [[buffer(19)]],
++    const constant int& batch_ndims [[buffer(20)]],
++    const constant int* batch_shape [[buffer(21)]],
++    const constant int64_t* lhs_strides [[buffer(22)]],
++    const constant int64_t* rhs_strides [[buffer(23)]],
++    uint3 tid [[threadgroup_position_in_grid]],
++    uint simd_gid [[simdgroup_index_in_threadgroup]],
++    uint simd_lid [[thread_index_in_simdgroup]]) {
++  // Adjust offsets for x using lhs_indices, and for gate/up weights using
++  // rhs_indices. Both gate and up weights share the same expert indexing
++  // (same shape/strides), so we compute the offset once and apply to both.
++  int M = x_shape[x_batch_ndims];
++
++  // Decompose batch index into lhs (x) and rhs (weight) indices
++  uint32_t x_idx;
++  uint32_t w_idx;
++  if (batch_ndims == 1) {
++    x_idx = lhs_indices[tid.z * lhs_strides[0]];
++    w_idx = rhs_indices[tid.z * rhs_strides[0]];
++  } else {
++    ulong2 idx = elem_to_loc_broadcast(
++        tid.z, batch_shape, lhs_strides, rhs_strides, batch_ndims);
++    x_idx = lhs_indices[idx.x];
++    w_idx = rhs_indices[idx.y];
++  }
++
++  // Adjust x pointer
++  if (x_batch_ndims == 1) {
++    x += x_idx * x_strides[0];
++  } else {
++    x += elem_to_loc(x_idx, x_shape, x_strides, x_batch_ndims);
++  }
++
++  // Adjust gate and up weight pointers (same expert offset for both)
++  if (w_batch_ndims == 1) {
++    gate_w += w_idx * w_strides[0];
++    gate_scales += w_idx * s_strides[0];
++    gate_biases += w_idx * b_strides[0];
++    up_w += w_idx * w_strides[0];
++    up_scales += w_idx * s_strides[0];
++    up_biases += w_idx * b_strides[0];
++  } else {
++    ulong3 widx = elem_to_loc_broadcast(
++        w_idx, w_shape, w_strides, s_strides, b_strides, w_batch_ndims);
++    gate_w += widx.x;
++    gate_scales += widx.y;
++    gate_biases += widx.z;
++    up_w += widx.x;
++    up_scales += widx.y;
++    up_biases += widx.z;
++  }
++
++  y += tid.z * out_vec_size * M;
++
++  gather_qmv_swiglu_fast_impl<T, group_size, bits>(
++      gate_w,
++      gate_scales,
++      gate_biases,
++      up_w,
++      up_scales,
++      up_biases,
++      x,
++      y,
++      in_vec_size,
++      out_vec_size,
++      tid,
++      simd_gid,
++      simd_lid);
++}
++
+ template <typename T, int group_size, int bits>
+ [[kernel]] void affine_gather_qvm(
+     const device uint32_t* w [[buffer(0)]],
+diff --git a/mlx/backend/metal/kernels/quantized.metal b/mlx/backend/metal/kernels/quantized.metal
+index f734b9b..18e3ff1 100644
+--- a/mlx/backend/metal/kernels/quantized.metal
++++ b/mlx/backend/metal/kernels/quantized.metal
+@@ -89,6 +89,7 @@
+   instantiate_quantized(affine_quantize, type, group_size, bits) \
+   instantiate_quantized(affine_dequantize, type, group_size, bits)     \
+   instantiate_quantized(affine_gather_qmv_fast, type, group_size, bits)     \
++  instantiate_quantized(affine_gather_qmv_swiglu_fast, type, group_size, bits)     \
+   instantiate_quantized(affine_gather_qmv, type, group_size, bits)     \
+   instantiate_quantized(affine_gather_qvm, type, group_size, bits)     \
+   instantiate_quantized(affine_gather_qmm_n, type, group_size, bits)
+diff --git a/mlx/backend/metal/make_compiled_preamble.sh b/mlx/backend/metal/make_compiled_preamble.sh
+index bb55ed3..73af1cd 100644
+--- a/mlx/backend/metal/make_compiled_preamble.sh
++++ b/mlx/backend/metal/make_compiled_preamble.sh
+@@ -31,7 +31,11 @@ OUTPUT_FILE=${OUTPUT_DIR}/${SRC_NAME}.cpp
+ mkdir -p "$OUTPUT_DIR"
+ 
+ # Use the metal compiler to get a list of headers (with depth)
+-CCC="xcrun -sdk macosx metal -x metal"
++MODULE_CACHE_FLAG=""
++if [ -n "$MLX_METAL_MODULE_CACHE" ]; then
++  MODULE_CACHE_FLAG="-fmodules-cache-path=$MLX_METAL_MODULE_CACHE"
++fi
++CCC="xcrun -sdk macosx metal -x metal $MODULE_CACHE_FLAG"
+ HDRS=$( $CCC -I"$SRC_DIR" -I"$JIT_INCLUDES" -DMLX_METAL_JIT -E -P -CC -C -H "$INPUT_FILE" $CFLAGS -w 2>&1 1>/dev/null )
+ 
+ # Remove any included system frameworks (for MetalPerformancePrimitive headers)
+diff --git a/mlx/backend/metal/quantized.cpp b/mlx/backend/metal/quantized.cpp
+index cb67c74..20d0666 100644
+--- a/mlx/backend/metal/quantized.cpp
++++ b/mlx/backend/metal/quantized.cpp
+@@ -928,6 +928,80 @@ void gather_qmv(
+   compute_encoder.dispatch_threadgroups(grid_dims, group_dims);
+ }
+ 
++void gather_qmv_swiglu(
++    const array& x,
++    const array& gate_w,
++    const array& gate_scales,
++    const array& gate_biases,
++    const array& up_w,
++    const array& up_scales,
++    const array& up_biases,
++    const array& lhs_indices,
++    const array& rhs_indices,
++    array& out,
++    int group_size,
++    int bits,
++    int M,
++    int N,
++    int K,
++    metal::Device& d,
++    const Stream& s,
++    const std::string& mode) {
++  int B = out.size() / M / N;
++
++  int bn = 8;
++  int bk = 32;
++  MTL::Size group_dims(bk, 2, 1);
++  MTL::Size grid_dims(M, (N + bn - 1) / bn, B);
++
++  if (N % bn != 0 || K % 512 != 0) {
++    throw std::invalid_argument(
++        "[gather_qmm_swiglu] Only fast kernel supported (N % 8 == 0, K % 512 == 0).");
++  }
++
++  std::string kname;
++  kname.reserve(64);
++  std::string type_string = get_type_string(x.dtype());
++  concatenate(
++      kname,
++      mode + "_gather_qmv_swiglu_fast_",
++      type_string,
++      "_gs_",
++      group_size,
++      "_b_",
++      bits);
++
++  auto kernel = get_quantized_kernel_wrapped(
++      d,
++      kname,
++      "gather_qmv_swiglu_fast",
++      mode,
++      type_string,
++      group_size,
++      bits);
++
++  auto& compute_encoder = d.get_command_encoder(s.index);
++  compute_encoder.set_compute_pipeline_state(kernel);
++
++  int c = 0;
++  compute_encoder.set_input_array(gate_w, c++);
++  compute_encoder.set_input_array(gate_scales, c++);
++  compute_encoder.set_input_array(gate_biases, c++);
++  compute_encoder.set_input_array(up_w, c++);
++  compute_encoder.set_input_array(up_scales, c++);
++  compute_encoder.set_input_array(up_biases, c++);
++  compute_encoder.set_input_array(x, c++);
++  compute_encoder.set_input_array(lhs_indices, c++);
++  compute_encoder.set_input_array(rhs_indices, c++);
++  compute_encoder.set_output_array(out, c++);
++  compute_encoder.set_bytes(K, c++);
++  compute_encoder.set_bytes(N, c++);
++  c = add_strides_and_shapes(compute_encoder, false, x, gate_w, gate_scales, gate_biases, c);
++  add_gather_strides_and_shapes(compute_encoder, lhs_indices, rhs_indices, c);
++
++  compute_encoder.dispatch_threadgroups(grid_dims, group_dims);
++}
++
+ void gather_qvm(
+     const array& x,
+     const array& w,
+@@ -1461,6 +1535,57 @@ void GatherQMM::eval_gpu(const std::vector<array>& inputs, array& out) {
+       mode);
+ }
+ 
++void GatherQMMSwiGLU::eval_gpu(const std::vector<array>& inputs, array& out) {
++  if (mode_ != QuantizationMode::Affine) {
++    throw std::invalid_argument(
++        "[gather_qmm_swiglu] Only affine quantization is supported on GPU.");
++  }
++  if (!transpose_) {
++    throw std::invalid_argument(
++        "[gather_qmm_swiglu] Only transpose=True is supported.");
++  }
++
++  auto& s = stream();
++  auto& d = metal::device(s.device);
++
++  out.set_data(allocator::malloc(out.nbytes()));
++
++  array x = ensure_row_contiguous_matrix(inputs[0], d, s);
++  array gate_w = ensure_row_contiguous_matrix(inputs[1], d, s);
++  array gate_scales = ensure_row_contiguous_matrix(inputs[2], d, s);
++  array gate_biases = ensure_row_contiguous_matrix(inputs[3], d, s);
++  array up_w = ensure_row_contiguous_matrix(inputs[4], d, s);
++  array up_scales = ensure_row_contiguous_matrix(inputs[5], d, s);
++  array up_biases = ensure_row_contiguous_matrix(inputs[6], d, s);
++  const array& lhs_indices = inputs[7];
++  const array& rhs_indices = inputs[8];
++
++  int K = x.shape(-1);
++  int M = x.shape(-2);
++  int N = out.shape(-1);
++  auto mode = quantization_mode_to_string(mode_);
++
++  gather_qmv_swiglu(
++      x,
++      gate_w,
++      gate_scales,
++      gate_biases,
++      up_w,
++      up_scales,
++      up_biases,
++      lhs_indices,
++      rhs_indices,
++      out,
++      group_size_,
++      bits_,
++      M,
++      N,
++      K,
++      d,
++      s,
++      mode);
++}
++
+ void quantize_dequantize(
+     const array& in,
+     array& out,
+diff --git a/mlx/ops.cpp b/mlx/ops.cpp
+index 076de69..94f5852 100644
+--- a/mlx/ops.cpp
++++ b/mlx/ops.cpp
+@@ -5027,6 +5027,113 @@ array gather_qmm(
+       std::move(inputs));
+ }
+ 
++array gather_qmm_swiglu(
++    const array& x,
++    const array& gate_w,
++    const array& gate_scales,
++    const array& gate_biases,
++    const array& up_w,
++    const array& up_scales,
++    const array& up_biases,
++    std::optional<array> lhs_indices_ /* = std::nullopt */,
++    std::optional<array> rhs_indices_ /* = std::nullopt */,
++    bool transpose /* = true */,
++    std::optional<int> group_size_ /* = std::nullopt */,
++    std::optional<int> bits_ /* = std::nullopt */,
++    const std::string& mode /* = "affine" */,
++    StreamOrDevice s /* = {} */) {
++  auto [out_type_gate, qmode_gate] = validate_mode_with_type(
++      "gather_qmm_swiglu", gate_scales, gate_biases, std::nullopt, mode);
++  auto [out_type_up, qmode_up] = validate_mode_with_type(
++      "gather_qmm_swiglu", up_scales, up_biases, std::nullopt, mode);
++  if (qmode_gate != QuantizationMode::Affine ||
++      qmode_up != QuantizationMode::Affine) {
++    throw std::invalid_argument(
++        "[gather_qmm_swiglu] Only affine quantization mode is supported.");
++  }
++  auto [group_size, bits] =
++      quantization_params_from_mode(qmode_gate, group_size_, bits_);
++
++  auto [gate_w_inner, gate_w_outer] = extract_quantized_matmul_dims(
++      "gather_qmm_swiglu",
++      x,
++      gate_w,
++      gate_scales,
++      gate_biases,
++      transpose,
++      group_size,
++      bits);
++  auto [up_w_inner, up_w_outer] = extract_quantized_matmul_dims(
++      "gather_qmm_swiglu",
++      x,
++      up_w,
++      up_scales,
++      up_biases,
++      transpose,
++      group_size,
++      bits);
++
++  if (gate_w_inner != up_w_inner || gate_w_outer != up_w_outer) {
++    throw std::invalid_argument(
++        "[gather_qmm_swiglu] gate and up weights must have matching shapes.");
++  }
++
++  auto out_type = promote_types(x.dtype(), out_type_gate);
++  if (!issubdtype(out_type, floating)) {
++    std::ostringstream msg;
++    msg << "[gather_qmm_swiglu] Only real floating types are supported but "
++        << "x.dtype() == " << x.dtype() << ".";
++    throw std::invalid_argument(msg.str());
++  }
++
++  // Extract indices and broadcast them
++  array lhs_indices = indices_or_default(lhs_indices_, x, s);
++  array rhs_indices = indices_or_default(rhs_indices_, gate_w, s);
++  std::tie(lhs_indices, rhs_indices) =
++      broadcast_arrays(lhs_indices, rhs_indices, s);
++
++  if (!issubdtype(lhs_indices.dtype(), integer)) {
++    throw std::invalid_argument(
++        "[gather_qmm_swiglu] Got lhs_indices with invalid dtype. Indices must be integral.");
++  }
++  if (!issubdtype(rhs_indices.dtype(), integer)) {
++    throw std::invalid_argument(
++        "[gather_qmm_swiglu] Got rhs_indices with invalid dtype. Indices must be integral.");
++  }
++  if (x.ndim() < 2) {
++    std::ostringstream msg;
++    msg << "[gather_qmm_swiglu] Non-quantized input must have at least two"
++        << " dimensions but got input with shape " << x.shape() << ".";
++    throw std::invalid_argument(msg.str());
++  }
++
++  lhs_indices = astype(lhs_indices, uint32, s);
++  rhs_indices = astype(rhs_indices, uint32, s);
++
++  // Compute the full output shape
++  auto out_shape = lhs_indices.shape();
++  out_shape.push_back(x.shape(-2));
++  out_shape.push_back(gate_w_outer);
++
++  std::vector<array> inputs = {
++      astype(x, out_type, s),
++      std::move(gate_w),
++      astype(gate_scales, out_type, s),
++      astype(gate_biases, out_type, s),
++      std::move(up_w),
++      astype(up_scales, out_type, s),
++      astype(up_biases, out_type, s),
++      std::move(lhs_indices),
++      std::move(rhs_indices)};
++
++  return array(
++      std::move(out_shape),
++      out_type,
++      std::make_shared<GatherQMMSwiGLU>(
++          to_stream(s), group_size, bits, qmode_gate, transpose),
++      std::move(inputs));
++}
++
+ array tensordot(
+     const array& a,
+     const array& b,
+diff --git a/mlx/ops.h b/mlx/ops.h
+index 1ff3bbf..de31f99 100644
+--- a/mlx/ops.h
++++ b/mlx/ops.h
+@@ -1435,6 +1435,23 @@ MLX_API array gather_qmm(
+     bool sorted_indices = false,
+     StreamOrDevice s = {});
+ 
++/** Compute matrix products with matrix-level gather and fused SwiGLU. */
++MLX_API array gather_qmm_swiglu(
++    const array& x,
++    const array& gate_w,
++    const array& gate_scales,
++    const array& gate_biases,
++    const array& up_w,
++    const array& up_scales,
++    const array& up_biases,
++    std::optional<array> lhs_indices = std::nullopt,
++    std::optional<array> rhs_indices = std::nullopt,
++    bool transpose = true,
++    std::optional<int> group_size = std::nullopt,
++    std::optional<int> bits = std::nullopt,
++    const std::string& mode = "affine",
++    StreamOrDevice s = {});
++
+ /** Returns a contraction of a and b over multiple dimensions. */
+ MLX_API array tensordot(
+     const array& a,
+diff --git a/mlx/primitives.cpp b/mlx/primitives.cpp
+index b078625..7627daf 100644
+--- a/mlx/primitives.cpp
++++ b/mlx/primitives.cpp
+@@ -3670,6 +3670,33 @@ bool GatherQMM::is_equivalent(const Primitive& other) const {
+       mode_ == qm_other.mode_ && transpose_ == qm_other.transpose_;
+ }
+ 
++std::pair<std::vector<array>, std::vector<int>> GatherQMMSwiGLU::vmap(
++    const std::vector<array>& inputs,
++    const std::vector<int>& axes) {
++  throw std::runtime_error("GatherQMMSwiGLU::vmap NYI");
++}
++
++std::vector<array> GatherQMMSwiGLU::vjp(
++    const std::vector<array>& primals,
++    const std::vector<array>& cotangents,
++    const std::vector<int>& argnums,
++    const std::vector<array>& outputs) {
++  throw std::runtime_error("GatherQMMSwiGLU::vjp NYI");
++}
++
++std::vector<array> GatherQMMSwiGLU::jvp(
++    const std::vector<array>& primals,
++    const std::vector<array>& tangents,
++    const std::vector<int>& argnums) {
++  throw std::runtime_error("GatherQMMSwiGLU::jvp NYI");
++}
++
++bool GatherQMMSwiGLU::is_equivalent(const Primitive& other) const {
++  const GatherQMMSwiGLU& qm_other = static_cast<const GatherQMMSwiGLU&>(other);
++  return group_size_ == qm_other.group_size_ && bits_ == qm_other.bits_ &&
++      mode_ == qm_other.mode_ && transpose_ == qm_other.transpose_;
++}
++
+ std::pair<std::vector<array>, std::vector<int>> RandomBits::vmap(
+     const std::vector<array>& inputs,
+     const std::vector<int>& axes) {
+diff --git a/mlx/primitives.h b/mlx/primitives.h
+index 4091aaf..0e0fbdf 100644
+--- a/mlx/primitives.h
++++ b/mlx/primitives.h
+@@ -1712,6 +1712,38 @@ class GatherQMM : public UnaryPrimitive {
+   bool right_sorted_;
+ };
+ 
++class GatherQMMSwiGLU : public UnaryPrimitive {
++ public:
++  explicit GatherQMMSwiGLU(
++      Stream stream,
++      int group_size,
++      int bits,
++      QuantizationMode mode,
++      bool transpose)
++      : UnaryPrimitive(stream),
++        group_size_(group_size),
++        bits_(bits),
++        mode_(mode),
++        transpose_(transpose) {}
++
++  void eval_cpu(const std::vector<array>& inputs, array& out) override;
++  void eval_gpu(const std::vector<array>& inputs, array& out) override;
++
++  DEFINE_VMAP()
++  DEFINE_GRADS()
++  DEFINE_NAME(GatherQMMSwiGLU)
++  bool is_equivalent(const Primitive& other) const override;
++  auto state() const {
++    return std::make_tuple(group_size_, bits_, mode_, transpose_);
++  }
++
++ private:
++  int group_size_;
++  int bits_;
++  QuantizationMode mode_;
++  bool transpose_;
++};
++
+ class RandomBits : public UnaryPrimitive {
+  public:
+   explicit RandomBits(Stream stream, const Shape& shape, int width)
+diff --git a/mlx/transforms.cpp b/mlx/transforms.cpp
+index 4967c50..db68ca3 100644
+--- a/mlx/transforms.cpp
++++ b/mlx/transforms.cpp
+@@ -3,6 +3,7 @@
+ #include <deque>
+ #include <future>
+ #include <numeric>
++#include <optional>
+ #include <set>
+ #include <sstream>
+ #include <stack>
+@@ -197,6 +198,9 @@ array eval_impl(std::vector<array> outputs, bool async) {
+   }
+ 
+   std::unordered_set<int> open_streams;
++  const bool interleave_streams = env::metal_interleave_streams();
++  std::optional<Stream> last_stream;
++  std::unordered_set<int> gpu_streams_with_work;
+   while (!tape.empty()) {
+     auto arr = std::move(tape.back());
+     tape.pop_back();
+@@ -204,6 +208,17 @@ array eval_impl(std::vector<array> outputs, bool async) {
+     auto stream = arr.primitive().stream();
+     open_streams.insert(stream.index);
+ 
++    if (interleave_streams && last_stream.has_value()) {
++      if (stream.index != last_stream->index ||
++          stream.device != last_stream->device) {
++        if (last_stream->device == Device::gpu) {
++          if (gpu_streams_with_work.erase(last_stream->index) > 0) {
++            gpu::finalize(*last_stream);
++          }
++        }
++      }
++    }
++
+     if (async) {
+       // Lookup corresponding event
+       auto e = events.find(stream.index);
+@@ -235,10 +250,15 @@ array eval_impl(std::vector<array> outputs, bool async) {
+ 
+     if (arr.primitive().device() == Device::gpu) {
+       gpu::eval(arr);
++      if (interleave_streams) {
++        gpu_streams_with_work.insert(stream.index);
++      }
+     } else {
+       cpu::eval(arr);
+     }
+ 
++    last_stream = stream;
++
+     if (scheduler::n_active_tasks() > MAX_ACTIVE_TASKS ||
+         (get_active_memory() > get_memory_limit() &&
+          scheduler::n_active_tasks() > 0)) {
+diff --git a/mlx/utils.h b/mlx/utils.h
+index bb2de46..d0dc3fd 100644
+--- a/mlx/utils.h
++++ b/mlx/utils.h
+@@ -159,6 +159,12 @@ inline bool metal_fast_synch() {
+   return metal_fast_synch;
+ }
+ 
++inline bool metal_interleave_streams() {
++  static bool metal_interleave_streams_ =
++      get_var("MLX_METAL_INTERLEAVE_STREAMS", 0);
++  return metal_interleave_streams_;
++}
++
+ inline bool enable_tf32() {
+   static bool enable_tf32_ = get_var("MLX_ENABLE_TF32", 1);
+   return enable_tf32_;
+diff --git a/python/src/ops.cpp b/python/src/ops.cpp
+index de51ad5..d41368c 100644
+--- a/python/src/ops.cpp
++++ b/python/src/ops.cpp
+@@ -4449,6 +4449,55 @@ void init_ops(nb::module_& m) {
+             array: The result of the multiplication of ``x`` with ``w``
+               after gathering using ``lhs_indices`` and ``rhs_indices``.
+       )pbdoc");
++  m.def(
++      "gather_qmm_swiglu",
++      &mx::gather_qmm_swiglu,
++      nb::arg(),
++      nb::arg(),
++      "gate_scales"_a,
++      "gate_biases"_a,
++      nb::arg(),
++      "up_scales"_a,
++      "up_biases"_a,
++      "lhs_indices"_a = nb::none(),
++      "rhs_indices"_a = nb::none(),
++      "transpose"_a = true,
++      "group_size"_a = nb::none(),
++      "bits"_a = nb::none(),
++      "mode"_a = "affine",
++      "stream"_a = nb::none(),
++      nb::sig(
++          "def gather_qmm_swiglu(x: array, gate_w: array, /, gate_scales: array, gate_biases: array, up_w: array, up_scales: array, up_biases: array, lhs_indices: Optional[array] = None, rhs_indices: Optional[array] = None, transpose: bool = True, group_size: Optional[int] = None, bits: Optional[int] = None, mode: str = 'affine', stream: Union[None, Stream, Device] = None) -> array"),
++      R"pbdoc(
++        Perform fused quantized gather-matmul for SwiGLU: ``silu(gate) * up``.
++
++        This computes the gather_qmm for the gate and up projections and applies
++        SwiGLU in one operation. Currently only affine quantization is supported.
++
++        Args:
++            x (array): Input array
++            gate_w (array): Quantized gate matrix packed in unsigned integers
++            gate_scales (array): Scales per ``group_size`` elements of ``gate_w``
++            gate_biases (array): Biases per ``group_size`` elements of ``gate_w``
++            up_w (array): Quantized up matrix packed in unsigned integers
++            up_scales (array): Scales per ``group_size`` elements of ``up_w``
++            up_biases (array): Biases per ``group_size`` elements of ``up_w``
++            lhs_indices (array, optional): Integer indices for ``x``. Default: ``None``.
++            rhs_indices (array, optional): Integer indices for ``w``. Default: ``None``.
++            transpose (bool, optional): Whether to multiply with transposed weights.
++              Default: ``True``.
++            group_size (int, optional): The size of the group in ``w`` that shares a
++              scale and bias. See supported values and defaults in the
++              :ref:`table of quantization modes <quantize-modes>`. Default: ``None``.
++            bits (int, optional): The number of bits occupied by each element of
++              ``w`` in the quantized array. See supported values and defaults in the
++              :ref:`table of quantization modes <quantize-modes>`. Default: ``None``.
++            mode (str, optional): The quantization mode. Default: ``"affine"``.
++            stream (Stream or Device, optional): Stream or device. Default: ``None``.
++
++        Returns:
++            array: The fused SwiGLU output.
++      )pbdoc");
+   m.def(
+       "segmented_mm",
+       &mx::segmented_mm,

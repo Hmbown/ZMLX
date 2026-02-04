@@ -1,0 +1,191 @@
+diff --git a/src/exo/worker/engines/mlx/utils_mlx.py b/src/exo/worker/engines/mlx/utils_mlx.py
+index d7fb9958..b25fa218 100644
+--- a/src/exo/worker/engines/mlx/utils_mlx.py
++++ b/src/exo/worker/engines/mlx/utils_mlx.py
+@@ -1,10 +1,12 @@
++import importlib
++import importlib.util
+ import json
+ import os
+ import resource
+ import sys
+ import time
+ from pathlib import Path
+-from typing import Any, cast
++from typing import Any, Protocol, cast
+ 
+ # Monkey-patch for transformers 5.x compatibility
+ # Kimi's tokenization_kimi.py imports bytes_to_unicode from the old location
+@@ -195,6 +197,149 @@ def initialize_mlx(
+     return mlx_distributed_init(bound_instance)
+ 
+ 
++# ---------------------------------------------------------------------------
++# ZMLX integration — fused Metal kernel patching for decode acceleration
++# ---------------------------------------------------------------------------
++# Enabled via EXO_ZMLX=1.  Applies fused SwiGLU / MoE kernels after model
++# loading.  Safe for both single-device and distributed (tensor/pipeline)
++# paths.  For tensor-parallel MoE, ZMLX patches dense SwiGLU layers (experts
++# keep their sharded wrappers untouched).  For pipeline-parallel, each rank
++# patches its own layer subset independently.
++#
++# Configuration env vars:
++#   EXO_ZMLX=1               — enable patching
++#   EXO_ZMLX_PATTERNS=...    — comma-separated pattern list override
++#   EXO_ZMLX_EXCLUDE=...     — comma-separated patterns to skip
++#   EXO_ZMLX_VERBOSE=1       — print per-module patch log
++# ---------------------------------------------------------------------------
++
++_zmlx_available_cache: bool | None = None  # lazy-checked once
++
++
++class _ZmlxPatchResult(Protocol):
++    patched_count: int
++    pattern_counts: dict[str, int]
++
++
++class _ZmlxPatchModule(Protocol):
++    def patch(self, model: nn.Module, **kwargs: object) -> nn.Module: ...
++
++
++def _check_zmlx_available() -> bool:
++    global _zmlx_available_cache
++    if _zmlx_available_cache is None:
++        _zmlx_available_cache = importlib.util.find_spec("zmlx.patch") is not None
++    return _zmlx_available_cache
++
++
++def _zmlx_enabled() -> bool:
++    return os.environ.get("EXO_ZMLX", "").strip().lower() in {"1", "true", "yes"}
++
++
++def _maybe_apply_zmlx_patch(
++    model: nn.Module,
++    *,
++    is_distributed: bool = False,
++    parallelism: str = "none",
++) -> nn.Module:
++    """Optionally apply ZMLX fused-kernel patches if available and enabled.
++
++    Set EXO_ZMLX=1 to enable.  Requires ``zmlx`` to be importable
++    (e.g. ``pip install zmlx`` or an editable install from the parent repo).
++
++    Args:
++        model: The loaded (and optionally sharded) nn.Module.
++        is_distributed: Whether this is a multi-device setup.
++        parallelism: "tensor", "pipeline", or "none".
++    """
++    if not _zmlx_enabled():
++        return model
++
++    if not _check_zmlx_available():
++        logger.warning(
++            "EXO_ZMLX is set but zmlx is not importable. "
++            "Install with: pip install zmlx"
++        )
++        return model
++
++    try:
++        zmlx_patch_module = cast(
++            _ZmlxPatchModule,
++            cast(object, importlib.import_module("zmlx.patch")),
++        )
++        zmlx_patch = zmlx_patch_module.patch
++    except Exception:
++        logger.exception("[zmlx] Failed to import zmlx.patch — continuing unpatched")
++        return model
++
++    verbose = os.environ.get("EXO_ZMLX_VERBOSE", "").strip().lower() in {
++        "1", "true", "yes",
++    }
++
++    # Resolve patterns: explicit env override > defaults
++    patterns_env = os.environ.get("EXO_ZMLX_PATTERNS", "").strip()
++    exclude_env = os.environ.get("EXO_ZMLX_EXCLUDE", "").strip()
++
++    patch_kwargs: dict[str, object] = {"verbose": verbose}
++    exclude_patterns: list[str] = []
++
++    if patterns_env:
++        patch_kwargs["patterns"] = [
++            pattern.strip()
++            for pattern in patterns_env.split(",")
++            if pattern.strip()
++        ]
++    else:
++        # For tensor-parallel MoE, skip moe_mlp — exo's ShardedMoE wrappers
++        # replace the MoE module's __call__ with distributed all-reduce logic.
++        # ZMLX's moe_mlp pattern would either not match (the wrapper hides the
++        # gate/experts attrs) or would bypass the distributed reduction.
++        # Dense SwiGLU layers within experts keep their original structure and
++        # benefit from swiglu_mlp fusion even under tensor parallelism.
++        if parallelism == "tensor":
++            exclude_patterns.append("moe_mlp")
++            logger.info(
++                "[zmlx] Tensor-parallel mode: excluding moe_mlp pattern "
++                "(exo handles MoE distribution; dense SwiGLU still fused)"
++            )
++
++    if exclude_env:
++        exclude_patterns.extend(
++            [pattern.strip() for pattern in exclude_env.split(",") if pattern.strip()]
++        )
++    if exclude_patterns:
++        patch_kwargs["exclude"] = sorted(set(exclude_patterns))
++
++    logger.info(
++        f"[zmlx] Applying fused-kernel patches "
++        f"(distributed={is_distributed}, parallelism={parallelism})..."
++    )
++    t0 = time.perf_counter()
++
++    try:
++        model = zmlx_patch(model, **patch_kwargs)
++    except Exception:
++        logger.exception("[zmlx] Patching failed — continuing with unpatched model")
++        return model
++
++    elapsed = time.perf_counter() - t0
++    result = cast(_ZmlxPatchResult | None, getattr(model, "_zmlx_patch_result", None))
++    if result is not None and result.patched_count > 0:
++        logger.info(
++            f"[zmlx] Patched {result.patched_count} modules in {elapsed:.2f}s: "
++            f"{dict(result.pattern_counts)}"
++        )
++    elif result is not None:
++        logger.info(
++            f"[zmlx] No modules matched in {elapsed:.2f}s "
++            "(model may use non-standard naming or all patterns were excluded)"
++        )
++    else:
++        logger.info(f"[zmlx] Patching completed in {elapsed:.2f}s")
++
++    return model
++
++
+ def load_mlx_items(
+     bound_instance: BoundInstance,
+     group: Group | None,
+@@ -207,6 +352,7 @@ def load_mlx_items(
+         model, _ = load_model(model_path, strict=True)
+         end_time = time.perf_counter()
+         logger.info(f"Time taken to load model: {(end_time - start_time):.2f}s")
++        model = _maybe_apply_zmlx_patch(model, is_distributed=False, parallelism="none")
+         tokenizer = get_tokenizer(model_path, bound_instance.bound_shard)
+ 
+     else:
+@@ -219,6 +365,14 @@ def load_mlx_items(
+         logger.info(
+             f"Time taken to shard and load model: {(end_time - start_time):.2f}s"
+         )
++        parallelism = (
++            "tensor"
++            if isinstance(bound_instance.bound_shard, TensorShardMetadata)
++            else "pipeline"
++        )
++        model = _maybe_apply_zmlx_patch(
++            model, is_distributed=True, parallelism=parallelism
++        )
+ 
+     set_wired_limit_for_model(get_weights_size(bound_instance.bound_shard))
+ 

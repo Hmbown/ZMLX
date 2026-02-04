@@ -58,7 +58,20 @@ Tip: large model downloads use the Hugging Face cache; set `HF_HOME` to control 
 - **Autograd support:** optional custom VJP paths via MLX custom functions.
 - **Benchmarking:** `zmlx.bench.compare()` and `python -m zmlx.bench.report` (repro capsules in `benchmarks/repro_capsules/`).
 - **Training CLI (optional):** `zmlx train`.
-- **Custom MLX primitive (opt-in):** `mlx_local/` contains a custom C++ Metal primitive (`gather_qmm_swiglu`) for fused quantized MoE expert dispatch, intended for eventual upstream contribution to MLX.
+- **Custom MLX primitive (opt-in):** build a custom MLX with `gather_qmm_swiglu` (see [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md); patch lives in `integrations/mlx_local_integration/`).
+
+## exo Integration
+
+ZMLX works with [exo](https://github.com/exo-explore/exo) for faster GLM-4.7-Flash and Qwen3-30B-A3B decode in distributed inference clusters. Setup is automated:
+
+```bash
+git clone https://github.com/Hmbown/ZMLX.git
+cd ZMLX
+bash setup_zmlx.sh        # one-time setup (creates ./exo + ./exo/run_zmlx.sh)
+bash exo/run_zmlx.sh      # launch exo with ZMLX
+```
+
+When GLM loads, ZMLX fuses all 46 MoE layers + 1 dense SwiGLU (~8% faster decode, token-identical) when the custom MLX primitive is available. See [`docs/EXO.md`](docs/EXO.md) for the full guide.
 
 ## Docs
 
@@ -70,6 +83,7 @@ Tip: large model downloads use the Hugging Face cache; set `HF_HOME` to control 
 | [`docs/KERNELS.md`](docs/KERNELS.md) | Kernel catalog (by module/domain) |
 | [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Benchmark methodology + raw data |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Design philosophy |
+| [`docs/EXO.md`](docs/EXO.md) | exo integration guide (GLM/Qwen3) |
 | [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) | Custom MLX primitive details |
 | [`UPSTREAM_PLAN.md`](UPSTREAM_PLAN.md) | What belongs upstream in MLX |
 
@@ -112,7 +126,7 @@ python -m zmlx.bench.report benchmarks/repro_capsules/<capsule>.json
 <details>
 <summary>Benchmarks (custom MLX primitive — requires building mlx_local/)</summary>
 
-GLM-4.7-Flash and Qwen3-30B-A3B gains come from `gather_qmm_swiglu`, a **custom C++ Metal primitive we wrote** (~800 lines of C++/Metal in `mlx_local/`). It fuses gate projection + up projection + SwiGLU activation for quantized MoE experts into a single GPU dispatch. This primitive is not part of released MLX — it lives in `mlx_local/` as a fork of upstream MLX with our additions, intended for eventual upstream contribution.
+GLM-4.7-Flash and Qwen3-30B-A3B gains come from `gather_qmm_swiglu`, a **custom C++ Metal primitive we wrote** (~800 lines of C++/Metal). It fuses gate projection + up projection + SwiGLU activation for quantized MoE experts into a single GPU dispatch. This primitive is not part of released MLX — build it by applying the patch described in [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md).
 
 ZMLX provides the model-side integration: auto-detecting MoE architectures, rewiring forward passes to use the fused primitive, and a deterministic no-FMA combine kernel to preserve token fidelity on GLM.
 

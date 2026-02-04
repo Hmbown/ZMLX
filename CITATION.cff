@@ -4,8 +4,8 @@ authors:
   - family-names: "Bown"
     given-names: "Hunter"
 title: "ZMLX: Fused Metal kernels for MLX on Apple Silicon"
-version: 0.7.11
-date-released: 2026-01-31
+version: 0.8.0
+date-released: 2026-02-04
 url: "https://github.com/Hmbown/ZMLX"
 license: MIT
 references:

@@ -2,7 +2,7 @@
 
 > **Updated:** February 3, 2026  
 > **Status:** Moonshot feasibility captured; focus on shipping P0/P1 while prototyping experimental tracks.  
-> **Current Version:** 0.7.13
+> **Current Version:** 0.8.0
 
 This roadmap prioritizes features based on technical impact, user demand, and strategic alignment with MLX ecosystem growth.
 

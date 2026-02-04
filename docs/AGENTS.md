@@ -1,10 +1,10 @@
 # Development Guide
 
-## Project Status (v0.7.12)
+## Project Status (v0.8.0)
 
 - 70+ Metal kernel catalog (activations, norms, RoPE, attention, MoE, quantization, loss, scan)
 - Model patching: `patch(model)` with model-aware defaults, validated on LFM2, Qwen3, GPT-OSS
-- Fused MoE inference: +5-12% decode on LFM2-8B-A1B, +7% on Qwen3-30B-A3B, +1% on GPT-OSS-20B (token-identical, prefill neutral)
+- Fused MoE inference: stock MLX wins on LFM2 (+5-12% decode) and GPT-OSS (~+1%); optional custom MLX primitive adds GLM (+8.1% decode) and Qwen3 (+5.5% decode), token-identical
 - Benchmark infrastructure: repro capsules, `bench.report` CLI, `validate` CLI
 - Experimental MLX fork lives in `docs/EXPERIMENTAL_MLX.md` (optional, not required for stable results)
 

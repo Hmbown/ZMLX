@@ -9,10 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Fixed
+
+### Changed
+
+## [0.8.0] - 2026-02-04
+
+### Added
+
+- **GLM-4.7-Flash + Qwen3-30B-A3B MoE decode**: fused decode path via `gather_qmm_swiglu` (requires custom MLX; auto-skips safely on stock MLX).
+- **exo integration**: `setup_zmlx.sh` one-command setup plus [`docs/EXO.md`](docs/EXO.md) guide (distributed-safe; tensor-parallel auto-excludes `moe_mlp`).
+- **Custom MLX setup helper**: `integrations/mlx_local_integration/gather_qmm_swiglu.patch` and `integrations/mlx_local_integration/setup_mlx_local.sh` to build the optional primitive locally.
+- **mlx-lm compatibility layer**: `src/zmlx/mlx_lm_compat.py` smooths API differences across mlx-lm versions.
 - **MoE stream benchmark script**: `benchmarks/bench_moe_streams.py` for baseline vs stream-count comparisons with optional Metal capture.
 - **Stream reduction selector**: `ZMLX_MOE_STREAMS_REDUCE=serial|tree|stack` (experimental, opt-in) to explore different accumulation orders.
 - **KV cache quantization hooks**: opt-in `ZMLX_KV_BITS`/CLI flags wired into `zmlx.validate` and `zmlx.generate` for bandwidth-focused decode experiments.
 - **Deterministic MoE combine**: `moe_combine_no_fma()` kernel variant to match MLX float32 reduction semantics exactly (prevents FMA contraction).
+- **M4 Mac Studio datapoint**: GLM-4.7-Flash decode ~77 → ~83 tok/s under the custom MLX path (token-identical).
 
 ### Fixed
 

@@ -4,7 +4,7 @@ This document describes `gather_qmm_swiglu`, a **custom C++ Metal primitive** im
 
 ## What this is
 
-`mlx_local/` is a fork of upstream MLX (`ml-explore/mlx`, commit `2f324cc`) with ~800 lines of custom C++ and Metal shader code adding the `GatherQMMSwiGLU` primitive. This fuses **gate projection + up projection + SwiGLU activation** for quantized MoE experts into a single GPU dispatch, eliminating multiple kernel launches per expert per layer during decode.
+`mlx_local/` is a local checkout of upstream MLX (`ml-explore/mlx`, commit `2f324cc`) with ~800 lines of custom C++ and Metal shader code adding the `GatherQMMSwiGLU` primitive. This fuses **gate projection + up projection + SwiGLU activation** for quantized MoE experts into a single GPU dispatch, eliminating multiple kernel launches per expert per layer during decode.
 
 The primitive is exposed as `mx.gather_qmm_swiglu()` in Python when the custom build is active.
 
@@ -24,6 +24,25 @@ During MoE decode, each active expert normally requires separate kernel launches
 - If you are prototyping fused MLX primitives for potential upstream contribution.
 
 On stock MLX (`pip install mlx`), ZMLX auto-detects that `gather_qmm_swiglu` is unavailable and skips the fused paths. No action needed.
+
+## Set up `mlx_local/`
+
+`mlx_local/` is **not shipped** as part of ZMLX; it is intended as a local-only directory (gitignored) created by cloning MLX and applying a patch.
+
+Recommended:
+
+```bash
+bash integrations/mlx_local_integration/setup_mlx_local.sh
+```
+
+Manual (equivalent):
+
+```bash
+git clone https://github.com/ml-explore/mlx.git mlx_local
+cd mlx_local
+git checkout 2f324cc3b200700b422db4811ae3ff8bd5bf48b4
+git apply <REPO_ROOT>/integrations/mlx_local_integration/gather_qmm_swiglu.patch
+```
 
 ## Build
 
