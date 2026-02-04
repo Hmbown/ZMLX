@@ -11,7 +11,7 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 
 - **Metal kernels from Python:** write `elementwise("x * tanh(log(1 + exp(x)))")` and get a compiled Metal kernel with caching, autograd support, and the 70+ kernel catalog.
 - **Model patching:** `patch(model)` replaces MoE gating/combine/activation sequences with fused Metal kernels, reducing dispatch overhead during decode. Token-identical output; verify with `python -m zmlx.validate`.
-- **Optional custom primitive (GLM/Qwen3):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash and Qwen3-30B-A3B (~+8% / ~+6% decode). On stock MLX these models auto-skip safely. See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) and [`docs/EXO.md`](docs/EXO.md).
+- **Optional custom primitive (GLM/Qwen3):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash and Qwen3-30B-A3B (~+8.5% / ~+6% decode). On stock MLX these models auto-skip safely. See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) and [`docs/EXO.md`](docs/EXO.md).
 - **Proven on stock MLX:** LFM2-8B-A1B shows **+5-12% decode** on released MLX with no custom builds needed. These gains come from ZMLX's own Metal kernels for fused gating, combine, and SwiGLU activation.
 - **Next test target:** Qwen3-80B Coder (planned).
 
@@ -136,7 +136,7 @@ ZMLX provides the model-side integration: auto-detecting MoE architectures, rewi
 
 | Model | Hardware | Decode (baseline -> patched) | Change | Fidelity |
 |:--|:--|--:|--:|:--|
-| GLM-4.7-Flash-4bit | M4 Max 36 GB | 85.8 tok/s -> 92.8 tok/s | **+8.1%** | 128/128 identical |
+| GLM-4.7-Flash-4bit | M4 Max 36 GB | 76.9 tok/s -> 83.4 tok/s | **+8.5%** | 15/15 configs identical |
 | Qwen3-30B-A3B-4bit | M4 Max 36 GB | 117 tok/s -> 123 tok/s | +5.5% | 128/128 identical |
 
 **GLM-4.7-Flash stress test (custom primitive, M4 Max, 2026-02-04)**  
