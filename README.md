@@ -15,6 +15,23 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 - **Proven on stock MLX:** LFM2-8B-A1B shows **+5-12% decode** on released MLX with no custom builds needed. These gains come from ZMLX's own Metal kernels for fused gating, combine, and SwiGLU activation.
 - **Next test target:** Qwen3-80B Coder (planned).
 
+## Kimi-K2.5 (Branch Notes)
+
+This `kimik2.5` branch tracks planning for **Kimi-K2.5** integration (DeepSeek-V3-style MoE + MLA).
+
+Next steps (when compute is available):
+
+- Add model cards for `mlx-community/Kimi-K2.5` (and any instruct variants) under `exo/resources/inference_model_cards/`.
+- Verify Kimi stop tokens for K2.5 and update `exo/src/exo/worker/engines/mlx/utils_mlx.py`:
+  - Official `moonshotai/Kimi-K2.5` uses `<|end_of_text|>` (ID `163585`).
+  - MLX conversions may use `<|im_user|>` (ID `163586`) as EOS/stop.
+- Confirm the required `mlx-lm` version/fork for `mlx_lm.models.kimi_k25` and ensure it matches the chosen weights.
+- Benchmark `zmlx.patch.patch()` / `zmlx.patch.smart_patch()` on K2.5:
+  - Fidelity: `python -m zmlx.validate <model_id> --max-tokens 200`
+  - Throughput: `benchmarks/bench_moe_e2e.py`, `benchmarks/inference_benchmark.py`
+- Consider extending `src/zmlx/patch/patterns/moe_mlp.py` to enable fused down-proj + combine for DeepSeek/Kimi MoE blocks.
+- (Optional) Prototype MLA-specific attention fusions (Q/KV projections + RoPE + cache + SDPA).
+
 ## Quick Start
 
 **Requirements:** macOS 14+ (Apple Silicon), Python >= 3.10, `mlx>=0.30.0`
