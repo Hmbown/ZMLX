@@ -7,13 +7,11 @@
 
 ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal kernel toolkit and optional, model-aware patching for faster MoE decode on Apple Silicon.
 
-**Why ZMLX**
+**What ZMLX does**
 
-- **Speed (evidence-based):** reduces Metal dispatch overhead during MoE decode. Benchmarked on LFM2-8B-A1B with token-identical output (see [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)).
-- **Metal kernels from Python:** author custom ops from expressions (and optional custom VJPs for training), or use the 70+ kernel catalog.
-- **Tooling you can verify:** `python -m zmlx.validate` for token-fidelity + throughput, plus repro capsules for repeatable benchmarks.
-
-**Best current result (stock MLX):** LFM2-8B-A1B 4-bit/8-bit shows **+5–12% decode** with token-identical output. Details in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+- **Metal kernels from Python:** write `elementwise("x * tanh(log(1 + exp(x)))")` and get a compiled Metal kernel with caching, autograd support, and the 70+ kernel catalog.
+- **Model patching:** `patch(model)` replaces MoE gating/combine/activation sequences with fused Metal kernels, reducing dispatch overhead during decode. Token-identical output; verify with `python -m zmlx.validate`.
+- **Proven on stock MLX:** LFM2-8B-A1B shows **+5-12% decode** on released MLX (no custom builds needed).
 
 ## Quick Start
 
@@ -60,9 +58,8 @@ Tip: large model downloads use the Hugging Face cache; set `HF_HOME` to control 
 - **Autograd support:** optional custom VJP paths via MLX custom functions.
 - **Benchmarking:** `zmlx.bench.compare()` and `python -m zmlx.bench.report` (repro capsules in `benchmarks/repro_capsules/`).
 - **Training CLI (optional):** `zmlx train`.
-- **Experimental / opt-in:** a local MLX fork in `mlx_local/` for upstream prototyping (and for exposing fused primitives before they land in a release build).
 
-## Docs & Benchmarks
+## Docs
 
 | Doc | What's inside |
 |:--|:--|
@@ -71,9 +68,8 @@ Tip: large model downloads use the Hugging Face cache; set `HF_HOME` to control 
 | [`docs/COOKBOOK.md`](docs/COOKBOOK.md) | Recipes for common patterns |
 | [`docs/KERNELS.md`](docs/KERNELS.md) | Kernel catalog (by module/domain) |
 | [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Benchmark methodology + raw data |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Roadmap and priorities |
-| [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) | Optional custom-MLX experiments |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Design philosophy |
+| [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) | Dev MLX experiments (GLM, Qwen3) |
 | [`UPSTREAM_PLAN.md`](UPSTREAM_PLAN.md) | What belongs upstream in MLX |
 
 ## Contributing / Development
@@ -90,11 +86,11 @@ pytest
 ---
 
 <details>
-<summary>Benchmarks (repro capsules)</summary>
+<summary>Benchmarks (stock MLX, repro capsules)</summary>
+
+These results use **released MLX** (`pip install mlx`). No custom builds required. ZMLX's own Metal kernels provide the speedup.
 
 Full methodology and raw data: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
-
-ZMLX's default inference patching is designed to keep prefill neutral (guards only enable fused kernels at small sequence lengths).
 
 | Model | Hardware | Decode (baseline -> patched) | Change | Fidelity | Capsule |
 |:--|:--|--:|--:|:--|:--|
@@ -112,32 +108,37 @@ python -m zmlx.bench.report benchmarks/repro_capsules/<capsule>.json
 </details>
 
 <details>
-<summary>Model support notes</summary>
+<summary>Experimental: GLM and Qwen3 (requires dev MLX)</summary>
 
-ZMLX only patches what it recognizes. When a pattern is known to break token fidelity on a model family, `patch()` auto-excludes it.
+GLM-4.7-Flash and Qwen3-30B-A3B MoE decode wins depend on `mx.gather_qmm_swiglu`, a fused MLX primitive that is **not available in released MLX** (0.30.4/0.30.5 as of 2026-02-04). These results were measured using a dev MLX build from this repo's `mlx_local/`.
 
-**Default patching**
+**What ZMLX contributes:** the patching infrastructure that detects MoE layers and rewires them to use the fused primitive, plus a deterministic no-FMA combine kernel that preserves token fidelity. **What the dev MLX build contributes:** the underlying `gather_qmm_swiglu` compute primitive that provides the actual speed improvement.
 
-Token-identical output with measurable decode improvement (on models where the patterns match, and where the needed fused primitives are available).
+On stock MLX, ZMLX auto-skips these models (0 modules patched, 0% change) to avoid regressions. No action needed — `patch()` is safe to call on any model.
 
-| Model | Typical decode change | Fidelity |
-|:--|:--|:--|
-| LFM2-8B-A1B (4-bit / 8-bit) | +5-12% | token-identical |
-| GLM-4.7-Flash-4bit | ~+7% | token-identical (when `mx.gather_qmm_swiglu` is available) |
-| GPT-OSS-20B-MXFP4-Q4 | ~+1% | token-identical |
-| Qwen3-30B-A3B (4-bit) | ~+6% | token-identical (when `mx.gather_qmm_swiglu` is available) |
+| Model | Hardware | MLX | Decode (baseline -> patched) | Change | Fidelity |
+|:--|:--|:--|--:|--:|:--|
+| GLM-4.7-Flash-4bit | M4 Max 36 GB | dev | 85.8 tok/s -> 92.8 tok/s | +8.1% | 128/128 identical |
+| Qwen3-30B-A3B-4bit | M4 Max 36 GB | dev | 117 tok/s -> 123 tok/s | +5.5% | 128/128 identical |
 
-**Optional custom MLX fork (research)**
+If/when `gather_qmm_swiglu` lands in a released MLX build, these wins would apply automatically via `patch()` with no code changes.
 
-On released MLX builds that do **not** expose `mx.gather_qmm_swiglu`, ZMLX will skip the
-MoE fused decode paths by default for GLM/Qwen to avoid regressions. Use `smart_patch`
-to auto-benchmark, or use an MLX build that exposes `mx.gather_qmm_swiglu`.
+See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) for build instructions.
 
-`mlx_local/` is only needed if you're experimenting with MLX internals or prototyping
-primitives not exposed in Python — or if you want MoE fused decode for models where
-`mx.gather_qmm_swiglu` is required but not available in your installed MLX build.
+</details>
 
-For unlisted models, run: `python -m zmlx.validate <model>`.
+<details>
+<summary>Model support summary</summary>
+
+| Model | Stock MLX | Dev MLX | What ZMLX does |
+|:--|:--|:--|:--|
+| LFM2-8B-A1B | **+5-12% decode** | same | Fused MoE gating + combine (ZMLX Metal kernels) |
+| GLM-4.7-Flash | 0% (auto-skipped) | **+8% decode** | Patches MoE layers to use `gather_qmm_swiglu` + no-FMA combine |
+| Qwen3-30B-A3B | 0% (auto-skipped) | **+6% decode** | Patches MoE layers to use `gather_qmm_swiglu` |
+| GPT-OSS-20B | ~+1% | same | Fused SwiGLU activation |
+| Other models | safe no-op | same | `patch()` returns unchanged if no patterns match |
+
+All results are token-identical under greedy decoding. Verify on your hardware with `python -m zmlx.validate <model>`.
 
 Patching controls:
 
@@ -145,7 +146,7 @@ Patching controls:
 import mlx.core as mx
 from zmlx.patch import patch, smart_patch
 
-patch(model)                      # inference defaults
+patch(model)                      # inference defaults (auto-skips unsafe patterns)
 patch(model, mode="training")     # training preset (adds norms/residual fusions)
 patch(model, patterns=["moe_mlp"])  # override safety; validate first
 
@@ -193,33 +194,6 @@ Next steps:
 - 5-minute tutorial: [`docs/QUICKSTART.md`](docs/QUICKSTART.md)
 - Recipes: [`docs/COOKBOOK.md`](docs/COOKBOOK.md)
 - Catalog: [`docs/KERNELS.md`](docs/KERNELS.md)
-- exo integration: [`docs/EXO.md`](docs/EXO.md)
-
-</details>
-
-<details>
-<summary>Custom MLX kernel (opt-in, Qwen3)</summary>
-
-Optional: use the custom MLX fork in `mlx_local/` if you're experimenting with MLX
-internals (or if your stock MLX build does not expose `mx.gather_qmm_swiglu`).
-
-Build (one-time):
-
-```bash
-cd mlx_local
-# Limit CPU usage during build if desired:
-# CMAKE_BUILD_PARALLEL_LEVEL=4 python3 setup.py build_ext --inplace
-python3 setup.py build_ext --inplace
-```
-
-Use:
-
-```bash
-export PYTHONPATH=<REPO_ROOT>/mlx_local/python:<REPO_ROOT>/src:$PYTHONPATH
-python3 -m zmlx.validate mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit --max-tokens 1000 --runs 15
-```
-
-Remove `mlx_local/python` from `PYTHONPATH` to revert to stock MLX.
 
 </details>
 
@@ -231,14 +205,15 @@ Remove `mlx_local/python` from `PYTHONPATH` to revert to stock MLX.
 | `ModuleNotFoundError: No module named 'mlx'` | Requires Apple Silicon macOS. ZMLX does not support Intel Macs or Linux. |
 | `ModuleNotFoundError: No module named 'mlx_lm'` | Install with `pip install "zmlx[train]"` for model patching examples. |
 | Model downloads fill disk | Set `HF_HOME` to a larger drive before running. |
-| `patch()` shows 0 modules patched | The model may not match any patterns. Run `python -m zmlx.validate <model>` to verify. |
+| `patch()` shows 0 modules patched | The model may not match any patterns, or ZMLX auto-skipped them for safety. Run `python -m zmlx.validate <model>` to check. |
+| GLM/Qwen shows 0 modules patched | Expected on stock MLX. The fused decode path requires `mx.gather_qmm_swiglu` (see [dev MLX docs](docs/EXPERIMENTAL_MLX.md)). |
 
 </details>
 
 <details>
 <summary>Precision note</summary>
 
-Most kernels compute internally in **float32** regardless of input dtype. The exception is `moe_combine_exact`, which accumulates in the input dtype to match MLX's bfloat16 semantics for Qwen3.
+Most kernels compute internally in **float32** regardless of input dtype. The exception is `moe_combine_exact`, which accumulates in the input dtype to match MLX's bfloat16 semantics for Qwen3. GLM uses `moe_combine_no_fma` to disable FMA contraction and match MLX's non-fused multiply-then-sum reduction order.
 
 </details>
 
