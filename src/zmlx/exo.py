@@ -2,7 +2,8 @@
 
 Launch exo with ZMLX fused-kernel patching, no source modifications needed::
 
-    pip install zmlx exo
+    # In the same environment where `exo` is installed:
+    pip install zmlx
     python -m zmlx.exo
 
 How it works:
@@ -15,7 +16,7 @@ How it works:
 
 Configuration env vars (same as the git-patch integration):
 
-- ``EXO_ZMLX=1``           — enable patching (set automatically by ``main()``)
+- ``EXO_ZMLX=1``           — enable patching (default; set by ``main()``)
 - ``EXO_ZMLX_VERBOSE=1``   — print per-module patch log
 - ``EXO_ZMLX_PATTERNS=...`` — comma-separated pattern list override
 - ``EXO_ZMLX_EXCLUDE=...``  — comma-separated patterns to skip
@@ -28,11 +29,86 @@ import logging
 import os
 import sys
 import time
+from contextlib import contextmanager
 from typing import Any
 
 logger = logging.getLogger("zmlx.exo")
 
 _hook_installed = False
+
+
+def _purge_exo_modules() -> None:
+    """Remove already-imported exo modules so sys.path changes take effect."""
+    for name in list(sys.modules):
+        if name == "exo" or name.startswith("exo."):
+            sys.modules.pop(name, None)
+
+
+@contextmanager
+def _exo_import_context():
+    """Try to avoid common 'exo/' directory shadowing issues during import.
+
+    The most common shadowing scenario is running from a repo root that
+    contains a top-level `exo/` checkout (like this repo's optional setup).
+    """
+    original_sys_path = list(sys.path)
+    try:
+        cwd = os.getcwd()
+
+        # 1) Prefer installed exo by deprioritizing the current working dir.
+        sys.path = [p for p in sys.path if p not in ("", cwd)]
+        _purge_exo_modules()
+        yield
+    finally:
+        sys.path = original_sys_path
+
+
+@contextmanager
+def _local_exo_checkout_context():
+    """If `./exo/src/exo/main.py` exists, import from that checkout."""
+    original_sys_path = list(sys.path)
+    try:
+        cwd = os.getcwd()
+        local_src = os.path.join(cwd, "exo", "src")
+        local_main = os.path.join(local_src, "exo", "main.py")
+        if not os.path.isfile(local_main):
+            yield
+            return
+
+        if local_src not in sys.path:
+            sys.path.insert(0, local_src)
+        _purge_exo_modules()
+        yield
+    finally:
+        sys.path = original_sys_path
+
+
+def _import_exo_module(module_name: str) -> Any:
+    """Import an exo module with fallbacks for common dev setups."""
+    try:
+        return importlib.import_module(module_name)
+    except ModuleNotFoundError as e:
+        # If the missing module is not under exo, let the real error surface
+        # (e.g. missing dependency inside exo).
+        if e.name and not e.name.startswith("exo"):
+            raise
+
+        # Retry without cwd on sys.path (avoids `./exo/` shadowing).
+        with _exo_import_context():
+            try:
+                return importlib.import_module(module_name)
+            except ModuleNotFoundError:
+                pass
+
+        # Final fallback: local checkout at ./exo/src (common in this repo).
+        with _local_exo_checkout_context():
+            return importlib.import_module(module_name)
+
+
+def _import_exo_main() -> Any:
+    """Import and return `exo.main.main`."""
+    module = _import_exo_module("exo.main")
+    return module.main
 
 
 def _apply_zmlx_patch(model: Any, bound_instance: Any, group: Any) -> Any:
@@ -127,9 +203,14 @@ def install_hook() -> None:
         return
 
     try:
-        utils_mlx = importlib.import_module("exo.worker.engines.mlx.utils_mlx")
+        utils_mlx = _import_exo_module("exo.worker.engines.mlx.utils_mlx")
     except ModuleNotFoundError:
         logger.debug("[zmlx.exo] exo.worker.engines.mlx.utils_mlx not found — skipping hook")
+        return
+    except Exception:
+        logger.debug(
+            "[zmlx.exo] Failed to import exo.worker.engines.mlx.utils_mlx — skipping hook"
+        )
         return
 
     original_load = getattr(utils_mlx, "load_mlx_items", None)
@@ -164,7 +245,7 @@ def install_hook() -> None:
 def main() -> None:
     """Entry point: set up env, install hook, launch exo."""
     # Enable ZMLX patching
-    os.environ["EXO_ZMLX"] = "1"
+    os.environ.setdefault("EXO_ZMLX", "1")
     os.environ.setdefault("EXO_ZMLX_VERBOSE", "1")
     os.environ["_ZMLX_EXO_HOOK"] = "1"
 
@@ -184,13 +265,20 @@ def main() -> None:
 
     # Import and run exo
     try:
-        from exo.main import main as exo_main
-    except ModuleNotFoundError:
+        exo_main = _import_exo_main()
+    except ModuleNotFoundError as e:
+        if e.name and not e.name.startswith("exo"):
+            raise
+        if os.path.isdir(os.path.join(os.getcwd(), "exo")):
+            print(
+                "Error: couldn't import `exo.main`. If you have a local `exo/` folder in "
+                "your current directory, it may be shadowing the Python package."
+            )
+        else:
+            print("Error: couldn't import `exo.main`.")
         print(
-            "Error: exo is not installed. Install with:\n"
-            "  pip install exo\n"
-            "or:\n"
-            "  pip install git+https://github.com/exo-explore/exo.git"
+            "Install exo (from https://github.com/exo-explore/exo) into this environment, "
+            "then re-run `python -m zmlx.exo` (or `zmlx-exo`)."
         )
         sys.exit(1)
 

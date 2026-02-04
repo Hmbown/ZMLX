@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Setup ZMLX integration for exo (optional GLM/Qwen3 MoE decode acceleration).
 #
-# This script clones exo into ./exo (gitignored), applies the ZMLX hook patch,
-# creates an exo venv, installs exo + ZMLX, and generates an `exo/run_zmlx.sh`
-# launcher.
+# This script clones exo into ./exo (gitignored), creates an exo venv, installs
+# exo + ZMLX, and generates an `exo/run_zmlx.sh` launcher (uses `zmlx-exo` to
+# hook exo at runtime; no exo source patching required).
 #
 # Optional: if a custom MLX build exists at `./mlx_local/python`, it is added to
 # the exo venv via a `.pth` file so `mx.gather_qmm_swiglu` is available.
@@ -19,10 +19,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 EXO_DIR="${REPO_ROOT}/exo"
 EXO_REPO_URL="${EXO_REPO_URL:-https://github.com/exo-explore/exo.git}"
-# Pin to a known-good commit for the patch. Override with EXO_REF=main if desired.
+# Pin to a known-good exo commit. Override with EXO_REF=main if desired.
 EXO_REF="${EXO_REF:-a0f4f363555744f2a9660679437be064bb2bb712}"
-
-EXO_PATCH="${REPO_ROOT}/integrations/exo_integration/exo_zmlx.patch"
 
 MLX_LOCAL_PY="${REPO_ROOT}/mlx_local/python"
 
@@ -62,10 +60,6 @@ fi
 echo "Using Python: $("$PYTHON" --version)"
 echo ""
 
-if [[ ! -f "${EXO_PATCH}" ]]; then
-  die "Missing patch file: integrations/exo_integration/exo_zmlx.patch"
-fi
-
 if [[ ! -d "${EXO_DIR}/.git" ]]; then
   echo "Cloning exo into ./exo..."
   git clone "${EXO_REPO_URL}" "${EXO_DIR}"
@@ -77,16 +71,6 @@ if git -C "${EXO_DIR}" diff --quiet && git -C "${EXO_DIR}" diff --cached --quiet
   git -C "${EXO_DIR}" checkout --quiet "${EXO_REF}" || die "Failed to checkout exo ref: ${EXO_REF}"
 else
   echo "NOTE: ./exo has local changes; skipping checkout to ${EXO_REF}"
-fi
-
-echo "Applying exo patch (idempotent)..."
-if git -C "${EXO_DIR}" apply --reverse --check "${EXO_PATCH}" >/dev/null 2>&1; then
-  echo "  Patch already applied."
-elif git -C "${EXO_DIR}" apply --check "${EXO_PATCH}" >/dev/null 2>&1; then
-  git -C "${EXO_DIR}" apply "${EXO_PATCH}"
-  echo "  Patch applied."
-else
-  die "exo patch does not apply cleanly. Try setting EXO_REF=main (or a compatible commit)."
 fi
 
 VENV="${EXO_DIR}/.venv"
@@ -148,7 +132,7 @@ source .venv/bin/activate
 export EXO_ZMLX="${EXO_ZMLX:-1}"
 export EXO_ZMLX_VERBOSE="${EXO_ZMLX_VERBOSE:-1}"
 
-python -m exo --api-port "${EXO_API_PORT:-52416}"
+zmlx-exo --api-port "${EXO_API_PORT:-52416}"
 LAUNCHER
 chmod +x "${RUN_SCRIPT}"
 
@@ -159,4 +143,4 @@ echo "Launch exo with ZMLX:"
 echo "  bash exo/run_zmlx.sh"
 echo ""
 echo "Expected log on model load:"
-echo "  [zmlx] Applying fused-kernel patches ..."
+echo "  [zmlx.exo] Applying fused-kernel patches ..."

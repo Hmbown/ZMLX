@@ -4,6 +4,22 @@ ZMLX integrates with [exo](https://github.com/exo-explore/exo) to speed up MoE d
 
 **What to expect:** ~8% faster GLM decode, ~6% faster Qwen3 decode, token-identical output.
 
+## Quick start
+
+In a **Python 3.13+** environment (exo requires >= 3.13):
+
+```bash
+# From a ZMLX checkout (recommended):
+bash setup_zmlx.sh
+bash exo/run_zmlx.sh
+
+# If `exo` is already installed in your environment:
+#   pip install zmlx
+#   zmlx-exo
+```
+
+Then open `http://localhost:52416` in your browser and select GLM-4.7-Flash or Qwen3-30B-A3B.
+
 ## Which models benefit?
 
 | Model | With ZMLX in exo | Notes |
@@ -21,54 +37,34 @@ GLM and Qwen3 require the custom MLX primitive (`gather_qmm_swiglu`). Without it
 - **Python 3.13+** (exo requires >= 3.13). If you build a custom MLX, it must match the Python minor version you run exo with.
 - **uv** (recommended) — `brew install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
-## Setup (one command)
+## Custom MLX primitive (optional, for GLM/Qwen3)
 
-```bash
-git clone https://github.com/Hmbown/ZMLX.git
-cd ZMLX
-bash setup_zmlx.sh
-```
+GLM and Qwen3 gains require `mx.gather_qmm_swiglu`, which is not in released MLX. See [`docs/EXPERIMENTAL_MLX.md`](EXPERIMENTAL_MLX.md) for full details.
 
-The script:
-1. Clones exo into `exo/` (local-only; gitignored)
-2. Applies a small hook patch so exo calls `zmlx.patch()` after model load
-3. Creates a Python venv in `exo/.venv/`
-4. Installs exo and ZMLX (editable)
-5. If `mlx_local/python` exists, wires it into the exo venv via a `.pth` file
-6. Creates `exo/run_zmlx.sh` launcher and verifies the install
-
-### Build the custom MLX first (if not already built)
-
-GLM and Qwen3 gains require `mx.gather_qmm_swiglu`, which is not in released MLX.
-
-- Recommended (creates `mlx_local/`, applies the patch, and builds):
+Recommended:
 
 ```bash
 bash integrations/mlx_local_integration/setup_mlx_local.sh
 ```
 
-- Manual: see [`docs/EXPERIMENTAL_MLX.md`](EXPERIMENTAL_MLX.md).
-
-After building, re-run `bash setup_zmlx.sh` so exo's venv picks up `mlx_local/python`.
-
-## Launch
+Verify the custom primitive is active:
 
 ```bash
-bash exo/run_zmlx.sh
+python -c "import mlx.core as mx; print(hasattr(mx, 'gather_qmm_swiglu'))"  # should print True
 ```
 
-Then open `http://localhost:52416` in your browser and select GLM-4.7-Flash or Qwen3-30B-A3B.
+To run exo with the custom build without replacing your default MLX install, prepend `mlx_local/python` on `PYTHONPATH`:
 
-When the model loads, the terminal should show:
+```bash
+export PYTHONPATH=<REPO_ROOT>/mlx_local/python:$PYTHONPATH
+zmlx-exo
+```
 
-```
-[zmlx] Applying fused-kernel patches (distributed=False, parallelism=none)...
-[zmlx] Patched 47 modules in 0.02s: {'swiglu_mlp': 1, 'moe_mlp': 46}
-```
+Remove `mlx_local/python` from `PYTHONPATH` to revert to stock MLX.
 
 ## How it works
 
-The integration is a single hook in exo's model loading path (`src/exo/worker/engines/mlx/utils_mlx.py`). After exo loads an MLX model, the hook calls `zmlx.patch()` which:
+The launcher (`zmlx-exo` / `python -m zmlx.exo`) installs a runtime hook on exo's MLX model loading path (`exo.worker.engines.mlx.utils_mlx.load_mlx_items`). After exo loads an MLX model, the hook calls `zmlx.patch()` which:
 
 1. Detects the model family (GLM, Qwen3, LFM2, etc.)
 2. Checks which patterns are safe for this architecture
@@ -106,19 +102,16 @@ All results token-identical under greedy decoding.
 
 | Symptom | Fix |
 |:--|:--|
-| No `[zmlx]` log lines after model load | `EXO_ZMLX=1` not set. Use the `run_zmlx.sh` script or `export EXO_ZMLX=1` before launching. |
+| No `[zmlx.exo]` log lines after model load | Use `zmlx-exo` / `python -m zmlx.exo` (it installs the hook). If launching exo directly, ZMLX will not be loaded. |
 | `Patched 0 modules` on GLM/Qwen | Custom MLX not active. Run `python -c "import mlx.core as mx; print(hasattr(mx, 'gather_qmm_swiglu'))"` — should print `True`. |
-| `ModuleNotFoundError: No module named 'zmlx'` | ZMLX not installed in the exo venv. Re-run `setup_zmlx.sh`. |
-| Port 52415 in use | Another process (IDE, previous exo) is using the port. The script uses 52416 instead, or pass `--api-port <N>`. |
-| Line continuation breaks on paste | Use the `run_zmlx.sh` script instead of pasting multi-line commands. |
+| `ModuleNotFoundError: No module named 'zmlx'` | ZMLX not installed in the exo environment. Run `pip install zmlx` (or use an editable install). |
+| `Error: couldn't import exo.main` | `exo` may not be installed, or your current directory contains an `exo/` folder shadowing the Python package. Run from a different directory or install exo into the current environment. |
+| Port 52415 in use | Another process (IDE, previous exo) is using the port. The launcher uses 52416 by default, or pass `--api-port <N>`. |
+| Line continuation breaks on paste | Prefer `zmlx-exo` over long multi-line commands. |
 
 ## Verify token fidelity
 
-From the ZMLX venv (not exo's):
-
 ```bash
-cd ZMLX
-source .venv/bin/activate
 python -m zmlx.validate mlx-community/GLM-4.7-Flash-4bit --max-tokens 128 --runs 5
 ```
 

@@ -84,8 +84,8 @@ Tip: large model downloads use the Hugging Face cache; set `HF_HOME` to control 
 ZMLX works with [exo](https://github.com/exo-explore/exo) for faster GLM-4.7-Flash and Qwen3-30B-A3B decode. No source patching needed:
 
 ```bash
-pip install zmlx exo
-python -m zmlx.exo
+bash setup_zmlx.sh
+bash exo/run_zmlx.sh
 ```
 
 ZMLX hooks into exo's model loading at runtime — when GLM loads with the custom MLX primitive, all 46 MoE layers + 1 dense SwiGLU are fused (~8% faster decode, token-identical). See [`docs/EXO.md`](docs/EXO.md) for the full guide including custom MLX build instructions.
