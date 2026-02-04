@@ -147,7 +147,7 @@ def make_prompt_cache_for_kv_quantization(model: nn.Module) -> list[Any]:
     """
     from mlx_lm.models import cache as mlx_cache
 
-    prompt_cache = mlx_cache.make_prompt_cache(model)
+    prompt_cache: list[Any] = mlx_cache.make_prompt_cache(model)
 
     for c in prompt_cache:
         if not hasattr(c, "to_quantized"):
