@@ -139,6 +139,36 @@ ZMLX provides the model-side integration: auto-detecting MoE architectures, rewi
 | GLM-4.7-Flash-4bit | M4 Max 36 GB | 85.8 tok/s -> 92.8 tok/s | **+8.1%** | 128/128 identical |
 | Qwen3-30B-A3B-4bit | M4 Max 36 GB | 117 tok/s -> 123 tok/s | +5.5% | 128/128 identical |
 
+**GLM-4.7-Flash stress test (custom primitive, M4 Max, 2026-02-04)**  
+5 runs per config, 5 prompts × 3 lengths, token-identical across all 15 configs.
+
+**Speedup vs length (avg across prompts)**  
+| Length | Avg Baseline | Avg Patched | Avg Speedup |
+|:--|--:|--:|--:|
+| 256 | 79.9 | 88.2 | **1.104x** |
+| 1024 | 77.3 | 82.8 | 1.070x |
+| 2048 | 73.1 | 79.6 | **1.089x** |
+
+**Speedup vs prompt (avg across lengths)**  
+| Prompt | Avg Baseline | Avg Patched | Avg Speedup |
+|:--|--:|--:|--:|
+| english_technical | 76.6 | 80.5 | 1.052x |
+| chinese | 75.4 | 82.3 | **1.092x** |
+| code | 75.3 | 84.1 | **1.117x** |
+| math_reasoning | 78.6 | 85.2 | **1.085x** |
+| creative | 78.0 | 85.5 | **1.096x** |
+
+```
+Speedup vs length (avg)
+256  | ██████████ 1.104x
+1024 | ███████    1.070x
+2048 | █████████  1.089x
+```
+
+Tail latency (P99/P50) improved on 12/15 configs; average ratio dropped from 1.148 → 1.108.  
+Capsule: [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json)  
+Full log: `benchmarks/results/glm_stress/glm_stress_full_20260204_103907.log`
+
 See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) for build instructions.
 
 </details>
