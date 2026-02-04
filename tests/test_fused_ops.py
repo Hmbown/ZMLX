@@ -346,6 +346,21 @@ class TestMoECombine:
         
         assert_allclose(y_fused, mx.array(y_ref), rtol=1e-4)
 
+    def test_moe_combine_no_fma_exact(self):
+        """Test moe_combine_no_fma matches MLX reduction semantics exactly."""
+        from zmlx.kernels.moe import moe_combine_no_fma
+
+        mx.random.seed(0)
+        B, K, D = 3, 4, 64
+        weights = mx.random.normal((B, K)).astype(mx.float32)
+
+        for dtype in (mx.float16, mx.bfloat16, mx.float32):
+            expert_outputs = mx.random.normal((B, K, D)).astype(dtype)
+            ref = (expert_outputs * weights[..., None]).sum(axis=-2).astype(dtype)
+            out = moe_combine_no_fma(expert_outputs, weights)
+            mx.eval(ref, out)
+            assert mx.array_equal(ref, out)
+
 
 @pytest.mark.metal
 class TestMoEDispatch:

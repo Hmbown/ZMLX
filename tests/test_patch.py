@@ -45,6 +45,21 @@ class TinySwiGLUMLP(nn.Module):
         return self.down_proj(gate * up)
 
 
+class TinyLFMSwiGLUMLP(nn.Module):
+    """Minimal SwiGLU MLP (LFM-style w1/w3/w2)."""
+
+    def __init__(self, dims: int = 64, hidden: int = 128):
+        super().__init__()
+        self.w1 = nn.Linear(dims, hidden, bias=False)
+        self.w3 = nn.Linear(dims, hidden, bias=False)
+        self.w2 = nn.Linear(hidden, dims, bias=False)
+
+    def __call__(self, x):
+        gate = nn.silu(self.w1(x))
+        up = self.w3(x)
+        return self.w2(gate * up)
+
+
 class TinyGeGLUMLP(nn.Module):
     """Minimal GeGLU MLP (Gemma-style)."""
 
@@ -202,6 +217,23 @@ def test_swiglu_mlp_patch():
     from zmlx.patch import patch
 
     model = TinySwiGLUMLP(dims=64, hidden=128)
+    x = mx.random.normal((2, 64))
+
+    out_before = model(x)
+    mx.eval(out_before)
+
+    patch(model, patterns=["swiglu_mlp"])
+
+    out_after = model(x)
+    mx.eval(out_after)
+
+    assert mx.allclose(out_before, out_after, atol=1e-3).item()
+
+
+def test_swiglu_mlp_patch_lfm_layout():
+    from zmlx.patch import patch
+
+    model = TinyLFMSwiGLUMLP(dims=64, hidden=128)
     x = mx.random.normal((2, 64))
 
     out_before = model(x)

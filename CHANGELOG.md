@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MoE stream benchmark script**: `benchmarks/bench_moe_streams.py` for baseline vs stream-count comparisons with optional Metal capture.
 - **Stream reduction selector**: `ZMLX_MOE_STREAMS_REDUCE=serial|tree|stack` (experimental, opt-in) to explore different accumulation orders.
 - **KV cache quantization hooks**: opt-in `ZMLX_KV_BITS`/CLI flags wired into `zmlx.validate` and `zmlx.generate` for bandwidth-focused decode experiments.
+- **Deterministic MoE combine**: `moe_combine_no_fma()` kernel variant to match MLX float32 reduction semantics exactly (prevents FMA contraction).
+
+### Fixed
+
+- **GLM MoE fidelity**: `moe_mlp` no longer diverges at token 1 on GLM models; combine now uses `moe_combine_no_fma()` to match MLX semantics.
+- **Fused SwiGLU gating**: token-count heuristic for `gather_qmm_swiglu` now counts tokens (excludes experts-per-token `K`) so decode actually uses the fused path.
+- **GLM KV cache quantization**: `--kv-bits` no longer crashes on GLM-4 MoE Lite models; ZMLX applies a small compatibility patch so quantized KV cache can be benchmarked.
+
+### Changed
+
+- **GLM default patching**: `moe_mlp`/`swiglu_mlp` are enabled by default on GLM when fused SwiGLU is available; on stock MLX without `mx.gather_qmm_swiglu`, they are excluded by default to avoid decode regressions (override with explicit `patterns=[...]`).
+- **GLM fused SwiGLU default**: `moe_mlp` now uses `gather_qmm_swiglu` by default on GLM when available; set `ZMLX_GLM_FUSED_SWIGLU=0` to disable.
+- **Qwen perf exclude**: `moe_mlp` is no longer auto-excluded for Qwen models when `mx.gather_qmm_swiglu` is available (decode-positive on Qwen3-30B-A3B).
 
 ## [0.7.13] - 2026-02-02
 

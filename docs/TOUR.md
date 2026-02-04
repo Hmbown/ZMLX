@@ -53,14 +53,14 @@ The MoE speedup comes from two things:
 
 **Fused expert combine** (`src/zmlx/kernels/moe.py`): After experts compute their outputs, the standard path does element-wise multiply + sum across experts. The fused kernel does this in one pass.
 
-**Sequence length guard** (`src/zmlx/patch/patterns/moe_mlp.py`): The fused kernels only activate when the sequence length M <= 32 (decode). At larger M (prefill), the standard MLX path is used. This is why prefill throughput is neutral — it's the same code path.
+**Sequence length guard** (`src/zmlx/patch/patterns/moe_mlp.py`): Some fused paths are enabled only for very small token counts (decode) and fall back to the standard MLX implementation for larger sequence lengths (prefill). This helps keep prefill throughput neutral.
 
 ```python
-_FUSED_SWIGLU_MAX_TOKENS = 32  # fused path for decode only
+_FUSED_SWIGLU_MAX_TOKENS = 1  # fused SwiGLU for decode-like (M=1) calls
 ```
 
 ## 6. What "token-identical" means
 
 ZMLX's correctness guarantee: given the same model weights, the same prompt, and greedy decoding (`temp=0`), the patched model produces the exact same token sequence as the unpatched model. This is verified by `python -m zmlx.validate`, which compares token IDs one-by-one.
 
-When a pattern breaks fidelity on a model family (e.g. `moe_mlp` on Qwen3-MoE), `patch()` auto-excludes it. You can override with `patterns=[...]`, but validate first.
+When a pattern breaks fidelity on a model family (e.g. `residual_norm` on Qwen), `patch()` auto-excludes it. You can override with `patterns=[...]`, but validate first.

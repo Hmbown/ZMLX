@@ -660,6 +660,22 @@ def generate(
         kv_group_size=kv_group_size,
         quantized_kv_start=quantized_kv_start,
     )
+    if "kv_bits" in kv_kwargs:
+        from .mlx_lm_compat import (
+            apply_kv_quantization_fixes,
+            make_prompt_cache_for_kv_quantization,
+        )
+
+        apply_kv_quantization_fixes(
+            model,
+            kv_bits=int(kv_kwargs["kv_bits"]),
+            verbose=False,
+        )
+        if "prompt_cache" not in kv_kwargs:
+            try:
+                kv_kwargs["prompt_cache"] = make_prompt_cache_for_kv_quantization(model)
+            except Exception:
+                pass
     result: str = mlx_lm.generate(
         model,
         tokenizer,

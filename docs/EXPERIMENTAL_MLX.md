@@ -1,6 +1,6 @@
 # Experimental MLX Fork (Optional)
 
-This document describes ZMLX’s **optional** custom‑MLX work. You do **not** need any of this for the stock‑MLX results in the README. The README also includes an opt‑in custom‑MLX Qwen3 section that depends on this fork. It exists for research and upstream prototyping only.
+This document describes ZMLX’s **optional** custom‑MLX work. Most ZMLX patterns run on released MLX, but some MoE decode wins (notably GLM/Qwen3) currently depend on the fused primitive `mx.gather_qmm_swiglu`, which may not be exposed in your installed MLX build.
 
 ## What this is
 
@@ -8,15 +8,16 @@ ZMLX includes a local MLX fork in `mlx_local/` for experiments that require MLX 
 
 ## When to use it
 
-Only if you are experimenting with C++ Metal primitives or trying to fuse operations that MLX doesn’t expose in Python. The stock‑MLX results for LFM2 and GPT‑OSS do **not** rely on this; the opt‑in Qwen3 section in the README does.
+- If you are experimenting with C++ Metal primitives or trying to fuse operations that MLX doesn’t expose in Python.
+- If you want MoE fused decode for models where ZMLX relies on `mx.gather_qmm_swiglu` but your installed MLX build does not expose it (as of MLX 0.30.4/0.30.5 releases).
 
 ## Key primitive: `gather_qmm_swiglu`
 
-This is a C++ Metal primitive that fuses **gate projection + up projection + SwiGLU** for quantized MoE experts into a single kernel launch. It can save additional dispatches, but its precision currently differs from stock MLX for some models (notably Qwen3). Until that is fixed, it is not enabled by default.
+This is a C++ Metal primitive that fuses **gate projection + up projection + SwiGLU** for quantized MoE experts into a single kernel launch. Some MLX dev builds expose this as `mx.gather_qmm_swiglu`; the `mlx_local/` fork is useful when you want to prototype changes to the primitive itself or add new primitives.
 
 ## Known issue (Qwen3)
 
-Qwen3 diverges when `gather_qmm_swiglu` is forced. The likely cause is **precision mismatch** (float16 accumulation) in the custom kernel vs MLX’s default path. The fix would be float32 accumulation inside the kernel. Until then, this path remains experimental.
+Historical note: early experiments with custom fused MoE implementations diverged on Qwen3 due to precision differences vs MLX’s reference path. ZMLX now prefers `mx.gather_qmm_swiglu` when available and keeps MoE fused paths guarded behind small-token heuristics. Always validate token fidelity on your hardware.
 
 ## Experimental benchmarks (historical)
 
@@ -24,7 +25,7 @@ Qwen3‑30B‑A3B (max_tokens=500, runs=3):
 
 | Config | Decode speedup | Fidelity | Notes |
 |:--|:--|:--|:--|
-| Dev MLX + `moe_mlp` forced | +6.9% (base) / +8.9% (instruct) | FAIL | Diverges at token 6 (base) / token 146 (instruct) |
+| Early dev MLX + `moe_mlp` forced | +6.9% (base) / +8.9% (instruct) | FAIL | Diverged due to precision mismatch (since fixed) |
 
 ## Prototype primitives
 

@@ -65,14 +65,18 @@ def _is_glm_moe_block(mod: Any) -> bool:
 
 
 def _glm_allow_fused_swiglu() -> bool:
-    """Return True if GLM should use fused SwiGLU (experimental)."""
+    """Return True if GLM should use fused SwiGLU.
+
+    Default: enabled when ``mx.gather_qmm_swiglu`` is available.
+    Set ``ZMLX_GLM_FUSED_SWIGLU=0`` to disable.
+    """
     raw = os.environ.get("ZMLX_GLM_FUSED_SWIGLU")
     if raw is None:
-        return False
+        return True
     try:
         return int(raw) != 0
     except ValueError:
-        return False
+        return True
 
 
 def _gating(
@@ -342,9 +346,9 @@ def _fused_switch_mlp_call(
     # The fused kernel benefits decode (small M) but regresses at large M.
     # SwitchGLU's sorting threshold is indices.size >= 64, which correlates
     # with the same regime where the fused kernel slows down.
-    total_tokens = 1
-    for d in indices.shape:
-        total_tokens *= d
+    # indices: (..., K) where K is experts-per-token; count tokens excluding K.
+    k = int(indices.shape[-1]) if indices.ndim else 1
+    total_tokens = int(indices.size) // max(1, k)
     if not _should_fuse_swiglu_tokens(total_tokens, max_tokens):
         return switch_mlp._zmlx_original_switch_call(x, indices)
 
@@ -518,7 +522,10 @@ class _MoEMLPPattern:
         use_exact_combine = is_qwen3
         if is_glm and _use_fused_swiglu and not _glm_allow_fused_swiglu():
             if config.verbose:
-                print("  [moe_mlp] GLM detected: skipping fused SwiGLU (token safety)")
+                print(
+                    "  [moe_mlp] GLM detected: fused SwiGLU disabled via "
+                    "ZMLX_GLM_FUSED_SWIGLU=0"
+                )
             _use_fused_swiglu = False
         moe_stream_pool = _get_moe_stream_pool()
         moe_stream_reduce = None
@@ -605,7 +612,9 @@ class _MoEMLPPattern:
 
             # 3. Combine
             if expert_outputs is not None:
-                if is_gpt_oss:
+                if is_glm:
+                    y = moe.moe_combine_no_fma(expert_outputs, gate_weights)
+                elif is_gpt_oss:
                     # GPT-OSS: match MLX's dtype promotion and sum order.
                     if gate_weights.dtype == mx.float32:
                         y = moe.moe_combine_fp32(expert_outputs, gate_weights)

@@ -80,12 +80,14 @@ _FIDELITY_EXCLUDES: dict[str, set[str]] = {
     "qwen": {"swiglu_mlp", "residual_norm"},
     "gpt_oss": {"residual_norm"},
     "mixtral": {"moe_mlp"},
-    "glm": {"moe_mlp", "swiglu_mlp"},
+    # GLM: moe_mlp/swiglu_mlp are fidelity-safe (validated) as of 2026-02-04.
+    "glm": set(),
 }
 
 # Patterns known to regress performance per model family.
 _PERF_EXCLUDES: dict[str, set[str]] = {
     "qwen": {"moe_mlp"},
+    "glm": {"moe_mlp"},
 }
 
 
@@ -242,6 +244,34 @@ def patch(
     family = _model_family(model)
     fidelity_risks = set(_FIDELITY_EXCLUDES.get(family, set()))
     perf_risks = set(_PERF_EXCLUDES.get(family, set()))
+    # Qwen3: moe_mlp is only a perf risk when fused SwiGLU is unavailable.
+    # When `mx.gather_qmm_swiglu` exists, moe_mlp is typically decode-positive.
+    if family == "qwen" and "moe_mlp" in perf_risks:
+        try:
+            from ..kernels.fused_moe import has_gather_qmm_swiglu
+
+            if has_gather_qmm_swiglu():
+                perf_risks.discard("moe_mlp")
+        except Exception:
+            # If detection fails, keep the conservative perf exclude.
+            pass
+    # GLM: fused SwiGLU is the primary win (and keeps moe_mlp from regressing).
+    # On stock MLX (no `mx.gather_qmm_swiglu`), default patches are typically
+    # neutral-to-negative, so keep them excluded unless the fused primitive
+    # is available (or the user explicitly overrides).
+    if family == "glm":
+        try:
+            from ..kernels.fused_moe import has_gather_qmm_swiglu
+
+            has_fused = has_gather_qmm_swiglu()
+        except Exception:
+            has_fused = False
+
+        if has_fused:
+            perf_risks.discard("moe_mlp")
+        else:
+            perf_risks.add("moe_mlp")
+            perf_risks.add("swiglu_mlp")
     allow_perf_risk = os.environ.get("ZMLX_PATCH_ALLOW_PERF_RISK", "").strip().lower() in {
         "1",
         "true",

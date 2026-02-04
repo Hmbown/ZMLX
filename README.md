@@ -60,7 +60,7 @@ Tip: large model downloads use the Hugging Face cache; set `HF_HOME` to control 
 - **Autograd support:** optional custom VJP paths via MLX custom functions.
 - **Benchmarking:** `zmlx.bench.compare()` and `python -m zmlx.bench.report` (repro capsules in `benchmarks/repro_capsules/`).
 - **Training CLI (optional):** `zmlx train`.
-- **Experimental / opt-in:** a custom MLX build for some Qwen3 paths in `mlx_local/`.
+- **Experimental / opt-in:** a local MLX fork in `mlx_local/` for upstream prototyping (and for exposing fused primitives before they land in a release build).
 
 ## Docs & Benchmarks
 
@@ -116,22 +116,26 @@ python -m zmlx.bench.report benchmarks/repro_capsules/<capsule>.json
 
 ZMLX only patches what it recognizes. When a pattern is known to break token fidelity on a model family, `patch()` auto-excludes it.
 
-**Default patching (stock MLX)**
+**Default patching**
 
-Token-identical output with measurable decode improvement (on models where the patterns match).
+Token-identical output with measurable decode improvement (on models where the patterns match, and where the needed fused primitives are available).
 
 | Model | Typical decode change | Fidelity |
 |:--|:--|:--|
 | LFM2-8B-A1B (4-bit / 8-bit) | +5-12% | token-identical |
+| GLM-4.7-Flash-4bit | ~+7% | token-identical (when `mx.gather_qmm_swiglu` is available) |
 | GPT-OSS-20B-MXFP4-Q4 | ~+1% | token-identical |
+| Qwen3-30B-A3B (4-bit) | ~+6% | token-identical (when `mx.gather_qmm_swiglu` is available) |
 
-**Custom MLX kernel (opt-in)**
+**Optional custom MLX fork (research)**
 
-Some Qwen3 speedups require the custom MLX build in `mlx_local/`.
+On released MLX builds that do **not** expose `mx.gather_qmm_swiglu`, ZMLX will skip the
+MoE fused decode paths by default for GLM/Qwen to avoid regressions. Use `smart_patch`
+to auto-benchmark, or use an MLX build that exposes `mx.gather_qmm_swiglu`.
 
-| Model | Typical decode change | Fidelity |
-|:--|:--|:--|
-| Qwen3-30B-A3B-Instruct-2507-4bit | +5-7% | token-identical |
+`mlx_local/` is only needed if you're experimenting with MLX internals or prototyping
+primitives not exposed in Python — or if you want MoE fused decode for models where
+`mx.gather_qmm_swiglu` is required but not available in your installed MLX build.
 
 For unlisted models, run: `python -m zmlx.validate <model>`.
 
@@ -189,13 +193,15 @@ Next steps:
 - 5-minute tutorial: [`docs/QUICKSTART.md`](docs/QUICKSTART.md)
 - Recipes: [`docs/COOKBOOK.md`](docs/COOKBOOK.md)
 - Catalog: [`docs/KERNELS.md`](docs/KERNELS.md)
+- exo integration: [`docs/EXO.md`](docs/EXO.md)
 
 </details>
 
 <details>
 <summary>Custom MLX kernel (opt-in, Qwen3)</summary>
 
-Qwen3 speedups require the custom MLX kernel patch in `mlx_local/` (opt-in).
+Optional: use the custom MLX fork in `mlx_local/` if you're experimenting with MLX
+internals (or if your stock MLX build does not expose `mx.gather_qmm_swiglu`).
 
 Build (one-time):
 

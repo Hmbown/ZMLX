@@ -852,6 +852,73 @@ def moe_combine(expert_outputs: Any, weights: Any) -> Any:
 
 
 @cache
+def _moe_combine_kernel_no_fma(d: int, k: int) -> Any:
+    """Combine kernel that matches MLX's non-FMA multiply+sum semantics.
+
+    MLX computes MoE combine as a float32 multiply followed by a float32
+    reduction, which rounds the product to float32 *before* accumulation.
+    Metal may contract ``acc += w * v`` into an FMA, which can change the final
+    float32 sum enough to flip bfloat16/float16 rounding at ties.  This variant
+    disables contraction to preserve token fidelity on models like GLM-4.
+    """
+    D = int(d)
+    K = int(k)
+    source = f"""
+        #pragma clang fp contract(off)
+        constexpr uint D = {D};
+        constexpr uint K = {K};
+        uint token_idx = thread_position_in_grid.y;
+        uint d_idx = thread_position_in_grid.x;
+
+        float acc = 0.0f;
+        for (uint i = 0; i < K; ++i) {{
+            float w = (float)weights[token_idx * K + i];
+            float v = (float)expert_outputs[(token_idx * K + i) * D + d_idx];
+            float prod = w * v;
+            acc = acc + prod;
+        }}
+        out[token_idx * D + d_idx] = (T)acc;
+    """
+    return metal_kernel(
+        name=f"kk_moe_combine_no_fma_D{D}_K{K}",
+        input_names=["expert_outputs", "weights"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def moe_combine_no_fma(expert_outputs: Any, weights: Any) -> Any:
+    """Combine expert outputs using gating weights, preventing FMA contraction.
+
+    expert_outputs: (..., K, D)
+    weights: (..., K)
+    Returns: (..., D)
+    """
+    original_shape = weights.shape[:-1]
+    K = weights.shape[-1]
+    D = expert_outputs.shape[-1]
+
+    expert_outputs_flat = expert_outputs.reshape(-1, K, D)
+    weights_flat = weights.reshape(-1, K)
+    B = weights_flat.shape[0]
+
+    k = _moe_combine_kernel_no_fma(D, K)
+    out = k(
+        expert_outputs_flat,
+        weights_flat,
+        template=[("T", expert_outputs.dtype)],
+        grid=(D, B, 1),
+        threadgroup=(min(D, 256), 1, 1),
+        output_shapes=[(B, D)],
+        output_dtypes=[expert_outputs.dtype],
+    )[0]
+    return out.reshape((*original_shape, D))
+
+
+@cache
 def _moe_combine_kernel_exact(d: int, k: int) -> Any:
     D = int(d)
     K = int(k)
@@ -1318,6 +1385,7 @@ __all__ = [
     "topk_gating_softmax",
     "moe_dispatch",
     "moe_combine",
+    "moe_combine_no_fma",
     "moe_combine_exact",
     "moe_combine_fp32",
     "gather_qmm_combine",

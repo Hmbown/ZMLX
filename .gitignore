@@ -51,5 +51,7 @@ mlx_local/
 _worktrees/
 stable-diffcoder-mlx/
 experiments/
+exo/
+.aleph/
 NEXT_SESSION_PROMPT.md
 .hf_cache/

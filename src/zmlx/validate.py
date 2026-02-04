@@ -57,7 +57,9 @@ class _ConfigResult:
 # ---------------------------------------------------------------------------
 def _clear_gpu() -> None:
     gc.collect()
-    if hasattr(mx.metal, "clear_cache"):
+    if hasattr(mx, "clear_cache"):
+        mx.clear_cache()
+    elif hasattr(mx.metal, "clear_cache"):
         mx.metal.clear_cache()
 
 
@@ -75,7 +77,14 @@ def _generate_greedy(
     last = None
     token_ids: list[int] = []
 
-    kwargs = gen_kwargs or {}
+    kwargs = dict(gen_kwargs or {})
+    if "kv_bits" in kwargs and kwargs.get("kv_bits") is not None and "prompt_cache" not in kwargs:
+        try:
+            from zmlx.mlx_lm_compat import make_prompt_cache_for_kv_quantization
+
+            kwargs["prompt_cache"] = make_prompt_cache_for_kv_quantization(model)
+        except Exception:
+            pass
     for resp in mlx_lm.stream_generate(
         model,
         tokenizer,
@@ -144,6 +153,14 @@ def _bench_config(
     print(f"  Loading {model_path} ...")
     loaded = mlx_lm.load(model_path)
     model, tokenizer = loaded[0], loaded[1]
+
+    # Optional: some upstream models need small compatibility patches to run
+    # with quantized KV cache generation (kv_bits).
+    kv_bits = int(gen_kwargs["kv_bits"]) if gen_kwargs and "kv_bits" in gen_kwargs else None
+    if kv_bits is not None:
+        from zmlx.mlx_lm_compat import apply_kv_quantization_fixes
+
+        apply_kv_quantization_fixes(model, kv_bits=kv_bits, verbose=True)
 
     patched_count = 0
     if patterns is None and profile is None:
@@ -254,6 +271,12 @@ def main() -> None:
     if args.patterns is not None and args.patch_profile is not None:
         raise SystemExit("Use either --patterns or --patch-profile, not both.")
 
+    # Convenience: allow `--patterns []` / `--patterns none` to mean "no patches".
+    if args.patterns is not None and len(args.patterns) == 1:
+        raw = args.patterns[0].strip().lower()
+        if raw in {"[]", "none", "no", "off"}:
+            args.patterns = []
+
     from zmlx.kv_cache import kv_cache_kwargs
 
     gen_kwargs = kv_cache_kwargs(
@@ -301,7 +324,12 @@ def main() -> None:
     if args.patch_profile:
         patterns_label = f"profile={args.patch_profile}"
     else:
-        patterns_label = args.patterns or "(default FUSED_ACTIVATIONS)"
+        if args.patterns is None:
+            patterns_label = "(default FUSED_ACTIVATIONS)"
+        elif not args.patterns:
+            patterns_label = "[] (no patches)"
+        else:
+            patterns_label = args.patterns
     print(f"  Patterns: {patterns_label}")
     print(f"  Tokens:   {args.max_tokens} greedy (temp=0)")
     print()

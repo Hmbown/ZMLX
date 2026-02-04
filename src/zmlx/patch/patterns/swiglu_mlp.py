@@ -1,8 +1,8 @@
 """SwiGLU MLP pattern: fuse silu(gate) * up into a single ZMLX kernel.
 
 Structural match: module has `gate_proj` + `up_proj` + `down_proj` attributes
-(Llama/Mistral/Qwen MLP pattern).  Also handles the fused `gate_up_proj` + `down_proj`
-variant (Phi-3).
+(Llama/Mistral/Qwen MLP pattern), or `w1` + `w3` + `w2` (LFM/Llama reference).
+Also handles the fused `gate_up_proj` + `down_proj` variant (Phi-3).
 
 Only the activation is fused; linear layers are left untouched (quantized-safe).
 """
@@ -50,6 +50,15 @@ _QSWIGLU_TG_DENY_FAMILY_ENV = "ZMLX_FUSED_QSWIGLU_TG_DENY_FAMILY"
 
 def _is_quantized_linear(module: Any) -> bool:
     return isinstance(module, nn.QuantizedLinear)
+
+
+def _get_swiglu_projections(module: Any) -> tuple[Any, Any, Any] | None:
+    """Return (gate, up, down) projections if the module matches a known layout."""
+    if hasattr(module, "gate_proj") and hasattr(module, "up_proj") and hasattr(module, "down_proj"):
+        return (module.gate_proj, module.up_proj, module.down_proj)
+    if hasattr(module, "w1") and hasattr(module, "w3") and hasattr(module, "w2"):
+        return (module.w1, module.w3, module.w2)
+    return None
 
 
 def _parse_int_env(name: str, default: int) -> int:
@@ -218,10 +227,8 @@ class _SwiGLUMLPPattern:
             return False
         if parent is not None and (hasattr(parent, "router") or hasattr(parent, "gate")):
             return False
-        # Pattern 1: gate_proj + up_proj + down_proj (Llama/Mistral/Qwen)
-        has_gate_up = hasattr(module, "gate_proj") and hasattr(module, "up_proj")
-        has_down = hasattr(module, "down_proj")
-        if has_gate_up and has_down and _is_silu_activation(module):
+        projections = _get_swiglu_projections(module)
+        if projections is not None and _is_silu_activation(module):
             return True
         return False
 
@@ -230,6 +237,10 @@ class _SwiGLUMLPPattern:
 
         def patched_call(self_mod: Any, x: Any) -> Any:
             mode = _get_qswiglu_mode()
+            projections = _get_swiglu_projections(self_mod)
+            if projections is None:
+                return original_call(self_mod, x) if original_call is not None else self_mod.__call__(x)
+            gate_proj, up_proj, down_proj = projections
             if mode != "off":
                 max_tokens = _parse_int_env(_QSWIGLU_MAX_TOKENS_ENV, 1)
                 max_out = _parse_int_env(_QSWIGLU_MAX_OUT_ENV, 2048)
@@ -237,8 +248,6 @@ class _SwiGLUMLPPattern:
                 eps = _parse_float_env(_QSWIGLU_EPS_ENV, 0.0)
                 tg = _parse_int_env(_QSWIGLU_TG_ENV, 0)
                 per_group = _per_group_enabled()
-                gate_proj = self_mod.gate_proj
-                up_proj = self_mod.up_proj
                 if _can_fuse_quant_swiglu(
                     gate_proj,
                     up_proj,
@@ -254,7 +263,7 @@ class _SwiGLUMLPPattern:
                             gate = gate_proj(x)
                             up = up_proj(x)
                             activated = transformer.swiglu2(gate, up)
-                            return self_mod.down_proj(activated)
+                            return down_proj(activated)
                         tokens = _total_tokens(prefix) if prefix else int(x_flat.shape[0])
                         n_out = int(gate_proj.weight.shape[0])
                         n_in = int(x_flat.shape[1])
@@ -262,7 +271,7 @@ class _SwiGLUMLPPattern:
                             gate = gate_proj(x)
                             up = up_proj(x)
                             activated = transformer.swiglu2(gate, up)
-                            return self_mod.down_proj(activated)
+                            return down_proj(activated)
                     if _progressive_enabled():
                         if per_group and tg > 0:
                             tg = 0
@@ -303,10 +312,10 @@ class _SwiGLUMLPPattern:
                     up = up_proj(x)
                     activated = transformer.swiglu2(gate, up)
             else:
-                gate = self_mod.gate_proj(x)
-                up = self_mod.up_proj(x)
+                gate = gate_proj(x)
+                up = up_proj(x)
                 activated = transformer.swiglu2(gate, up)
-            return self_mod.down_proj(activated)
+            return down_proj(activated)
 
         # Store original for unpatch
         module._zmlx_original_call = original_call
