@@ -37,6 +37,7 @@ Changelog = "https://github.com/Hmbown/ZMLX/blob/main/CHANGELOG.md"
 
 [project.scripts]
 zmlx = "zmlx.train.cli:main"
+zmlx-exo = "zmlx.exo:main"
 
 [project.optional-dependencies]
 dev = [
@@ -56,6 +57,9 @@ train = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/zmlx"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/zmlx/_exo_bootstrap" = "zmlx/_exo_bootstrap"
 
 [tool.ruff]
 line-length = 100

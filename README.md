@@ -64,16 +64,14 @@ Tip: large model downloads use the Hugging Face cache; set `HF_HOME` to control 
 
 ## exo Integration
 
-ZMLX works with [exo](https://github.com/exo-explore/exo) for faster GLM-4.7-Flash and Qwen3-30B-A3B decode in distributed inference clusters. Setup is automated:
+ZMLX works with [exo](https://github.com/exo-explore/exo) for faster GLM-4.7-Flash and Qwen3-30B-A3B decode. No source patching needed:
 
 ```bash
-git clone https://github.com/Hmbown/ZMLX.git
-cd ZMLX
-bash setup_zmlx.sh        # one-time setup (creates ./exo + ./exo/run_zmlx.sh)
-bash exo/run_zmlx.sh      # launch exo with ZMLX
+pip install zmlx exo
+python -m zmlx.exo
 ```
 
-When GLM loads, ZMLX fuses all 46 MoE layers + 1 dense SwiGLU (~8% faster decode, token-identical) when the custom MLX primitive is available. See [`docs/EXO.md`](docs/EXO.md) for the full guide.
+ZMLX hooks into exo's model loading at runtime — when GLM loads with the custom MLX primitive, all 46 MoE layers + 1 dense SwiGLU are fused (~8% faster decode, token-identical). See [`docs/EXO.md`](docs/EXO.md) for the full guide including custom MLX build instructions.
 
 ## Docs
 
