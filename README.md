@@ -11,7 +11,9 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 
 - **Metal kernels from Python:** write `elementwise("x * tanh(log(1 + exp(x)))")` and get a compiled Metal kernel with caching, autograd support, and the 70+ kernel catalog.
 - **Model patching:** `patch(model)` replaces MoE gating/combine/activation sequences with fused Metal kernels, reducing dispatch overhead during decode. Token-identical output; verify with `python -m zmlx.validate`.
+- **Optional custom primitive (GLM/Qwen3):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash and Qwen3-30B-A3B (~+8% / ~+6% decode). On stock MLX these models auto-skip safely. See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) and [`docs/EXO.md`](docs/EXO.md).
 - **Proven on stock MLX:** LFM2-8B-A1B shows **+5-12% decode** on released MLX with no custom builds needed. These gains come from ZMLX's own Metal kernels for fused gating, combine, and SwiGLU activation.
+- **Next test target:** Qwen3-80B Coder (planned).
 
 ## Quick Start
 
