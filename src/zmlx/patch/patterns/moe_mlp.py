@@ -145,6 +145,8 @@ def _gating(
 _FUSED_SWIGLU_MAX_TOKENS = 1
 _MOE_STREAMS_ENV = "ZMLX_MOE_STREAMS"
 _MOE_STREAMS_REDUCE_ENV = "ZMLX_MOE_STREAMS_REDUCE"
+_MOE_SHARED_EXPERTS_OVERLAP_ENV = "ZMLX_MOE_SHARED_EXPERTS_OVERLAP"
+_GLM_FUSED_DOWNPROJ_COMBINE_ENV = "ZMLX_GLM_FUSED_DOWNPROJ_COMBINE"
 
 
 def _get_moe_stream_pool() -> list[mx.Stream] | None:
@@ -380,6 +382,102 @@ def _fused_switch_mlp_call(
     return x_out.squeeze(-2)
 
 
+def _fused_switch_mlp_downproj_combine(
+    switch_mlp: Any,
+    x: mx.array,
+    indices: mx.array,
+    gate: mx.array,
+    *,
+    max_tokens: int,
+    no_fma: bool,
+) -> Any | None:
+    """Fuse gate+up+SwiGLU (gather_qmm_swiglu) + down-proj combine.
+
+    This avoids materializing the `(tokens, K, D_out)` expert output tensor.
+    Intended for decode-like shapes (small token counts).
+    """
+    k = int(indices.shape[-1]) if indices.ndim else 1
+    total_tokens = int(indices.size) // max(1, k)
+    if not _should_fuse_swiglu_tokens(total_tokens, max_tokens):
+        return None
+
+    gate_proj = getattr(switch_mlp, "gate_proj", None)
+    up_proj = getattr(switch_mlp, "up_proj", None)
+    down_proj = getattr(switch_mlp, "down_proj", None)
+    if gate_proj is None or up_proj is None or down_proj is None:
+        return None
+    if _is_lora_like(down_proj):
+        return None
+    if getattr(down_proj, "bias", None) is not None:
+        return None
+
+    # Expand dims to match SwitchGLU convention: (B, L, D) -> (B, L, 1, 1, D)
+    x_expanded = mx.expand_dims(x, (-2, -3))
+
+    try:
+        activated = mx.gather_qmm_swiglu(  # type: ignore[attr-defined]
+            x_expanded,
+            gate_proj.weight,
+            gate_proj.scales,
+            gate_proj.get("biases"),
+            up_proj.weight,
+            up_proj.scales,
+            up_proj.get("biases"),
+            rhs_indices=indices,
+            transpose=True,
+            group_size=gate_proj.group_size,
+            bits=gate_proj.bits,
+        )
+    except Exception:
+        return None
+
+    # gather_qmm_swiglu output: (..., K, 1, D_hidden) -> (..., K, D_hidden)
+    activated = activated.squeeze(-2)
+
+    flat = _flatten_for_fused_combine(activated, gate, indices)
+    if flat is None:
+        return None
+    act_flat, gate_flat, indices_flat, out_shape = flat
+
+    if indices_flat.dtype != mx.uint32:
+        indices_flat = indices_flat.astype(mx.uint32)
+
+    is_quantized = _is_quantized_switch_linear(down_proj)
+    if is_quantized:
+        if not hasattr(mx, "gather_qmm"):
+            return None
+        if getattr(down_proj, "mode", "affine") != "affine":
+            return None
+        biases = down_proj.get("biases") if hasattr(down_proj, "get") else None
+        out_flat = moe.gather_qmm_combine_quantized(
+            act_flat,
+            down_proj.weight,
+            down_proj.scales,
+            biases,
+            gate_flat,
+            indices_flat,
+            group_size=down_proj.group_size,
+            bits=down_proj.bits,
+            no_fma=no_fma,
+        )
+    else:
+        weights = getattr(down_proj, "weight", None)
+        if weights is None:
+            return None
+        weights = _prepare_downproj_weights(weights, act_flat.shape[-1])
+        if weights is None:
+            return None
+        out_flat = moe.gather_qmm_combine(
+            act_flat,
+            weights,
+            gate_flat,
+            indices_flat,
+            no_fma=no_fma,
+        )
+
+    return out_flat.reshape((*out_shape, out_flat.shape[-1]))
+
+
 def _try_fused_downproj_combine(
     switch_mlp: Any,
     x: Any,
@@ -537,7 +635,30 @@ class _MoEMLPPattern:
                 f"({len(moe_stream_pool)} streams, reduce={moe_stream_reduce})"
             )
 
+        glm_fused_downproj_combine = os.environ.get(
+            _GLM_FUSED_DOWNPROJ_COMBINE_ENV, ""
+        ).strip().lower() in {"1", "true", "yes"}
+
+        # Optional: overlap GLM/DeepSeek-style `shared_experts(x)` with routed
+        # expert execution. This is experimental and may regress on some MLX
+        # builds/hardware. Enable explicitly via:
+        #   ZMLX_MOE_SHARED_EXPERTS_OVERLAP=1 ZMLX_MOE_STREAMS=2
+        shared_stream = None
+        shared_overlap = os.environ.get(_MOE_SHARED_EXPERTS_OVERLAP_ENV, "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if shared_overlap and moe_stream_pool is not None and len(moe_stream_pool) > 1:
+            shared_stream = moe_stream_pool[1]
+
         def patched_call(self_mod: Any, x: Any) -> Any:
+            shared = getattr(self_mod, "shared_experts", None)
+            shared_out = None
+            if shared is not None and shared_stream is not None:
+                with mx.stream(shared_stream):
+                    shared_out = shared(x)
+
             # 1. Gating — preserve the model's original logic exactly.
             indices, gate_weights = _gating(
                 self_mod,
@@ -552,6 +673,17 @@ class _MoEMLPPattern:
             expert_outputs = None
             if switch_mlp is not None:
                 fused_out = None
+                if is_glm and _use_fused_swiglu and glm_fused_downproj_combine:
+                    fused_out = _fused_switch_mlp_downproj_combine(
+                        switch_mlp,
+                        x,
+                        indices,
+                        gate_weights,
+                        # Decode-only: avoid prefill OOM/regressions from the
+                        # Python-level K-loop (keep this strictly for small M).
+                        max_tokens=min(fused_swiglu_max_tokens, 16),
+                        no_fma=True,  # GLM requires no-FMA semantics for fidelity
+                    )
                 if is_qwen3 or is_lfm2:
                     fused_out = _try_fused_downproj_combine(
                         switch_mlp,
@@ -631,9 +763,8 @@ class _MoEMLPPattern:
                     y = moe.moe_combine(expert_outputs, gate_weights)
 
             # 4. Shared experts (GLM-4, DeepSeek-V3): additive dense path
-            shared = getattr(self_mod, "shared_experts", None)
             if shared is not None:
-                y = y + shared(x)
+                y = y + (shared_out if shared_out is not None else shared(x))
 
             return y
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import cache
 from typing import Any
 
@@ -7,6 +8,49 @@ import mlx.core as mx
 
 from ..metal import kernel as metal_kernel
 from ..msl import DEFAULT_HEADER
+
+
+@dataclass(frozen=True)
+class RoPECosSin:
+    cos: mx.array
+    sin: mx.array
+
+
+@cache
+def _rope_cos_sin(max_seq: int, dims: int, base: float, scale: float) -> RoPECosSin:
+    """Precompute RoPE cos/sin tables for fast custom kernels.
+
+    Matches `mx.fast.rope` exactly by extracting cos/sin from a basis input.
+
+    NOTE: `mx.fast.rope` uses a slightly different sin/cos implementation than
+    `mx.sin`/`mx.cos` (likely fast-math approximations). For float32 models
+    like GLM-4.7-Flash, using `mx.sin`/`mx.cos` can introduce tiny numerical
+    differences that break greedy token fidelity. Deriving the tables from
+    `mx.fast.rope` preserves bit-identical behavior.
+    """
+    D = int(dims)
+    if D % 2 != 0:
+        raise ValueError("_rope_cos_sin: dims must be even")
+    S = int(max_seq)
+    if S <= 0:
+        raise ValueError("_rope_cos_sin: max_seq must be > 0")
+
+    # Construct a basis where each RoPE pair is (1, 0). Under traditional RoPE,
+    # rotation yields (cos, sin) for each pair, so we can read them out.
+    basis = mx.zeros((1, 1, S, D), dtype=mx.float32)
+    basis[..., ::2] = mx.array(1.0, dtype=mx.float32)
+    rotated = mx.fast.rope(
+        basis,
+        D,
+        traditional=True,
+        base=float(base),
+        scale=float(scale),
+        offset=0,
+    )
+    cos = rotated[0, 0, :, ::2]
+    sin = rotated[0, 0, :, 1::2]
+    mx.eval(cos, sin)
+    return RoPECosSin(cos=cos, sin=sin)
 
 
 @cache
@@ -90,13 +134,19 @@ def apply_rope(
     for s in x.shape[:-1]:
         rows *= int(s)
 
-    cd = compute_dtype or mx.float32
+    # NOTE: On bfloat16 outputs, casting float -> bfloat16_t is not implicitly
+    # supported in Metal; use T=x.dtype to ensure correct compilation.
+    # `compute_dtype` is kept for API compatibility but doesn't affect compute
+    # (we compute in float internally).
+    template_t = x.dtype
+    if compute_dtype is not None and x.dtype != mx.bfloat16:
+        template_t = compute_dtype
     k = _rope_kernel(D, S)
     out = k(
         x,
         cos,
         sin,
-        template=[("T", cd)],
+        template=[("T", template_t)],
         grid=(rows * D, 1, 1),
         output_shapes=[x.shape],
         output_dtypes=[x.dtype],
@@ -170,11 +220,13 @@ def apply_rope_interleaved(
         raise ValueError("apply_rope_interleaved: D must be even")
     
     rows = x.size // D
-    cd = compute_dtype or mx.float32
+    template_t = x.dtype
+    if compute_dtype is not None and x.dtype != mx.bfloat16:
+        template_t = compute_dtype
     k = _rope_interleaved_kernel(D, S)
     return k(
         x, cos, sin,
-        template=[("T", cd)],
+        template=[("T", template_t)],
         grid=(rows * D, 1, 1),
         output_shapes=[x.shape],
         output_dtypes=[x.dtype],
@@ -280,7 +332,9 @@ def _rope_cache_update_kernel(d: int, n_heads: int, n_kv_heads: int) -> Any:
         uint head = thread_position_in_grid.y;
         uint batch = thread_position_in_grid.z;
 
-        uint pos = (uint)offset[batch];
+        int p = (int)offset[batch];
+        bool neg = (p < 0);
+        uint pos = (uint)(neg ? -p : p);
         
         // RoPE for Q
         if (head < H) {{
@@ -397,7 +451,9 @@ def _rope_cache_update_kernel_v2(d: int, n_heads: int, n_kv_heads: int) -> Any:
         uint head = thread_position_in_grid.y;
         uint batch = thread_position_in_grid.z;
 
-        uint pos = (uint)offset[batch];
+        int p = (int)offset[batch];
+        bool neg = (p < 0);
+        uint pos = (uint)(neg ? -p : p);
         uint MS = (uint)max_seq[0];
         
         // RoPE for Q
@@ -538,10 +594,382 @@ def paged_rope_and_cache_update(
     return res[0], res[1], res[2]
 
 
+# ---------------------------------------------------------------------------
+# GLM-4.7-Flash (glm4_moe_lite): decode-only fused RoPE + concat
+# ---------------------------------------------------------------------------
+
+@cache
+def _rope_concat_qk_decode_kernel(d_nope: int, d_rope: int, n_q_heads: int) -> Any:
+    """Build (queries, keys) with RoPE applied on the rope-slice (decode, T=1).
+
+    Outputs:
+      - queries: (B, Hq, 1, D_nope + D_rope)
+      - keys:    (B, 1,  1, D_nope + D_rope)
+
+    Assumes interleaved RoPE layout (traditional=True in `mx.fast.rope`).
+    """
+    D_NOPE = int(d_nope)
+    D_ROPE = int(d_rope)
+    H_Q = int(n_q_heads)
+    if D_NOPE <= 0 or D_ROPE <= 0:
+        raise ValueError("_rope_concat_qk_decode_kernel: dims must be > 0")
+    if D_ROPE % 2 != 0:
+        raise ValueError("_rope_concat_qk_decode_kernel: d_rope must be even")
+    if H_Q <= 0:
+        raise ValueError("_rope_concat_qk_decode_kernel: n_q_heads must be > 0")
+
+    D_OUT = D_NOPE + D_ROPE
+    half = D_ROPE // 2
+
+    source = f"""
+        constexpr uint D_NOPE = {D_NOPE};
+        constexpr uint D_ROPE = {D_ROPE};
+        constexpr uint HALF = {half};
+        constexpr uint D_OUT = {D_OUT};
+        constexpr uint H_Q = {H_Q};
+
+        // Per-batch element counts (T == 1)
+        constexpr uint Q_ELEMS_PER_BATCH = H_Q * D_OUT;
+        constexpr uint K_ELEMS_PER_BATCH = D_OUT; // H_K == 1
+        constexpr uint ELEMS_PER_BATCH = Q_ELEMS_PER_BATCH + K_ELEMS_PER_BATCH;
+
+        uint gid = thread_position_in_grid.x;
+        uint batch = gid / ELEMS_PER_BATCH;
+        uint in_batch = gid - batch * ELEMS_PER_BATCH;
+
+        int p = (int)offset[batch];
+        bool neg = (p < 0);
+        uint pos = (uint)(neg ? -p : p);
+
+        if (in_batch < Q_ELEMS_PER_BATCH) {{
+            // queries: (B, H_Q, 1, D_OUT)
+            uint head = in_batch / D_OUT;
+            uint col = in_batch - head * D_OUT;
+
+            uint q_out_base = (batch * H_Q + head) * D_OUT;
+
+            if (col < D_NOPE) {{
+                uint q_nope_base = (batch * H_Q + head) * D_NOPE;
+                q_out[q_out_base + col] = q_nope[q_nope_base + col];
+                return;
+            }}
+
+            // RoPE slice
+            uint r = col - D_NOPE;
+            uint pair = r / 2;
+            float c = (float)cos[pos * HALF + pair];
+            float s = (float)sin[pos * HALF + pair];
+            if (neg) s = -s;
+
+            uint q_rope_base = (batch * H_Q + head) * D_ROPE;
+            if ((r & 1u) == 0u) {{
+                float a = (float)q_rope[q_rope_base + r];
+                float b = (float)q_rope[q_rope_base + r + 1];
+                q_out[q_out_base + col] = (T)(a * c - b * s);
+            }} else {{
+                float a = (float)q_rope[q_rope_base + r - 1];
+                float b = (float)q_rope[q_rope_base + r];
+                q_out[q_out_base + col] = (T)(a * s + b * c);
+            }}
+            return;
+        }}
+
+        // keys: (B, 1, 1, D_OUT)
+        uint k_col = in_batch - Q_ELEMS_PER_BATCH;
+        uint k_out_base = batch * D_OUT;
+        if (k_col < D_NOPE) {{
+            uint kv_nope_base = batch * D_NOPE;
+            k_out[k_out_base + k_col] = kv_nope[kv_nope_base + k_col];
+            return;
+        }}
+
+        uint kr = k_col - D_NOPE;
+        uint kpair = kr / 2;
+        float kc = (float)cos[pos * HALF + kpair];
+        float ks = (float)sin[pos * HALF + kpair];
+        if (neg) ks = -ks;
+        uint k_rope_base = batch * D_ROPE;
+        if ((kr & 1u) == 0u) {{
+            float a = (float)k_rope[k_rope_base + kr];
+            float b = (float)k_rope[k_rope_base + kr + 1];
+            k_out[k_out_base + k_col] = (T)(a * kc - b * ks);
+        }} else {{
+            float a = (float)k_rope[k_rope_base + kr - 1];
+            float b = (float)k_rope[k_rope_base + kr];
+            k_out[k_out_base + k_col] = (T)(a * ks + b * kc);
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_rope_concat_qk_decode_dn{D_NOPE}_dr{D_ROPE}_hq{H_Q}",
+        input_names=["q_nope", "q_rope", "kv_nope", "k_rope", "cos", "sin", "offset"],
+        output_names=["q_out", "k_out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def rope_concat_qk_decode(
+    q_nope: Any,
+    q_rope: Any,
+    kv_nope: Any,
+    k_rope: Any,
+    cos: Any,
+    sin: Any,
+    offset: Any,
+) -> tuple[Any, Any]:
+    """Decode-only fused helper to build Q/K with RoPE applied and concatenated.
+
+    Intended for GLM-4.7-Flash (glm4_moe_lite), where decode uses `T=1` and
+    RoPE is applied to a 64-dim slice (`traditional=True`).
+    """
+    if q_nope.ndim != 4 or q_rope.ndim != 4:
+        raise ValueError("rope_concat_qk_decode: q_nope and q_rope must be 4D (B,H,1,D)")
+    if kv_nope.ndim != 4 or k_rope.ndim != 4:
+        raise ValueError("rope_concat_qk_decode: kv_nope and k_rope must be 4D (B,1,1,D)")
+    if int(q_nope.shape[2]) != 1 or int(q_rope.shape[2]) != 1:
+        raise ValueError("rope_concat_qk_decode: requires T=1 (decode)")
+    if int(kv_nope.shape[2]) != 1 or int(k_rope.shape[2]) != 1:
+        raise ValueError("rope_concat_qk_decode: requires T=1 (decode)")
+
+    B = int(q_nope.shape[0])
+    Hq = int(q_nope.shape[1])
+    if int(q_rope.shape[0]) != B or int(q_rope.shape[1]) != Hq:
+        raise ValueError("rope_concat_qk_decode: q_rope must match q_nope batch/head dims")
+    if int(kv_nope.shape[0]) != B or int(k_rope.shape[0]) != B:
+        raise ValueError("rope_concat_qk_decode: kv_nope/k_rope must match batch size")
+    if int(kv_nope.shape[1]) != 1 or int(k_rope.shape[1]) != 1:
+        raise ValueError("rope_concat_qk_decode: kv_nope/k_rope must have 1 KV head")
+
+    d_nope = int(q_nope.shape[-1])
+    d_rope = int(q_rope.shape[-1])
+    if int(kv_nope.shape[-1]) != d_nope or int(k_rope.shape[-1]) != d_rope:
+        raise ValueError("rope_concat_qk_decode: K/V dims must match Q dims")
+    if d_rope % 2 != 0:
+        raise ValueError("rope_concat_qk_decode: d_rope must be even")
+    if int(cos.ndim) != 2 or int(sin.ndim) != 2:
+        raise ValueError("rope_concat_qk_decode: cos/sin must be 2D (S, d_rope/2)")
+    if int(cos.shape[1]) != d_rope // 2 or int(sin.shape[1]) != d_rope // 2:
+        raise ValueError("rope_concat_qk_decode: cos/sin second dim must be d_rope/2")
+
+    # Normalize offsets: allow int, scalar array, or (B,) vector.
+    if not isinstance(offset, mx.array):
+        offs = mx.full((B,), int(offset), dtype=mx.int32)
+    else:
+        offs = offset
+        if int(offs.ndim) == 0:
+            offs = mx.broadcast_to(offs, (B,))
+        if int(offs.ndim) != 1 or int(offs.shape[0]) != B:
+            raise ValueError("rope_concat_qk_decode: offset must be scalar or (B,) array")
+        if offs.dtype != mx.int32:
+            offs = offs.astype(mx.int32)
+
+    D_OUT = d_nope + d_rope
+    k = _rope_concat_qk_decode_kernel(d_nope, d_rope, Hq)
+    q_out_shape = (B, Hq, 1, D_OUT)
+    k_out_shape = (B, 1, 1, D_OUT)
+    total_threads = B * (Hq + 1) * D_OUT
+
+    q_out, k_out = k(
+        q_nope,
+        q_rope,
+        kv_nope,
+        k_rope,
+        cos,
+        sin,
+        offs,
+        template=[("T", q_nope.dtype)],
+        grid=(total_threads, 1, 1),
+        output_shapes=[q_out_shape, k_out_shape],
+        output_dtypes=[q_nope.dtype, q_nope.dtype],
+    )
+    return q_out, k_out
+
+
+@cache
+def _rope_concat_qk_decode_pos_kernel(d_nope: int, d_rope: int, n_q_heads: int) -> Any:
+    """Same as `_rope_concat_qk_decode_kernel`, but uses a single cos/sin row.
+
+    Inputs:
+      - cos, sin: (D_rope/2,) for the current position (already offset-applied)
+
+    This avoids allocating an `(B,)` offset array per decode step.
+    """
+    D_NOPE = int(d_nope)
+    D_ROPE = int(d_rope)
+    H_Q = int(n_q_heads)
+    if D_NOPE <= 0 or D_ROPE <= 0:
+        raise ValueError("_rope_concat_qk_decode_pos_kernel: dims must be > 0")
+    if D_ROPE % 2 != 0:
+        raise ValueError("_rope_concat_qk_decode_pos_kernel: d_rope must be even")
+    if H_Q <= 0:
+        raise ValueError("_rope_concat_qk_decode_pos_kernel: n_q_heads must be > 0")
+
+    D_OUT = D_NOPE + D_ROPE
+    half = D_ROPE // 2
+
+    source = f"""
+        constexpr uint D_NOPE = {D_NOPE};
+        constexpr uint D_ROPE = {D_ROPE};
+        constexpr uint HALF = {half};
+        constexpr uint D_OUT = {D_OUT};
+        constexpr uint H_Q = {H_Q};
+
+        // Per-batch element counts (T == 1)
+        constexpr uint Q_ELEMS_PER_BATCH = H_Q * D_OUT;
+        constexpr uint K_ELEMS_PER_BATCH = D_OUT; // H_K == 1
+        constexpr uint ELEMS_PER_BATCH = Q_ELEMS_PER_BATCH + K_ELEMS_PER_BATCH;
+
+        uint gid = thread_position_in_grid.x;
+        uint batch = gid / ELEMS_PER_BATCH;
+        uint in_batch = gid - batch * ELEMS_PER_BATCH;
+
+        if (in_batch < Q_ELEMS_PER_BATCH) {{
+            // queries: (B, H_Q, 1, D_OUT)
+            uint head = in_batch / D_OUT;
+            uint col = in_batch - head * D_OUT;
+
+            uint q_out_base = (batch * H_Q + head) * D_OUT;
+
+            if (col < D_NOPE) {{
+                uint q_nope_base = (batch * H_Q + head) * D_NOPE;
+                q_out[q_out_base + col] = q_nope[q_nope_base + col];
+                return;
+            }}
+
+            // RoPE slice (traditional/interleaved)
+            uint r = col - D_NOPE;
+            uint pair = r / 2;
+            float c = (float)cos[pair];
+            float s = (float)sin[pair];
+
+            uint q_rope_base = (batch * H_Q + head) * D_ROPE;
+            if ((r & 1u) == 0u) {{
+                float a = (float)q_rope[q_rope_base + r];
+                float b = (float)q_rope[q_rope_base + r + 1];
+                q_out[q_out_base + col] = (T)(a * c - b * s);
+            }} else {{
+                float a = (float)q_rope[q_rope_base + r - 1];
+                float b = (float)q_rope[q_rope_base + r];
+                q_out[q_out_base + col] = (T)(a * s + b * c);
+            }}
+            return;
+        }}
+
+        // keys: (B, 1, 1, D_OUT)
+        uint k_col = in_batch - Q_ELEMS_PER_BATCH;
+        uint k_out_base = batch * D_OUT;
+        if (k_col < D_NOPE) {{
+            uint kv_nope_base = batch * D_NOPE;
+            k_out[k_out_base + k_col] = kv_nope[kv_nope_base + k_col];
+            return;
+        }}
+
+        uint kr = k_col - D_NOPE;
+        uint kpair = kr / 2;
+        float kc = (float)cos[kpair];
+        float ks = (float)sin[kpair];
+        uint k_rope_base = batch * D_ROPE;
+        if ((kr & 1u) == 0u) {{
+            float a = (float)k_rope[k_rope_base + kr];
+            float b = (float)k_rope[k_rope_base + kr + 1];
+            k_out[k_out_base + k_col] = (T)(a * kc - b * ks);
+        }} else {{
+            float a = (float)k_rope[k_rope_base + kr - 1];
+            float b = (float)k_rope[k_rope_base + kr];
+            k_out[k_out_base + k_col] = (T)(a * ks + b * kc);
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_rope_concat_qk_decode_pos_dn{D_NOPE}_dr{D_ROPE}_hq{H_Q}",
+        input_names=["q_nope", "q_rope", "kv_nope", "k_rope", "cos", "sin"],
+        output_names=["q_out", "k_out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def rope_concat_qk_decode_pos(
+    q_nope: Any,
+    q_rope: Any,
+    kv_nope: Any,
+    k_rope: Any,
+    cos: Any,
+    sin: Any,
+) -> tuple[Any, Any]:
+    """Decode-only fused helper with a pre-selected (cos, sin) row.
+
+    Shapes:
+      - q_nope, q_rope: (B, Hq, 1, D)
+      - kv_nope, k_rope: (B, 1, 1, D)
+      - cos, sin: (D_rope/2,)
+    """
+    if q_nope.ndim != 4 or q_rope.ndim != 4:
+        raise ValueError(
+            "rope_concat_qk_decode_pos: q_nope and q_rope must be 4D (B,H,1,D)"
+        )
+    if kv_nope.ndim != 4 or k_rope.ndim != 4:
+        raise ValueError(
+            "rope_concat_qk_decode_pos: kv_nope and k_rope must be 4D (B,1,1,D)"
+        )
+    if int(q_nope.shape[2]) != 1 or int(q_rope.shape[2]) != 1:
+        raise ValueError("rope_concat_qk_decode_pos: requires T=1 (decode)")
+    if int(kv_nope.shape[2]) != 1 or int(k_rope.shape[2]) != 1:
+        raise ValueError("rope_concat_qk_decode_pos: requires T=1 (decode)")
+
+    B = int(q_nope.shape[0])
+    Hq = int(q_nope.shape[1])
+    if int(q_rope.shape[0]) != B or int(q_rope.shape[1]) != Hq:
+        raise ValueError(
+            "rope_concat_qk_decode_pos: q_rope must match q_nope batch/head dims"
+        )
+    if int(kv_nope.shape[0]) != B or int(k_rope.shape[0]) != B:
+        raise ValueError("rope_concat_qk_decode_pos: kv_nope/k_rope must match batch size")
+    if int(kv_nope.shape[1]) != 1 or int(k_rope.shape[1]) != 1:
+        raise ValueError("rope_concat_qk_decode_pos: kv_nope/k_rope must have 1 KV head")
+
+    d_nope = int(q_nope.shape[-1])
+    d_rope = int(q_rope.shape[-1])
+    if int(kv_nope.shape[-1]) != d_nope or int(k_rope.shape[-1]) != d_rope:
+        raise ValueError("rope_concat_qk_decode_pos: K/V dims must match Q dims")
+    if d_rope % 2 != 0:
+        raise ValueError("rope_concat_qk_decode_pos: d_rope must be even")
+    if int(cos.ndim) != 1 or int(sin.ndim) != 1:
+        raise ValueError("rope_concat_qk_decode_pos: cos/sin must be 1D (d_rope/2,)")
+    if int(cos.shape[0]) != d_rope // 2 or int(sin.shape[0]) != d_rope // 2:
+        raise ValueError("rope_concat_qk_decode_pos: cos/sin length must be d_rope/2")
+
+    D_OUT = d_nope + d_rope
+    k = _rope_concat_qk_decode_pos_kernel(d_nope, d_rope, Hq)
+    q_out_shape = (B, Hq, 1, D_OUT)
+    k_out_shape = (B, 1, 1, D_OUT)
+    total_threads = B * (Hq + 1) * D_OUT
+
+    q_out, k_out = k(
+        q_nope,
+        q_rope,
+        kv_nope,
+        k_rope,
+        cos,
+        sin,
+        template=[("T", q_nope.dtype)],
+        grid=(total_threads, 1, 1),
+        output_shapes=[q_out_shape, k_out_shape],
+        output_dtypes=[q_nope.dtype, q_nope.dtype],
+    )
+    return q_out, k_out
+
+
 __all__ = [
     "apply_rope",
     "apply_rope_interleaved",
     "apply_gqa_rope",
+    "RoPECosSin",
+    "rope_concat_qk_decode",
+    "rope_concat_qk_decode_pos",
     "rope_and_cache_update",
     "paged_rope_and_cache_update",
 ]

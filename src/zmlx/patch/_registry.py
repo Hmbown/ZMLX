@@ -37,6 +37,7 @@ def _ensure_loaded() -> None:
         return
     from .patterns import (  # noqa: F401
         geglu_mlp,
+        glm47_rope,
         layernorm,
         moe_mlp,
         residual_norm,
