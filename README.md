@@ -11,9 +11,60 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 
 - **Metal kernels from Python:** write `elementwise("x * tanh(log(1 + exp(x)))")` and get a compiled Metal kernel with caching, autograd support, and the 70+ kernel catalog.
 - **Model patching:** `patch(model)` replaces MoE gating/combine/activation sequences with fused Metal kernels, reducing dispatch overhead during decode. Token-identical output; verify with `python -m zmlx.validate`.
-- **Optional custom primitive (GLM/Qwen3):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash and Qwen3-30B-A3B (see the “custom MLX primitive” benchmark table + capsules below). On stock MLX these models auto-skip safely. See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) and [`docs/EXO.md`](docs/EXO.md).
+- **Optional custom primitive (GLM/Qwen3):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash and Qwen3-30B-A3B. See the GLM-4.7-Flash stress benchmark results below + [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md). On stock MLX these models auto-skip safely.
 - **Proven on stock MLX:** LFM2-8B-A1B shows **+5-12% decode** on released MLX with no custom builds needed. These gains come from ZMLX's own Metal kernels for fused gating, combine, and SwiGLU activation.
 - **Next test target:** Qwen3-80B Coder (planned).
+
+## GLM-4.7-Flash — Stress-Benchmark-Verified Decode Speedups (Custom Primitive)
+
+ZMLX's flagship result is **token-identical decode speedups** on `mlx-community/GLM-4.7-Flash-4bit` when running with a custom MLX build that includes `gather_qmm_swiglu` (see [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md)).
+
+**Stress benchmark protocol:** 5 prompts × 3 generation lengths × 5 runs (15 configs), greedy decode, token-by-token fidelity across configs. The benchmark runner is [`benchmarks/bench_glm_stress.py`](benchmarks/bench_glm_stress.py).
+
+**Result (Apple M4 Max 36 GB, MLX `0.30.4.dev20260204+2f324cc`):** 76.9 → 83.4 tok/s average decode throughput (**+8.5%**), **15/15 configs token-identical**. Capsule: [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json).
+
+**Speedup vs length (avg across prompts)**
+| Length | Avg Baseline | Avg Patched | Avg Speedup |
+|:--|--:|--:|--:|
+| 256 | 79.9 | 88.2 | **1.104x** |
+| 1024 | 77.3 | 82.8 | 1.070x |
+| 2048 | 73.1 | 79.6 | **1.089x** |
+
+**Speedup vs prompt type (avg across lengths)**
+| Prompt | Avg Baseline | Avg Patched | Avg Speedup |
+|:--|--:|--:|--:|
+| english_technical | 76.6 | 80.5 | 1.052x |
+| chinese | 75.4 | 82.3 | **1.092x** |
+| code | 75.3 | 84.1 | **1.117x** |
+| math_reasoning | 78.6 | 85.2 | **1.085x** |
+| creative | 78.0 | 85.5 | **1.096x** |
+
+Reproduce on your machine (writes a new capsule + log):
+
+```bash
+source .venv/bin/activate
+
+python benchmarks/bench_glm_stress.py \
+  --prompts english_technical,chinese,code,math_reasoning,creative \
+  --lengths 256,1024,2048 \
+  --runs 5 \
+  --json-out benchmarks/repro_capsules/glm_stress_<your_machine>_<date>.json
+```
+
+### What We Learned (Hypotheses)
+
+- **Prompt-dependent speedups:** the stress test shows larger gains on some prompt types (e.g. `code`) than others (e.g. `english_technical`). A working hypothesis is that **expert routing distributions** differ across prompt styles (hot experts vs high-entropy routing), which changes how much overhead the fused expert path saves.
+- **Benchmarking needs diversity:** single-prompt validation can over/under-estimate performance; the 15-config stress protocol catches these differences and is the recommended regression gate for GLM work.
+
+### Next Steps
+
+- Add an **opt-in routing histogram** mode (log Top‑K expert IDs/weights during the stress run) to correlate routing entropy with speedups and identify “hot” experts worth special-casing.
+- Try additional **GLM-specific fusions** behind flags and validate with the same stress protocol:
+  - partial‑RoPE kernel (skip unrotated dims)
+  - KV cache quantization compatibility (enable `--kv-bits` safely)
+  - down‑proj + combine fusion (likely needs a single primitive to avoid Python per-expert loops)
+  - overlap shared expert with routed experts (stream pool parallelism)
+  - low‑rank attention projection fusion (reduce dispatches per attention layer)
 
 ## DeepSeek-V3.2 + Kimi-K2.5 Experiments (Experimental)
 
@@ -167,35 +218,11 @@ As of **2026-02-05**, ZMLX also fuses GLM's dense `shared_experts` SwiGLU MLP in
 | GLM-4.7-Flash-4bit | M4 Max 36 GB | 76.9 tok/s -> 83.4 tok/s | **+8.5%** | 15/15 configs identical | [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json) |
 | Qwen3-30B-A3B-4bit | M4 Max 36 GB | 106.6 tok/s -> 115.0 tok/s | +7.9% | 200/200 tokens identical | [`benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json`](benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json) |
 
-**GLM-4.7-Flash stress test (custom primitive, M4 Max, 2026-02-04)**  
-5 runs per config, 5 prompts × 3 lengths, token-identical across all 15 configs.
+For the full GLM-4.7-Flash stress benchmark protocol + tables, see the “GLM-4.7-Flash — Stress-Benchmark-Verified Decode Speedups” section above.
 
-**Speedup vs length (avg across prompts)**  
-| Length | Avg Baseline | Avg Patched | Avg Speedup |
-|:--|--:|--:|--:|
-| 256 | 79.9 | 88.2 | **1.104x** |
-| 1024 | 77.3 | 82.8 | 1.070x |
-| 2048 | 73.1 | 79.6 | **1.089x** |
-
-**Speedup vs prompt (avg across lengths)**  
-| Prompt | Avg Baseline | Avg Patched | Avg Speedup |
-|:--|--:|--:|--:|
-| english_technical | 76.6 | 80.5 | 1.052x |
-| chinese | 75.4 | 82.3 | **1.092x** |
-| code | 75.3 | 84.1 | **1.117x** |
-| math_reasoning | 78.6 | 85.2 | **1.085x** |
-| creative | 78.0 | 85.5 | **1.096x** |
-
-```
-Speedup vs length (avg)
-256  | ██████████ 1.104x
-1024 | ███████    1.070x
-2048 | █████████  1.089x
-```
-
-Tail latency (P99/P50) improved on 12/15 configs; average ratio dropped from 1.148 → 1.108.  
-Capsule: [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json)  
-Full log: `benchmarks/results/glm_stress/glm_stress_full_20260204_103907.log`
+Capsules and logs:
+- Historical full stress run: [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json) (log under `benchmarks/results/glm_stress/`)
+- Re-run using [`benchmarks/bench_glm_stress.py`](benchmarks/bench_glm_stress.py): [`benchmarks/repro_capsules/glm_stress_m4_20260205_d17ab1b.json`](benchmarks/repro_capsules/glm_stress_m4_20260205_d17ab1b.json)
 
 See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) for build instructions.
 
