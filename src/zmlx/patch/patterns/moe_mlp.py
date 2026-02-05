@@ -145,6 +145,7 @@ def _gating(
 _FUSED_SWIGLU_MAX_TOKENS = 1
 _MOE_STREAMS_ENV = "ZMLX_MOE_STREAMS"
 _MOE_STREAMS_REDUCE_ENV = "ZMLX_MOE_STREAMS_REDUCE"
+_MOE_SHARED_EXPERTS_OVERLAP_ENV = "ZMLX_MOE_SHARED_EXPERTS_OVERLAP"
 
 
 def _get_moe_stream_pool() -> list[mx.Stream] | None:
@@ -537,7 +538,26 @@ class _MoEMLPPattern:
                 f"({len(moe_stream_pool)} streams, reduce={moe_stream_reduce})"
             )
 
+        # Optional: overlap GLM/DeepSeek-style `shared_experts(x)` with routed
+        # expert execution. This is experimental and may regress on some MLX
+        # builds/hardware. Enable explicitly via:
+        #   ZMLX_MOE_SHARED_EXPERTS_OVERLAP=1 ZMLX_MOE_STREAMS=2
+        shared_stream = None
+        shared_overlap = os.environ.get(_MOE_SHARED_EXPERTS_OVERLAP_ENV, "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if shared_overlap and moe_stream_pool is not None and len(moe_stream_pool) > 1:
+            shared_stream = moe_stream_pool[1]
+
         def patched_call(self_mod: Any, x: Any) -> Any:
+            shared = getattr(self_mod, "shared_experts", None)
+            shared_out = None
+            if shared is not None and shared_stream is not None:
+                with mx.stream(shared_stream):
+                    shared_out = shared(x)
+
             # 1. Gating — preserve the model's original logic exactly.
             indices, gate_weights = _gating(
                 self_mod,
@@ -631,9 +651,8 @@ class _MoEMLPPattern:
                     y = moe.moe_combine(expert_outputs, gate_weights)
 
             # 4. Shared experts (GLM-4, DeepSeek-V3): additive dense path
-            shared = getattr(self_mod, "shared_experts", None)
             if shared is not None:
-                y = y + shared(x)
+                y = y + (shared_out if shared_out is not None else shared(x))
 
             return y
 

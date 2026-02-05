@@ -38,6 +38,8 @@ class _RunMetrics:
 class _ConfigResult:
     label: str = ""
     runs: list[_RunMetrics] = field(default_factory=list)
+    patched_count: int = 0
+    pattern_counts: dict[str, int] = field(default_factory=dict)
 
     @property
     def median_prompt_tps(self) -> float:
@@ -163,6 +165,7 @@ def _bench_config(
         apply_kv_quantization_fixes(model, kv_bits=kv_bits, verbose=True)
 
     patched_count = 0
+    pattern_counts: dict[str, int] = {}
     if patterns is None and profile is None:
         print("  Applying: patch(model) with model-aware defaults")
         zmlx_patch(model, verbose=True)
@@ -174,15 +177,21 @@ def _bench_config(
         zmlx_patch(model, patterns=patterns, verbose=True)
     else:
         print("  Applying patterns: [] (no patches)")
-        result_attr = getattr(model, "_zmlx_patch_result", None)
-        if result_attr is not None:
-            patched_count = result_attr.patched_count
-        print(f"  Patched {patched_count} modules")
+
+    result_attr = getattr(model, "_zmlx_patch_result", None)
+    if result_attr is not None:
+        patched_count = int(getattr(result_attr, "patched_count", 0) or 0)
+        pattern_counts = dict(getattr(result_attr, "pattern_counts", {}) or {})
+    print(f"  Patched {patched_count} modules")
 
     print("  Warming up ...")
     _warmup(model, tokenizer)
 
-    result = _ConfigResult(label=label)
+    result = _ConfigResult(
+        label=label,
+        patched_count=patched_count,
+        pattern_counts=pattern_counts,
+    )
 
     for i in range(runs):
         print(f"  Run {i + 1}/{runs} ...", end="", flush=True)
