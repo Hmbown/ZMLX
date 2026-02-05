@@ -118,6 +118,15 @@ python -m zmlx.bench.report benchmarks/repro_capsules/<capsule>.json
    - `_try_fused_downproj_combine()` exists in `src/zmlx/patch/patterns/moe_mlp.py`
      but currently only fires for some families (not GLM’s SwitchGLU semantics).
    - Extending it for GLM may save an extra dispatch per MoE layer.
+   - New experiment on this branch:
+     - Env flag: `ZMLX_GLM_FUSED_DOWNPROJ_COMBINE=1`
+     - Implementation: `_fused_switch_mlp_downproj_combine(...)` in
+       `src/zmlx/patch/patterns/moe_mlp.py` (decode-only, no-FMA accumulation)
+     - **Status:** currently marked **unsafe** — running it can crash with Metal
+       OOM (`kIOGPUCommandBufferCallbackErrorOutOfMemory`) due to the extra
+       per-expert matmul loop. The bench harness skips it unless you pass
+       `--allow-unsafe`.
+     - Capsule (records the skip): `benchmarks/repro_capsules/glm47_flash_downproj_combine_m4max_20260205.json`
 
 3) **KV-cache quantization performance**
    - The compatibility path for GLM quantized KV can run, but may regress for
@@ -184,4 +193,3 @@ Where to integrate:
   and the matrix can record “SKIP(RAM)” on smaller machines).
 - **Kimi-K2.5**: may be blocked on an `mlx-lm` model class/config mapping. Once
   it loads through `mlx_lm.load()`, ZMLX-side MoE work should apply.
-
