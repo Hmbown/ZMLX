@@ -1613,6 +1613,7 @@ def gather_qmm_combine_quantized(
 __all__ = [
     "top2_gating_softmax",
     "topk_gating_softmax",
+    "deepseek_router_topk_sigmoid",
     "moe_dispatch",
     "moe_combine",
     "moe_combine_no_fma",
