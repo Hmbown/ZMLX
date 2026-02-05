@@ -36,6 +36,7 @@ def _ensure_loaded() -> None:
     if _PATTERNS:
         return
     from .patterns import (  # noqa: F401
+        deepseek_router,
         geglu_mlp,
         glm47_rope,
         layernorm,

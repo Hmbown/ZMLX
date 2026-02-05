@@ -38,6 +38,38 @@ _TOPK_HEADER = r"""
     } while (0)
 """
 
+_TOPK_TIE_HEADER = r"""
+#define KK_TOPK_BETTER_TIE(v, i, cur_v, cur_i)            \
+    (((v) > (cur_v)) || (((v) == (cur_v)) && ((i) < (cur_i))))
+
+#define KK_TOPK_INIT_TIE(vals, idxs)                      \
+    do {                                                  \
+        for (uint _i = 0; _i < K; ++_i) {                 \
+            (vals)[_i] = -INFINITY;                       \
+            (idxs)[_i] = 0xFFFFFFFFu;                     \
+        }                                                 \
+    } while (0)
+
+#define KK_TOPK_INSERT_TIE(vals, idxs, v, i)              \
+    do {                                                  \
+        if (!KK_TOPK_BETTER_TIE((v), (i), (vals)[K - 1], (idxs)[K - 1])) { \
+            break;                                        \
+        }                                                 \
+        uint _pos = K - 1;                                \
+        for (; _pos > 0; --_pos) {                        \
+            float _pv = (vals)[_pos - 1];                 \
+            uint _pi = (idxs)[_pos - 1];                  \
+            if (!KK_TOPK_BETTER_TIE((v), (i), _pv, _pi)) { \
+                break;                                    \
+            }                                             \
+            (vals)[_pos] = _pv;                           \
+            (idxs)[_pos] = _pi;                           \
+        }                                                 \
+        (vals)[_pos] = (v);                               \
+        (idxs)[_pos] = (i);                               \
+    } while (0)
+"""
+
 
 @cache
 def _topk_gating_simd_kernel(d: int, k: int) -> Any:
@@ -1186,6 +1218,333 @@ def topk_gating_softmax(
     return scores, inds.astype(mx.uint32)
 
 
+# ---------------------------------------------------------------------------
+# DeepSeek/Kimi router: sigmoid affinity + bias (selection only)
+# ---------------------------------------------------------------------------
+
+_DEEPSEEK_ROUTER_SUPPORTED_EXPERTS = {256, 384}
+_DEEPSEEK_ROUTER_K = 8
+
+
+@cache
+def _deepseek_router_topk_sigmoid_kernel(d: int, tg: int, n_group: int, topk_group: int) -> Any:
+    D = int(d)
+    TG = _validate_tg(tg)
+    K = int(_DEEPSEEK_ROUTER_K)
+    N_GROUP = int(n_group)
+    TOPK_GROUP = int(topk_group)
+    if D not in _DEEPSEEK_ROUTER_SUPPORTED_EXPERTS:
+        raise ValueError(
+            f"deepseek_router_topk_sigmoid: fused kernel supports D in "
+            f"{sorted(_DEEPSEEK_ROUTER_SUPPORTED_EXPERTS)}, got D={D}"
+        )
+    if N_GROUP <= 0:
+        raise ValueError("deepseek_router_topk_sigmoid: n_group must be > 0")
+    if TOPK_GROUP <= 0 or TOPK_GROUP > N_GROUP:
+        raise ValueError("deepseek_router_topk_sigmoid: invalid topk_group")
+    if D % N_GROUP != 0:
+        raise ValueError("deepseek_router_topk_sigmoid: n_group must divide D")
+    if N_GROUP > TG:
+        raise ValueError("deepseek_router_topk_sigmoid: n_group must be <= threadgroup size")
+
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint K = {K};
+        constexpr uint TG = {TG};
+        constexpr uint N_GROUP = {N_GROUP};
+        constexpr uint TOPK_GROUP = {TOPK_GROUP};
+        constexpr uint GROUP_SIZE = D / N_GROUP;
+
+        uint gid = thread_position_in_grid.x;
+        uint tid = thread_position_in_threadgroup.x;
+        uint row = gid / TG;
+        uint base = row * D;
+
+        threadgroup float score_buf[D];
+        threadgroup float group_scores[N_GROUP];
+        threadgroup uint keep_mask[N_GROUP];
+
+        threadgroup float val_buf[TG * K];
+        threadgroup uint idx_buf[TG * K];
+
+        thread float vals[K];
+        thread uint idxs[K];
+        KK_TOPK_INIT_TIE(vals, idxs);
+
+        // Pass 1: compute selection scores (sigmoid(logits) + bias)
+        for (uint j = tid; j < D; j += TG) {{
+            float logit = (float)logits[base + j];
+            float affinity = (float)kk_sigmoid(logit);
+            score_buf[j] = affinity + (float)bias[j];
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // Optional: group selection (mask lowest-scoring groups to 0.0)
+        if (N_GROUP > 1) {{
+            if (tid < N_GROUP) {{
+                uint start = tid * GROUP_SIZE;
+                float top1 = -INFINITY;
+                float top2 = -INFINITY;
+                for (uint j = 0; j < GROUP_SIZE; ++j) {{
+                    float v = score_buf[start + j];
+                    if (v > top1) {{
+                        top2 = top1;
+                        top1 = v;
+                    }} else if (v > top2) {{
+                        top2 = v;
+                    }}
+                }}
+                group_scores[tid] = top1 + top2;
+            }}
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+
+            if (tid == 0) {{
+                // Keep TOPK_GROUP groups with highest group_scores.
+                float best_vals[TOPK_GROUP];
+                uint best_idx[TOPK_GROUP];
+                for (uint i = 0; i < TOPK_GROUP; ++i) {{
+                    best_vals[i] = -INFINITY;
+                    best_idx[i] = 0;
+                }}
+                for (uint g = 0; g < N_GROUP; ++g) {{
+                    float v = group_scores[g];
+                    uint pos = TOPK_GROUP;
+                    for (uint i = 0; i < TOPK_GROUP; ++i) {{
+                        float cur = best_vals[i];
+                        uint cur_i = best_idx[i];
+                        bool better = (v > cur) || ((v == cur) && (g < cur_i));
+                        if (better) {{ pos = i; break; }}
+                    }}
+                    if (pos < TOPK_GROUP) {{
+                        for (uint i = TOPK_GROUP - 1; i > pos; --i) {{
+                            best_vals[i] = best_vals[i - 1];
+                            best_idx[i] = best_idx[i - 1];
+                        }}
+                        best_vals[pos] = v;
+                        best_idx[pos] = g;
+                    }}
+                }}
+                for (uint g = 0; g < N_GROUP; ++g) {{
+                    keep_mask[g] = 0;
+                }}
+                for (uint i = 0; i < TOPK_GROUP; ++i) {{
+                    keep_mask[best_idx[i]] = 1;
+                }}
+            }}
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }} else {{
+            if (tid == 0) {{
+                keep_mask[0] = 1;
+            }}
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }}
+
+        // Pass 2: local top-k on masked selection scores
+        for (uint j = tid; j < D; j += TG) {{
+            float v = score_buf[j];
+            if (N_GROUP > 1) {{
+                uint g = j / GROUP_SIZE;
+                if (keep_mask[g] == 0) {{
+                    v = 0.0f;
+                }}
+            }}
+            KK_TOPK_INSERT_TIE(vals, idxs, v, j);
+        }}
+
+        uint off = tid * K;
+        for (uint i = 0; i < K; ++i) {{
+            val_buf[off + i] = vals[i];
+            idx_buf[off + i] = idxs[i];
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (uint st = TG / 2; st > 0; st >>= 1) {{
+            if (tid < st) {{
+                for (uint i = 0; i < K; ++i) {{
+                    vals[i] = val_buf[off + i];
+                    idxs[i] = idx_buf[off + i];
+                }}
+                uint off_b = (tid + st) * K;
+                for (uint i = 0; i < K; ++i) {{
+                    float v = val_buf[off_b + i];
+                    uint idx = idx_buf[off_b + i];
+                    KK_TOPK_INSERT_TIE(vals, idxs, v, idx);
+                }}
+                for (uint i = 0; i < K; ++i) {{
+                    val_buf[off + i] = vals[i];
+                    idx_buf[off + i] = idxs[i];
+                }}
+            }}
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }}
+
+        if (tid == 0) {{
+            float w_vals[K];
+            float sum = 0.0f;
+            for (uint i = 0; i < K; ++i) {{
+                uint idx = idx_buf[i];
+                float logit = (float)logits[base + idx];
+                float affinity = (float)kk_sigmoid(logit);
+                w_vals[i] = affinity;
+                sum += affinity;
+            }}
+            float inv = 1.0f / sum;
+            uint out_base = row * K;
+            for (uint i = 0; i < K; ++i) {{
+                weights[out_base + i] = (T)(w_vals[i] * inv);
+                indices[out_base + i] = idx_buf[i];
+            }}
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_deepseek_router_topk_sigmoid_D{D}_K{K}_TG{TG}",
+        input_names=["logits", "bias"],
+        output_names=["weights", "indices"],
+        source=source,
+        header=DEFAULT_HEADER + _TOPK_TIE_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def _deepseek_router_topk_sigmoid_reference(
+    logits: Any,
+    bias: Any,
+    *,
+    k: int,
+    n_group: int,
+    topk_group: int,
+) -> tuple[Any, Any]:
+    """Pure-MLX reference: DeepSeek group selection + stable top-k."""
+    K = int(k)
+    if K <= 0:
+        raise ValueError("deepseek_router_topk_sigmoid: k must be > 0")
+    if logits.ndim < 1:
+        raise ValueError("deepseek_router_topk_sigmoid: logits must have rank >= 1")
+    D = int(logits.shape[-1])
+    if K > D:
+        raise ValueError(f"deepseek_router_topk_sigmoid: k={K} exceeds D={D}")
+    if bias.ndim != 1 or int(bias.shape[0]) != D:
+        raise ValueError(f"deepseek_router_topk_sigmoid: bias must have shape ({D},)")
+
+    N_GROUP = int(n_group)
+    TOPK_GROUP = int(topk_group)
+    if N_GROUP <= 0:
+        raise ValueError("deepseek_router_topk_sigmoid: n_group must be > 0")
+    if TOPK_GROUP <= 0 or TOPK_GROUP > N_GROUP:
+        raise ValueError("deepseek_router_topk_sigmoid: invalid topk_group")
+    if D % N_GROUP != 0:
+        raise ValueError("deepseek_router_topk_sigmoid: n_group must divide D")
+
+    affinity = mx.sigmoid(logits)
+    scores = affinity + bias
+
+    if N_GROUP > 1 and TOPK_GROUP < N_GROUP:
+        per_group = D // N_GROUP
+        grouped = mx.unflatten(scores, axis=-1, shape=(N_GROUP, per_group))
+        group_scores = mx.topk(grouped, 2, axis=-1).sum(axis=-1, keepdims=False)
+        k_drop = N_GROUP - TOPK_GROUP
+        drop_idx = mx.argpartition(group_scores, kth=k_drop - 1, axis=-1)[..., :k_drop]
+        keep = mx.ones_like(group_scores)
+        keep = mx.put_along_axis(keep, drop_idx, mx.array(0.0, dtype=keep.dtype), axis=-1)
+        grouped = grouped * keep[..., :, None]
+        scores = mx.flatten(grouped, -2, -1)
+
+    idx = mx.arange(D, dtype=mx.int32)
+    neg_inf = mx.array(-float("inf"), dtype=scores.dtype)
+
+    chosen_idx: list[Any] = []
+    chosen_aff: list[Any] = []
+    work = scores
+    for _ in range(K):
+        max_val = mx.max(work, axis=-1, keepdims=True)
+        mask = work == max_val
+        min_idx = mx.min(mx.where(mask, idx, D), axis=-1)
+        chosen_idx.append(min_idx)
+        chosen_aff.append(mx.take_along_axis(affinity, min_idx[..., None], axis=-1)[..., 0])
+        work = mx.where(idx == min_idx[..., None], neg_inf, work)
+
+    indices = mx.stack(chosen_idx, axis=-1).astype(mx.uint32)
+    weights = mx.stack(chosen_aff, axis=-1)
+    weights = weights / mx.sum(weights, axis=-1, keepdims=True)
+    return weights, indices
+
+
+def deepseek_router_topk_sigmoid(
+    logits: Any,
+    bias: Any,
+    *,
+    k: int = _DEEPSEEK_ROUTER_K,
+    n_group: int = 1,
+    topk_group: int = 1,
+    threadgroup: int = 256,
+    compute_dtype: Any | None = None,
+) -> tuple[Any, Any]:
+    """DeepSeek/Kimi router top-k with sigmoid affinity and selection bias.
+
+    The selection scores are ``sigmoid(logits) + bias``, but the returned weights
+    are the normalized sigmoid values (bias does not affect weights).
+
+    Args:
+        logits: Router logits with shape ``(..., Nr)``.
+        bias: Expert bias with shape ``(Nr,)`` (applied only for top-k selection).
+        k: Top-k. Currently optimized for ``k=8``.
+        threadgroup: Threadgroup size for the fused kernel.
+        compute_dtype: Optional dtype for fused compute + output weights.
+
+    Returns:
+        weights: ``(..., k)`` normalized sigmoid affinities.
+        indices: ``(..., k)`` expert indices (uint32), ordered by score desc and
+            index asc (stable tie-break).
+    """
+    cd = compute_dtype or mx.float32
+    logits_cast = logits.astype(cd) if logits.dtype != cd else logits
+    D = int(logits_cast.shape[-1])
+
+    if bias.ndim != 1:
+        if int(bias.size) == D:
+            bias = bias.reshape((D,))
+        else:
+            raise ValueError(f"deepseek_router_topk_sigmoid: bias must have shape ({D},)")
+    if int(bias.shape[0]) != D:
+        raise ValueError(f"deepseek_router_topk_sigmoid: bias must have shape ({D},)")
+    bias_cast = bias.astype(cd) if bias.dtype != cd else bias
+
+    K = int(k)
+    N_GROUP = int(n_group)
+    TOPK_GROUP = int(topk_group)
+    if (
+        K != _DEEPSEEK_ROUTER_K
+        or D not in _DEEPSEEK_ROUTER_SUPPORTED_EXPERTS
+        or N_GROUP <= 0
+        or TOPK_GROUP <= 0
+        or TOPK_GROUP > N_GROUP
+        or D % N_GROUP != 0
+    ):
+        # Reference fallback (group selection + stable tie-break) for unsupported shapes.
+        return _deepseek_router_topk_sigmoid_reference(
+            logits_cast,
+            bias_cast,
+            k=K,
+            n_group=N_GROUP,
+            topk_group=TOPK_GROUP,
+        )
+
+    TG = _validate_tg(threadgroup)
+    kernel = _deepseek_router_topk_sigmoid_kernel(D, TG, N_GROUP, TOPK_GROUP)
+    rows = logits_cast.size // D
+    weights, indices = kernel(
+        logits_cast,
+        bias_cast,
+        template=[("T", cd)],
+        grid=(rows * TG, 1, 1),
+        threadgroup=(TG, 1, 1),
+        output_shapes=[logits_cast.shape[:-1] + (K,), logits_cast.shape[:-1] + (K,)],
+        output_dtypes=[cd, mx.uint32],
+    )
+    return weights, indices
+
+
 @cache
 def _weighted_accumulate_kernel(d_out: int) -> Any:
     """Fused out = acc + gate_weight * projection — avoids materializing gate * proj."""
@@ -1422,6 +1781,7 @@ def gather_qmm_combine_quantized(
 __all__ = [
     "top2_gating_softmax",
     "topk_gating_softmax",
+    "deepseek_router_topk_sigmoid",
     "moe_dispatch",
     "moe_combine",
     "moe_combine_no_fma",
