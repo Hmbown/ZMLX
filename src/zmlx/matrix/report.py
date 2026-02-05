@@ -197,13 +197,13 @@ def to_csv(ledger_path: str | None = None, output: io.TextIOBase | None = None) 
     if not entries:
         # Still write header from catalog
         catalog = load_catalog()
-        writer = csv.writer(buf)
-        writer.writerow([
+        csv_writer = csv.writer(buf)
+        csv_writer.writerow([
             "model_id", "family", "architecture", "quant", "storage_gb",
             "expected_patterns", "excluded_patterns", "status",
         ])
         for m in catalog:
-            writer.writerow([
+            csv_writer.writerow([
                 m.model_id, m.family, m.architecture, m.quant, m.storage_gb,
                 ";".join(m.expected_patterns),
                 ";".join(f"{k}={v}" for k, v in m.excluded_patterns.items()),
@@ -219,13 +219,13 @@ def to_csv(ledger_path: str | None = None, output: io.TextIOBase | None = None) 
             "max_tokens", "gen_tokens", "runs",
             "mlx_version", "zmlx_version", "custom_mlx", "timestamp",
         ]
-        writer = csv.DictWriter(buf, fieldnames=fieldnames)
-        writer.writeheader()
+        dict_writer = csv.DictWriter(buf, fieldnames=fieldnames)
+        dict_writer.writeheader()
         for e in entries:
             d = e.to_dict()
             d["patterns_applied"] = ";".join(d["patterns_applied"])
             row = {k: d.get(k, "") for k in fieldnames}
-            writer.writerow(row)
+            dict_writer.writerow(row)
 
     result = buf.getvalue()
     if output is not None:

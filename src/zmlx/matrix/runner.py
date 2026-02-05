@@ -116,7 +116,7 @@ def run_one(
     if profile is not None:
         patterns_label = f"profile={profile}"
     else:
-        patterns_label = patterns if patterns is not None else "(default)"
+        patterns_label = ", ".join(patterns) if patterns else "(default)"
     print(f"[matrix] Patterns: {patterns_label}")
 
     baseline = _bench_config(

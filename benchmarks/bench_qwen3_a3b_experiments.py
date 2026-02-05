@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""GLM-4.7-Flash experiments: RoPE + shared-expert overlap.
+"""Qwen3-30B-A3B experiments: KV-cache quantization + MoE toggles.
 
 Produces:
   - a repro capsule JSON (validate-style) under benchmarks/repro_capsules/
   - optional matrix entries appended to a JSONL ledger (benchmarks/matrix.jsonl)
 
-This script is intended for quick iteration on GLM-4.7-Flash decode throughput
+This script is intended for quick iteration on Qwen3-30B-A3B decode throughput
 while preserving greedy token fidelity.
 """
 
@@ -24,7 +24,7 @@ from pathlib import Path
 
 import mlx.core as mx
 
-DEFAULT_MODEL = "mlx-community/GLM-4.7-Flash-4bit"
+DEFAULT_MODEL = "mlx-community/Qwen3-30B-A3B-4bit"
 DEFAULT_PROMPT = (
     "Explain the key differences between TCP and UDP protocols, "
     "including their use cases, reliability guarantees, and "
@@ -111,8 +111,8 @@ def _safe_relpath(p: Path) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="bench_glm47_flash_experiments.py",
-        description="Run GLM-4.7-Flash speed experiments and write a repro capsule JSON.",
+        prog="bench_qwen3_a3b_experiments.py",
+        description="Run Qwen3-30B-A3B speed experiments and write a repro capsule JSON.",
     )
     parser.add_argument("--model", type=str, default=DEFAULT_MODEL)
     parser.add_argument("--prompt", type=str, default=DEFAULT_PROMPT)
@@ -154,17 +154,7 @@ def main() -> None:
         default=None,
         help=(
             "Variant names to run (default: all). "
-            "Choices: control_swiglu_moe, control_swiglu_moe_residual_norm, "
-            "control_swiglu_moe_downproj_combine, glm47_rope, "
-            "shared_experts_overlap_streams2"
-        ),
-    )
-    parser.add_argument(
-        "--allow-unsafe",
-        action="store_true",
-        help=(
-            "Run variants marked unsafe. These may crash the Python process "
-            "(e.g. Metal OOM)."
+            "Choices: control_profile_qwen3, control_patterns_moe_mlp"
         ),
     )
     args = parser.parse_args()
@@ -222,46 +212,21 @@ def main() -> None:
 
     variants: list[dict] = [
         {
-            "name": "control_swiglu_moe",
-            "patterns": ["swiglu_mlp", "moe_mlp"],
+            "name": "control_profile_qwen3",
+            "patterns": None,
+            "profile": "qwen3",
             "env": {},
-            "notes": "Control: current best patch set (no RoPE fusion).",
+            "notes": "Control: patch(model, profile='qwen3')",
         },
         {
-            "name": "control_swiglu_moe_residual_norm",
-            "patterns": ["swiglu_mlp", "moe_mlp", "residual_norm"],
+            "name": "control_patterns_moe_mlp",
+            "patterns": ["moe_mlp"],
+            "profile": None,
             "env": {},
-            "notes": (
-                "Experimental: residual_norm fusion (breaks greedy token fidelity on "
-                "GLM-4.7-Flash in current testing)."
-            ),
-        },
-        {
-            "name": "control_swiglu_moe_downproj_combine",
-            "patterns": ["swiglu_mlp", "moe_mlp"],
-            "env": {"ZMLX_GLM_FUSED_DOWNPROJ_COMBINE": "1"},
-            "unsafe": True,
-            "notes": (
-                "Experimental: fuse down-proj + combine for decode-like shapes "
-                "(GLM only; token-fidelity-sensitive)."
-            ),
-        },
-        {
-            "name": "glm47_rope",
-            "patterns": ["swiglu_mlp", "moe_mlp", "glm47_rope"],
-            "env": {},
-            "notes": "Decode-only fused RoPE+concat for glm4_moe_lite attention.",
-        },
-        {
-            "name": "shared_experts_overlap_streams2",
-            "patterns": ["swiglu_mlp", "moe_mlp"],
-            "env": {
-                "ZMLX_MOE_STREAMS": "2",
-                "ZMLX_MOE_SHARED_EXPERTS_OVERLAP": "1",
-            },
-            "notes": "Experimental: overlap shared_experts(x) on a separate stream.",
+            "notes": "Control: patch(model, patterns=['moe_mlp'])",
         },
     ]
+
     if args.variants is not None:
         wanted = {v.strip() for v in args.variants if v.strip()}
         known = {v["name"] for v in variants}
@@ -286,11 +251,18 @@ def main() -> None:
     for v in variants:
         name = v["name"]
         patterns = v["patterns"]
+        profile = v["profile"]
         env = v["env"]
-        unsafe = bool(v.get("unsafe", False))
         note = v["notes"]
 
-        cmd = f"python -m zmlx.validate {model_id} --patterns {' '.join(patterns)} --runs {runs} --max-tokens {max_tokens}"
+        cmd = f"python -m zmlx.validate {model_id} --runs {runs} --max-tokens {max_tokens}"
+        if profile is not None:
+            cmd += f" --patch-profile {profile}"
+        elif patterns:
+            cmd += f" --patterns {' '.join(patterns)}"
+        else:
+            cmd += " --patterns []"
+
         if args.kv_bits is not None:
             cmd += f" --kv-bits {int(args.kv_bits)}"
         if args.kv_group_size is not None:
@@ -304,26 +276,20 @@ def main() -> None:
 
         patched = None
         err: str | None = None
-        if unsafe and not args.allow_unsafe:
-            err = (
-                "SKIPPED: unsafe variant (pass --allow-unsafe to run; "
-                "may crash with Metal OOM)"
-            )
-        else:
-            try:
-                with _temp_env(env):
-                    patched = _bench_config(
-                        model_path=model_id,
-                        label=f"ZMLX Patched ({name})",
-                        patterns=patterns,
-                        profile=None,
-                        prompt=prompt,
-                        max_tokens=max_tokens,
-                        runs=runs,
-                        gen_kwargs=gen_kwargs,
-                    )
-            except Exception as e:
-                err = f"{type(e).__name__}: {e}"
+        try:
+            with _temp_env(env):
+                patched = _bench_config(
+                    model_path=model_id,
+                    label=f"ZMLX Patched ({name})",
+                    patterns=patterns,
+                    profile=profile,
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    runs=runs,
+                    gen_kwargs=gen_kwargs,
+                )
+        except Exception as e:
+            err = f"{type(e).__name__}: {e}"
 
         b_dec = float(baseline_stats["median_decode"])
         b_pre = float(baseline_stats["median_prefill"])
@@ -347,13 +313,10 @@ def main() -> None:
             modules_patched = int(getattr(patched, "patched_count", 0) or 0)
             patterns_applied = sorted(getattr(patched, "pattern_counts", {}).keys())
         else:
-            verdict = "ERROR"
-            if err is not None and err.startswith("SKIPPED"):
-                verdict = "SKIP"
             fidelity = {
                 "matched": 0,
                 "total": int(getattr(b0, "gen_tokens", 0) or 0),
-                "verdict": verdict,
+                "verdict": "ERROR",
             }
             patched_stats = {
                 "prefill_tok_s": [],
@@ -365,7 +328,7 @@ def main() -> None:
             p_dec = 0.0
             p_pre = 0.0
             modules_patched = 0
-            patterns_applied = list(patterns)
+            patterns_applied = list(patterns or ([] if profile is None else [f"profile={profile}"]))
 
         entry = {
             "model": model_id,
@@ -431,3 +394,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
