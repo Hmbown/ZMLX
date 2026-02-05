@@ -23,6 +23,8 @@ ZMLX's flagship result is **token-identical decode speedups** on `mlx-community/
 
 **Result (Apple M4 Max 36 GB, MLX `0.30.4.dev20260204+2f324cc`):** 76.8 → 83.5 tok/s average decode throughput (**+8.8%**, mean of per-config **median** tok/s), **15/15 configs token-identical**. Capsule: [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json).
 
+Recent rerun capsule (same machine + MLX): [`benchmarks/repro_capsules/glm_stress_m4_20260205_d17ab1b.json`](benchmarks/repro_capsules/glm_stress_m4_20260205_d17ab1b.json).
+
 **Speedup vs length (avg across prompts)**
 | Length | Avg Baseline | Avg Patched | Avg Speedup |
 |:--|--:|--:|--:|
