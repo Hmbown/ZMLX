@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "date": "2026-02-05",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.4.dev20260204+2f324cc",
+    "zmlx_version": "0.8.0",
+    "git_commit": "1ddbb84",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_control_swiglu_moe_residual_norm": "python -m zmlx.validate mlx-community/GLM-4.7-Flash-4bit --patterns swiglu_mlp moe_mlp residual_norm --runs 3 --max-tokens 200"
+  },
+  "control_swiglu_moe_residual_norm": {
+    "model": "mlx-community/GLM-4.7-Flash-4bit",
+    "variant": "control_swiglu_moe_residual_norm",
+    "max_tokens": 200,
+    "gen_tokens": 200,
+    "runs": 3,
+    "fidelity": {
+      "matched": 1,
+      "total": 200,
+      "verdict": "FAIL"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        252.6,
+        239.8,
+        240.4
+      ],
+      "decode_tok_s": [
+        68.8,
+        69.7,
+        69.8
+      ],
+      "median_prefill": 240.4,
+      "median_decode": 69.7,
+      "peak_mem_gb": 16.91
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp",
+        "residual_norm",
+        "swiglu_mlp"
+      ],
+      "modules_patched": 140,
+      "prefill_tok_s": [
+        260.4,
+        233.9,
+        239.2
+      ],
+      "decode_tok_s": [
+        67.6,
+        69.0,
+        69.3
+      ],
+      "median_prefill": 239.2,
+      "median_decode": 69.0,
+      "peak_mem_gb": 16.91
+    },
+    "summary": {
+      "decode_speedup": 0.99,
+      "prefill_change": -0.005
+    },
+    "notes": "Experimental: residual_norm fusion (breaks greedy token fidelity on GLM-4.7-Flash in current testing)."
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "meta": {
+    "date": "2026-02-05",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.4.dev20260204+2f324cc",
+    "zmlx_version": "0.8.0",
+    "git_commit": "1ddbb84",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_control_swiglu_moe": "python -m zmlx.validate mlx-community/GLM-4.7-Flash-4bit --patterns swiglu_mlp moe_mlp --runs 3 --max-tokens 200"
+  },
+  "control_swiglu_moe": {
+    "model": "mlx-community/GLM-4.7-Flash-4bit",
+    "variant": "control_swiglu_moe",
+    "max_tokens": 200,
+    "gen_tokens": 200,
+    "runs": 3,
+    "fidelity": {
+      "matched": 200,
+      "total": 200,
+      "verdict": "PASS"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        267.9,
+        265.5,
+        256.9
+      ],
+      "decode_tok_s": [
+        82.2,
+        79.5,
+        78.6
+      ],
+      "median_prefill": 265.5,
+      "median_decode": 79.5,
+      "peak_mem_gb": 16.91
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp",
+        "swiglu_mlp"
+      ],
+      "modules_patched": 93,
+      "prefill_tok_s": [
+        261.2,
+        237.9,
+        233.4
+      ],
+      "decode_tok_s": [
+        71.6,
+        72.4,
+        71.4
+      ],
+      "median_prefill": 237.9,
+      "median_decode": 71.6,
+      "peak_mem_gb": 16.91
+    },
+    "summary": {
+      "decode_speedup": 0.9006,
+      "prefill_change": -0.104
+    },
+    "notes": "Control: current best patch set (no RoPE fusion)."
+  }
+}

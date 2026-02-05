@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.8.1] - 2026-02-05
+
+### Added
+
+- MLX rerun repro capsules for GLM-4.7-Flash, LFM2-8B-A1B, and Qwen3-30B-A3B under `benchmarks/repro_capsules/` with updated `benchmarks/matrix.jsonl` entries.
+- Additional GLM quick-variant reruns (KV quantization start offsets, RoPE, shared-expert overlap, residual norm) to refine next-step guidance.
+
+### Changed
+
+- README benchmark sections refreshed to reference latest rerun capsules for GLM stress and LFM stock-MLX results.
+- README custom-primitive table now highlights Qwen3-30B-A3B best verified rerun (`96.5 -> 104.3 tok/s`, `+8.1%`, token-identical).
+
 ## [0.8.0] - 2026-02-04
 
 ### Added
