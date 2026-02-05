@@ -226,7 +226,10 @@ class _SwiGLUMLPPattern:
         if "switch" in name.lower() or "dispatch" in name.lower():
             return False
         if parent is not None and (hasattr(parent, "router") or hasattr(parent, "gate")):
-            return False
+            # Allow dense shared experts MLPs inside MoE blocks (e.g. GLM-4),
+            # but avoid patching routed expert dispatch modules.
+            if name.lower() != "shared_experts":
+                return False
         projections = _get_swiglu_projections(module)
         if projections is not None and _is_silu_activation(module):
             return True
