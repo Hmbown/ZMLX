@@ -102,6 +102,7 @@ Notes:
      materializing `(T, K, D)` expert outputs at all.
 
 4) **Kimi K2.5 integration**
-   - If/when `mlx-lm` adds a `kimi_k25` model class (or a config mapping),
-     update `_is_deepseek_gate_module()` in `src/zmlx/patch/patterns/deepseek_router.py`
-     to match the new module path.
+   - In current `mlx-lm`, `kimi_k25` is a thin wrapper over `deepseek_v3`, so
+     the gate modules should already match this pattern. If upstream refactors
+     module paths or renames the gate class, update `_is_deepseek_gate_module()`
+     in `src/zmlx/patch/patterns/deepseek_router.py`.
