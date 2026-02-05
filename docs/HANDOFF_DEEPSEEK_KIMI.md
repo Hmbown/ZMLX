@@ -17,6 +17,8 @@ DeepSeek/Kimi-style MoE gating:
   - Supports:
     - `Nr ∈ {256, 384}` routed experts
     - `K = 8`
+    - Grouped routing when `n_group` divides `Nr` (e.g. DeepSeek‑V3.2 uses
+      `n_group=8, topk_group=4`)
   - Falls back to a pure‑MLX reference implementation when unsupported.
 
 - Opt‑in patch pattern (not part of defaults):
@@ -24,10 +26,10 @@ DeepSeek/Kimi-style MoE gating:
   - Patches DeepSeek gate modules (`MoEGate`) to return `(indices, weights)`
     using the fused router kernel.
   - Conservative guards:
-    - `n_group == 1`, `topk_group == 1`
     - `norm_topk_prob == True`
     - `top_k == 8`
     - `n_routed_experts ∈ {256, 384}`
+    - `topk_group <= n_group` and `n_group` divides `n_routed_experts`
 
 - Unit tests:
   - `tests/test_deepseek_router_topk_sigmoid.py`
@@ -57,14 +59,14 @@ python -m zmlx.validate <model_id> \
 Notes:
 - `deepseek_router` only changes gating. `moe_mlp` is still useful to fuse the
   combine step and (when available) fuse SwiGLU for quantized SwitchGLU experts.
-- If the model uses grouped routing (`n_group > 1`), the current pattern will
-  no‑op; extend the kernel/pattern to match the model’s exact semantics first.
+- Grouped routing (`n_group > 1`) is supported as long as `n_group` divides
+  `n_routed_experts`.
 
 ## Next steps (higher ROI)
 
-1) **Grouped routing support** (if DeepSeek/Kimi gate uses `n_group > 1`)
-   - Extend `deepseek_router_topk_sigmoid()` to implement the same group masking
-     logic used upstream before top‑k.
+1) **Broaden router coverage**
+   - Add support for additional `(Nr, K)` combinations if future DeepSeek/Kimi
+     variants change expert counts or top‑k.
 
 2) **Combine-side fusion**
    - Add a fused combine kernel for `shared + Σ(w_k * expert_out_k)` with careful
@@ -78,4 +80,3 @@ Notes:
    - If/when `mlx-lm` adds a `kimi_k25` model class (or a config mapping),
      update `_is_deepseek_gate_module()` in `src/zmlx/patch/patterns/deepseek_router.py`
      to match the new module path.
-

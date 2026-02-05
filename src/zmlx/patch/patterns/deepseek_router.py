@@ -11,7 +11,8 @@ Targets MLX-LM DeepSeek v3/v3.2 style gates where routing is:
 Current fused kernel support:
   - n_routed_experts (Nr): 256 or 384
   - top_k (K): 8
-  - no group selection (n_group == 1)
+  - group selection when ``n_group`` divides ``Nr`` (e.g. DeepSeek-V3.2 uses
+    ``n_group=8, topk_group=4``)
   - norm_topk_prob == True
 """
 
@@ -79,7 +80,9 @@ class _DeepSeekRouterPattern:
             except Exception:
                 return original_call(self_mod, x)
 
-            if top_k != _SUPPORTED_K or n_group != 1 or topk_group != 1 or not norm_topk_prob:
+            if top_k != _SUPPORTED_K or not norm_topk_prob:
+                return original_call(self_mod, x)
+            if n_group <= 0 or topk_group <= 0 or topk_group > n_group:
                 return original_call(self_mod, x)
 
             weight = getattr(self_mod, "weight", None)
@@ -103,6 +106,8 @@ class _DeepSeekRouterPattern:
                 logits,
                 bias,
                 k=top_k,
+                n_group=n_group,
+                topk_group=topk_group,
                 threadgroup=tg,
                 compute_dtype=mx.float32,  # Match MLX-LM reference (sigmoid in float32)
             )

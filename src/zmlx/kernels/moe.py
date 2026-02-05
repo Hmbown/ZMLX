@@ -1227,25 +1227,42 @@ _DEEPSEEK_ROUTER_K = 8
 
 
 @cache
-def _deepseek_router_topk_sigmoid_kernel(d: int, tg: int) -> Any:
+def _deepseek_router_topk_sigmoid_kernel(d: int, tg: int, n_group: int, topk_group: int) -> Any:
     D = int(d)
     TG = _validate_tg(tg)
     K = int(_DEEPSEEK_ROUTER_K)
+    N_GROUP = int(n_group)
+    TOPK_GROUP = int(topk_group)
     if D not in _DEEPSEEK_ROUTER_SUPPORTED_EXPERTS:
         raise ValueError(
             f"deepseek_router_topk_sigmoid: fused kernel supports D in "
             f"{sorted(_DEEPSEEK_ROUTER_SUPPORTED_EXPERTS)}, got D={D}"
         )
+    if N_GROUP <= 0:
+        raise ValueError("deepseek_router_topk_sigmoid: n_group must be > 0")
+    if TOPK_GROUP <= 0 or TOPK_GROUP > N_GROUP:
+        raise ValueError("deepseek_router_topk_sigmoid: invalid topk_group")
+    if D % N_GROUP != 0:
+        raise ValueError("deepseek_router_topk_sigmoid: n_group must divide D")
+    if N_GROUP > TG:
+        raise ValueError("deepseek_router_topk_sigmoid: n_group must be <= threadgroup size")
 
     source = f"""
         constexpr uint D = {D};
         constexpr uint K = {K};
         constexpr uint TG = {TG};
+        constexpr uint N_GROUP = {N_GROUP};
+        constexpr uint TOPK_GROUP = {TOPK_GROUP};
+        constexpr uint GROUP_SIZE = D / N_GROUP;
 
         uint gid = thread_position_in_grid.x;
         uint tid = thread_position_in_threadgroup.x;
         uint row = gid / TG;
         uint base = row * D;
+
+        threadgroup float score_buf[D];
+        threadgroup float group_scores[N_GROUP];
+        threadgroup uint keep_mask[N_GROUP];
 
         threadgroup float val_buf[TG * K];
         threadgroup uint idx_buf[TG * K];
@@ -1254,10 +1271,83 @@ def _deepseek_router_topk_sigmoid_kernel(d: int, tg: int) -> Any:
         thread uint idxs[K];
         KK_TOPK_INIT_TIE(vals, idxs);
 
+        // Pass 1: compute selection scores (sigmoid(logits) + bias)
         for (uint j = tid; j < D; j += TG) {{
             float logit = (float)logits[base + j];
             float affinity = (float)kk_sigmoid(logit);
-            float v = affinity + (float)bias[j];
+            score_buf[j] = affinity + (float)bias[j];
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // Optional: group selection (mask lowest-scoring groups to 0.0)
+        if (N_GROUP > 1) {{
+            if (tid < N_GROUP) {{
+                uint start = tid * GROUP_SIZE;
+                float top1 = -INFINITY;
+                float top2 = -INFINITY;
+                for (uint j = 0; j < GROUP_SIZE; ++j) {{
+                    float v = score_buf[start + j];
+                    if (v > top1) {{
+                        top2 = top1;
+                        top1 = v;
+                    }} else if (v > top2) {{
+                        top2 = v;
+                    }}
+                }}
+                group_scores[tid] = top1 + top2;
+            }}
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+
+            if (tid == 0) {{
+                // Keep TOPK_GROUP groups with highest group_scores.
+                float best_vals[TOPK_GROUP];
+                uint best_idx[TOPK_GROUP];
+                for (uint i = 0; i < TOPK_GROUP; ++i) {{
+                    best_vals[i] = -INFINITY;
+                    best_idx[i] = 0;
+                }}
+                for (uint g = 0; g < N_GROUP; ++g) {{
+                    float v = group_scores[g];
+                    uint pos = TOPK_GROUP;
+                    for (uint i = 0; i < TOPK_GROUP; ++i) {{
+                        float cur = best_vals[i];
+                        uint cur_i = best_idx[i];
+                        bool better = (v > cur) || ((v == cur) && (g < cur_i));
+                        if (better) {{ pos = i; break; }}
+                    }}
+                    if (pos < TOPK_GROUP) {{
+                        for (uint i = TOPK_GROUP - 1; i > pos; --i) {{
+                            best_vals[i] = best_vals[i - 1];
+                            best_idx[i] = best_idx[i - 1];
+                        }}
+                        best_vals[pos] = v;
+                        best_idx[pos] = g;
+                    }}
+                }}
+                for (uint g = 0; g < N_GROUP; ++g) {{
+                    keep_mask[g] = 0;
+                }}
+                for (uint i = 0; i < TOPK_GROUP; ++i) {{
+                    keep_mask[best_idx[i]] = 1;
+                }}
+            }}
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }} else {{
+            if (tid == 0) {{
+                keep_mask[0] = 1;
+            }}
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }}
+
+        // Pass 2: local top-k on masked selection scores
+        for (uint j = tid; j < D; j += TG) {{
+            float v = score_buf[j];
+            if (N_GROUP > 1) {{
+                uint g = j / GROUP_SIZE;
+                if (keep_mask[g] == 0) {{
+                    v = 0.0f;
+                }}
+            }}
             KK_TOPK_INSERT_TIE(vals, idxs, v, j);
         }}
 
@@ -1298,7 +1388,7 @@ def _deepseek_router_topk_sigmoid_kernel(d: int, tg: int) -> Any:
                 w_vals[i] = affinity;
                 sum += affinity;
             }}
-            float inv = 1.0f / (sum + 1e-20f);
+            float inv = 1.0f / sum;
             uint out_base = row * K;
             for (uint i = 0; i < K; ++i) {{
                 weights[out_base + i] = (T)(w_vals[i] * inv);
@@ -1322,8 +1412,10 @@ def _deepseek_router_topk_sigmoid_reference(
     bias: Any,
     *,
     k: int,
+    n_group: int,
+    topk_group: int,
 ) -> tuple[Any, Any]:
-    """Pure-MLX reference: stable top-k on (sigmoid(logits) + bias)."""
+    """Pure-MLX reference: DeepSeek group selection + stable top-k."""
     K = int(k)
     if K <= 0:
         raise ValueError("deepseek_router_topk_sigmoid: k must be > 0")
@@ -1335,8 +1427,28 @@ def _deepseek_router_topk_sigmoid_reference(
     if bias.ndim != 1 or int(bias.shape[0]) != D:
         raise ValueError(f"deepseek_router_topk_sigmoid: bias must have shape ({D},)")
 
+    N_GROUP = int(n_group)
+    TOPK_GROUP = int(topk_group)
+    if N_GROUP <= 0:
+        raise ValueError("deepseek_router_topk_sigmoid: n_group must be > 0")
+    if TOPK_GROUP <= 0 or TOPK_GROUP > N_GROUP:
+        raise ValueError("deepseek_router_topk_sigmoid: invalid topk_group")
+    if D % N_GROUP != 0:
+        raise ValueError("deepseek_router_topk_sigmoid: n_group must divide D")
+
     affinity = mx.sigmoid(logits)
     scores = affinity + bias
+
+    if N_GROUP > 1 and TOPK_GROUP < N_GROUP:
+        per_group = D // N_GROUP
+        grouped = mx.unflatten(scores, axis=-1, shape=(N_GROUP, per_group))
+        group_scores = mx.topk(grouped, 2, axis=-1).sum(axis=-1, keepdims=False)
+        k_drop = N_GROUP - TOPK_GROUP
+        drop_idx = mx.argpartition(group_scores, kth=k_drop - 1, axis=-1)[..., :k_drop]
+        keep = mx.ones_like(group_scores)
+        keep = mx.put_along_axis(keep, drop_idx, mx.array(0.0, dtype=keep.dtype), axis=-1)
+        grouped = grouped * keep[..., :, None]
+        scores = mx.flatten(grouped, -2, -1)
 
     idx = mx.arange(D, dtype=mx.int32)
     neg_inf = mx.array(-float("inf"), dtype=scores.dtype)
@@ -1354,7 +1466,7 @@ def _deepseek_router_topk_sigmoid_reference(
 
     indices = mx.stack(chosen_idx, axis=-1).astype(mx.uint32)
     weights = mx.stack(chosen_aff, axis=-1)
-    weights = weights / (mx.sum(weights, axis=-1, keepdims=True) + 1e-20)
+    weights = weights / mx.sum(weights, axis=-1, keepdims=True)
     return weights, indices
 
 
@@ -1363,6 +1475,8 @@ def deepseek_router_topk_sigmoid(
     bias: Any,
     *,
     k: int = _DEEPSEEK_ROUTER_K,
+    n_group: int = 1,
+    topk_group: int = 1,
     threadgroup: int = 256,
     compute_dtype: Any | None = None,
 ) -> tuple[Any, Any]:
@@ -1397,12 +1511,27 @@ def deepseek_router_topk_sigmoid(
     bias_cast = bias.astype(cd) if bias.dtype != cd else bias
 
     K = int(k)
-    if K != _DEEPSEEK_ROUTER_K or D not in _DEEPSEEK_ROUTER_SUPPORTED_EXPERTS:
-        # Reference fallback (stable tie-break) for unsupported shapes.
-        return _deepseek_router_topk_sigmoid_reference(logits_cast, bias_cast, k=K)
+    N_GROUP = int(n_group)
+    TOPK_GROUP = int(topk_group)
+    if (
+        K != _DEEPSEEK_ROUTER_K
+        or D not in _DEEPSEEK_ROUTER_SUPPORTED_EXPERTS
+        or N_GROUP <= 0
+        or TOPK_GROUP <= 0
+        or TOPK_GROUP > N_GROUP
+        or D % N_GROUP != 0
+    ):
+        # Reference fallback (group selection + stable tie-break) for unsupported shapes.
+        return _deepseek_router_topk_sigmoid_reference(
+            logits_cast,
+            bias_cast,
+            k=K,
+            n_group=N_GROUP,
+            topk_group=TOPK_GROUP,
+        )
 
     TG = _validate_tg(threadgroup)
-    kernel = _deepseek_router_topk_sigmoid_kernel(D, TG)
+    kernel = _deepseek_router_topk_sigmoid_kernel(D, TG, N_GROUP, TOPK_GROUP)
     rows = logits_cast.size // D
     weights, indices = kernel(
         logits_cast,
