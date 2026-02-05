@@ -158,6 +158,8 @@ GLM-4.7-Flash and Qwen3-30B-A3B gains come from `gather_qmm_swiglu`, a **custom 
 
 ZMLX provides the model-side integration: auto-detecting MoE architectures, rewiring forward passes to use the fused primitive, and a deterministic no-FMA combine kernel to preserve token fidelity on GLM.
 
+As of **2026-02-05**, ZMLX also fuses GLM's dense `shared_experts` SwiGLU MLP inside each MoE block (token-identical under greedy decode). Quick capsule (200 tokens, 3 runs): [`benchmarks/repro_capsules/glm47_flash_shared_experts_swiglu_m4max_20260205_1d9ee0e.json`](benchmarks/repro_capsules/glm47_flash_shared_experts_swiglu_m4max_20260205_1d9ee0e.json).
+
 **On stock MLX (released 0.30.4/0.30.5), ZMLX auto-skips these models** (0 modules patched, 0% change) to avoid regressions. `patch()` is always safe to call.
 
 | Model | Hardware | Decode (baseline -> patched) | Change | Fidelity | Capsule |

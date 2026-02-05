@@ -76,6 +76,8 @@ Remove `mlx_local/python` from `PYTHONPATH` to revert to stock MLX.
 | GLM-4.7-Flash-4bit | 76.9 -> 83.4 tok/s | **+8.5%** | 15/15 configs identical | [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](../benchmarks/repro_capsules/glm_stress_m4_20260204.json) |
 | Qwen3-30B-A3B-4bit | 106.6 -> 115.0 tok/s | +7.9% | 200/200 tokens identical | [`benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json`](../benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json) |
 
+Additional GLM capsule (shared `shared_experts` SwiGLU fusion, 200 tokens, 3 runs): [`benchmarks/repro_capsules/glm47_flash_shared_experts_swiglu_m4max_20260205_1d9ee0e.json`](../benchmarks/repro_capsules/glm47_flash_shared_experts_swiglu_m4max_20260205_1d9ee0e.json).
+
 ## Upstream plan
 
 See [`UPSTREAM_PLAN.md`](../UPSTREAM_PLAN.md). The intent is to contribute `gather_qmm_swiglu` to upstream MLX once it has been validated across more models and hardware.
