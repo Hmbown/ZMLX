@@ -133,7 +133,7 @@ python -m zmlx.bench.report benchmarks/repro_capsules/<capsule>.json
      short generation lengths (overhead dominates). Re-benchmark at longer
      lengths (>= 1k tokens) and consider starting quantization after N steps.
 
-## DeepSeek-V3.2 / Kimi-K2.5: MoE fusion idea backlog (token-identical goal)
+## DeepSeek-style MoE (DeepSeek-V3.2 / Kimi-K2.5): fusion idea backlog (token-identical goal)
 
 Below is a blueprint (from a 2026-02-02 document) for adding DeepSeekMoE/Kimi
 fusions. The key is preserving DeepSeek routing **exactly**:

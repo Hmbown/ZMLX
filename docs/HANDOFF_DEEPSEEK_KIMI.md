@@ -1,6 +1,7 @@
-# DeepSeek-V3.2 / Kimi-K2.5 MoE router fusion (handoff)
+# DeepSeek-style MoE router fusion (DeepSeek-V3.2 / Kimi-K2.5) — handoff
 
-Branch: `deepseek-kimi-moe`
+Branch note: if you are on a DeepSeek/Kimi router-fusion branch, align with the
+notes below.
 
 This branch adds a **token-identical** (in current unit tests) fused router for
 DeepSeek/Kimi-style MoE gating:

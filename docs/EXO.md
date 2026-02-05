@@ -2,7 +2,7 @@
 
 ZMLX integrates with [exo](https://github.com/exo-explore/exo) to speed up MoE decode for GLM-4.7-Flash and Qwen3-30B-A3B. The speedup comes from `gather_qmm_swiglu`, a fused Metal primitive that replaces multiple kernel launches per MoE expert per layer with a single dispatch.
 
-**What to expect:** ~8% faster GLM decode, ~6% faster Qwen3 decode, token-identical output.
+**What to expect:** speedups vary by prompt/length/hardware; see the repro capsules referenced below. Output should remain token-identical under greedy decoding (verify with `python -m zmlx.validate`).
 
 ## Quick start
 
@@ -22,12 +22,12 @@ Then open `http://localhost:52416` in your browser and select GLM-4.7-Flash or Q
 
 ## Which models benefit?
 
-| Model | With ZMLX in exo | Notes |
-|:--|:--|:--|
-| GLM-4.7-Flash-4bit | **+8% decode** | 46 MoE layers + 1 dense SwiGLU fused |
-| Qwen3-30B-A3B-4bit | **+6% decode** | MoE expert dispatch fused |
-| LFM2-8B-A1B-4bit | **+5-12% decode** | Works on stock MLX too (no custom build needed) |
-| Other models | No change | `patch()` auto-skips; safe no-op |
+| Model | With ZMLX in exo | Notes | Capsule |
+|:--|:--|:--|:--|
+| GLM-4.7-Flash-4bit | Yes (custom primitive) | MoE expert SwiGLU fused via `gather_qmm_swiglu` | [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](../benchmarks/repro_capsules/glm_stress_m4_20260204.json) |
+| Qwen3-30B-A3B-4bit | Yes (custom primitive) | MoE expert SwiGLU fused via `gather_qmm_swiglu` | [`benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json`](../benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json) |
+| LFM2-8B-A1B-4bit | Yes (stock MLX) | No custom MLX build needed | [`benchmarks/repro_capsules/lfm2_m4max_20260131.json`](../benchmarks/repro_capsules/lfm2_m4max_20260131.json) |
+| Other models | No change | `patch()` auto-skips; safe no-op | — |
 
 GLM and Qwen3 require the custom MLX primitive (`gather_qmm_swiglu`). Without it, ZMLX auto-skips these models — no regressions, but no speedup either.
 
@@ -82,11 +82,10 @@ Additional env vars:
 
 ## Measured results
 
-| Model | Hardware | Baseline | Patched | Change |
-|:--|:--|--:|--:|--:|
-| GLM-4.7-Flash-4bit | M4 Max 36 GB | 85.8 tok/s | 92.8 tok/s | **+8.1%** |
-| GLM-4.7-Flash-4bit | M4 Mac Studio | ~77 tok/s | ~83 tok/s | **+8%** |
-| Qwen3-30B-A3B-4bit | M4 Max 36 GB | 117 tok/s | 123 tok/s | **+5.5%** |
+| Model | Hardware | Baseline | Patched | Change | Capsule |
+|:--|:--|--:|--:|--:|:--|
+| GLM-4.7-Flash-4bit | M4 Max 36 GB | 86.6 tok/s | 92.4 tok/s | +6.7% | [`benchmarks/repro_capsules/glm47_flash_control_m4max_20260205.json`](../benchmarks/repro_capsules/glm47_flash_control_m4max_20260205.json) |
+| Qwen3-30B-A3B-4bit | M4 Max 36 GB | 106.6 tok/s | 115.0 tok/s | +7.9% | [`benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json`](../benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json) |
 
 All results token-identical under greedy decoding.
 

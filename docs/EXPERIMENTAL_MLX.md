@@ -71,10 +71,10 @@ Remove `mlx_local/python` from `PYTHONPATH` to revert to stock MLX.
 
 ## Measured results (M4 Max 36 GB)
 
-| Model | Decode (baseline -> patched) | Change | Fidelity |
-|:--|--:|--:|:--|
-| GLM-4.7-Flash-4bit | 85.8 -> 92.8 tok/s | +8.1% | 128/128 identical |
-| Qwen3-30B-A3B-4bit | 117 -> 123 tok/s | +5.5% | 128/128 identical |
+| Model | Decode (baseline -> patched) | Change | Fidelity | Capsule |
+|:--|--:|--:|:--|:--|
+| GLM-4.7-Flash-4bit | 76.9 -> 83.4 tok/s | **+8.5%** | 15/15 configs identical | [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](../benchmarks/repro_capsules/glm_stress_m4_20260204.json) |
+| Qwen3-30B-A3B-4bit | 106.6 -> 115.0 tok/s | +7.9% | 200/200 tokens identical | [`benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json`](../benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json) |
 
 ## Upstream plan
 

@@ -11,27 +11,27 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 
 - **Metal kernels from Python:** write `elementwise("x * tanh(log(1 + exp(x)))")` and get a compiled Metal kernel with caching, autograd support, and the 70+ kernel catalog.
 - **Model patching:** `patch(model)` replaces MoE gating/combine/activation sequences with fused Metal kernels, reducing dispatch overhead during decode. Token-identical output; verify with `python -m zmlx.validate`.
-- **Optional custom primitive (GLM/Qwen3):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash and Qwen3-30B-A3B (~+8.5% / ~+6% decode). On stock MLX these models auto-skip safely. See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) and [`docs/EXO.md`](docs/EXO.md).
+- **Optional custom primitive (GLM/Qwen3):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash and Qwen3-30B-A3B (see the “custom MLX primitive” benchmark table + capsules below). On stock MLX these models auto-skip safely. See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) and [`docs/EXO.md`](docs/EXO.md).
 - **Proven on stock MLX:** LFM2-8B-A1B shows **+5-12% decode** on released MLX with no custom builds needed. These gains come from ZMLX's own Metal kernels for fused gating, combine, and SwiGLU activation.
 - **Next test target:** Qwen3-80B Coder (planned).
 
-## DeepSeek-V3.2 + Kimi-K2.5 (Experimental)
+## DeepSeek-V3.2 + Kimi-K2.5 Experiments (Experimental)
 
-DeepSeek-V3.2 and Kimi-K2.5 share a DeepSeek-V3-style MoE routing stack. ZMLX
-includes an **opt-in** fused router (`deepseek_router`) plus existing MoE
-combine/SwiGLU fusions (`moe_mlp`, `swiglu_mlp`) that may apply depending on
-your MLX/MLX-LM build.
+DeepSeek-V3.2 and Kimi-K2.5 are **DeepSeek-style MoE** variants. ZMLX provides
+an **opt-in** fused router (`deepseek_router`) plus existing MoE combine/SwiGLU
+fusions (`moe_mlp`, `swiglu_mlp`) that may apply depending on your MLX/MLX-LM
+build.
 
-We have **not** yet validated end-to-end fidelity/throughput on real
-DeepSeek-V3.2 / Kimi-K2.5 weights in this repo due to hardware constraints.
-Community benchmarking help is welcome.
+**Hardware validation needed:** we have not yet run full fidelity + throughput
+validation on actual DeepSeek-V3.2 / Kimi-K2.5 weights in this repo due to
+memory constraints. If you can load these models, community benchmarking would
+help confirm behavior and performance.
 
-If you have a machine that can load these models, the most useful validation is:
+Suggested validation (greedy token fidelity + throughput):
 
 ```bash
 source .venv/bin/activate
 
-# Greedy token fidelity + throughput
 python -m zmlx.validate <model_id> \
   --patterns deepseek_router moe_mlp swiglu_mlp \
   --runs 3 --max-tokens 200
@@ -39,6 +39,8 @@ python -m zmlx.validate <model_id> \
 
 Notes:
 - `deepseek_router` is intentionally opt-in and only changes expert routing.
+- Please share repro capsules under `benchmarks/repro_capsules/` if you record
+  performance results.
 - For exo users, see the quickstart in [`docs/HANDOFF_DEEPSEEK_KIMI.md`](docs/HANDOFF_DEEPSEEK_KIMI.md).
 
 ## Quick Start
@@ -97,7 +99,7 @@ bash setup_zmlx.sh
 bash exo/run_zmlx.sh
 ```
 
-ZMLX hooks into exo's model loading at runtime — when GLM loads with the custom MLX primitive, all 46 MoE layers + 1 dense SwiGLU are fused (~8% faster decode, token-identical). See [`docs/EXO.md`](docs/EXO.md) for the full guide including custom MLX build instructions.
+ZMLX hooks into exo's model loading at runtime — when GLM/Qwen3 load with the custom MLX primitive, MoE expert dispatch is fused. Measured speedups vary by prompt/length; see [`docs/EXO.md`](docs/EXO.md) and repro capsules in `benchmarks/repro_capsules/`.
 
 ## Docs
 
@@ -158,10 +160,10 @@ ZMLX provides the model-side integration: auto-detecting MoE architectures, rewi
 
 **On stock MLX (released 0.30.4/0.30.5), ZMLX auto-skips these models** (0 modules patched, 0% change) to avoid regressions. `patch()` is always safe to call.
 
-| Model | Hardware | Decode (baseline -> patched) | Change | Fidelity |
-|:--|:--|--:|--:|:--|
-| GLM-4.7-Flash-4bit | M4 Max 36 GB | 76.9 tok/s -> 83.4 tok/s | **+8.5%** | 15/15 configs identical |
-| Qwen3-30B-A3B-4bit | M4 Max 36 GB | 117 tok/s -> 123 tok/s | +5.5% | 128/128 identical |
+| Model | Hardware | Decode (baseline -> patched) | Change | Fidelity | Capsule |
+|:--|:--|--:|--:|:--|:--|
+| GLM-4.7-Flash-4bit | M4 Max 36 GB | 76.9 tok/s -> 83.4 tok/s | **+8.5%** | 15/15 configs identical | [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json) |
+| Qwen3-30B-A3B-4bit | M4 Max 36 GB | 106.6 tok/s -> 115.0 tok/s | +7.9% | 200/200 tokens identical | [`benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json`](benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json) |
 
 **GLM-4.7-Flash stress test (custom primitive, M4 Max, 2026-02-04)**  
 5 runs per config, 5 prompts × 3 lengths, token-identical across all 15 configs.
@@ -202,10 +204,10 @@ See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) for build instruction
 
 | Model | Stock MLX | + Custom primitive | What ZMLX does |
 |:--|:--|:--|:--|
-| LFM2-8B-A1B | **+5-12% decode** | same | ZMLX Metal kernels: fused MoE gating + combine + SwiGLU |
-| GLM-4.7-Flash | 0% (auto-skipped) | **+8% decode** | ZMLX patching + custom `gather_qmm_swiglu` primitive |
-| Qwen3-30B-A3B | 0% (auto-skipped) | **+6% decode** | ZMLX patching + custom `gather_qmm_swiglu` primitive |
-| GPT-OSS-20B | ~+1% | same | ZMLX Metal kernel: fused SwiGLU activation |
+| LFM2-8B-A1B | speedup (see stock MLX table) | same | ZMLX Metal kernels: fused MoE gating + combine + SwiGLU |
+| GLM-4.7-Flash | 0% (auto-skipped) | speedup (see custom primitive table) | ZMLX patching + custom `gather_qmm_swiglu` primitive |
+| Qwen3-30B-A3B | 0% (auto-skipped) | speedup (see custom primitive table) | ZMLX patching + custom `gather_qmm_swiglu` primitive |
+| GPT-OSS-20B | fused SwiGLU activation | same | ZMLX Metal kernel: fused SwiGLU activation |
 | Other models | safe no-op | same | `patch()` returns unchanged if no patterns match |
 
 All results are token-identical under greedy decoding. Verify on your hardware with `python -m zmlx.validate <model>`.

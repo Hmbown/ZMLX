@@ -1,6 +1,6 @@
-# DeepSeek-V3.2 / Kimi-K2.5 router fusion (scaffolding)
+# DeepSeek-style MoE router fusion (DeepSeek-V3.2 / Kimi-K2.5) — scaffolding
 
-This branch adds an **opt-in** router kernel + patch pattern for MLX-LM
+This work area adds an **opt-in** router kernel + patch pattern for MLX-LM
 DeepSeek-style MoE routing (used by DeepSeek-V3/V3.2 and Kimi-K2.5).
 
 ## What is fused
@@ -55,4 +55,3 @@ Notes:
 - Add a benchmark runner that writes a repro capsule under
   `benchmarks/repro_capsules/` for DeepSeek/Kimi models (so any perf claims are
   fully reproducible).
-
