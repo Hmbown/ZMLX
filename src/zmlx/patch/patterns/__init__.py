@@ -1,6 +1,7 @@
 """Built-in patch patterns for common model architectures."""
 
 from . import (
+    deepseek_router,
     geglu_mlp,
     layernorm,
     moe_mlp,
@@ -11,6 +12,7 @@ from . import (
 )
 
 __all__ = [
+    "deepseek_router",
     "rmsnorm",
     "layernorm",
     "swiglu_mlp",
