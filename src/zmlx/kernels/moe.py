@@ -1209,6 +1209,35 @@ def _weighted_accumulate_kernel(d_out: int) -> Any:
     )
 
 
+@cache
+def _weighted_accumulate_kernel_no_fma(d_out: int) -> Any:
+    """Like `_weighted_accumulate_kernel` but prevents FMA contraction.
+
+    This mirrors `moe_combine_no_fma` and is needed for token-fidelity on some
+    models (e.g. GLM) where Metal's default FP contraction can change rounding.
+    """
+    D_out = int(d_out)
+    source = f"""
+        #pragma clang fp contract(off)
+        uint elem = thread_position_in_grid.x;
+        constexpr uint D = {D_out};
+        uint row = elem / D;
+        float w = (float)gate[row];
+        float v = (float)proj[elem];
+        float prod = w * v;
+        out[elem] = (T)((float)acc[elem] + prod);
+    """
+    return metal_kernel(
+        name=f"kk_weighted_accumulate_no_fma_D{D_out}",
+        input_names=["acc", "proj", "gate"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
 def _should_use_streaming(batch_size: int, streaming: bool | None) -> bool:
     """Decide whether to use streaming accumulation.
 
@@ -1227,6 +1256,7 @@ def gather_qmm_combine(
     indices: Any,
     *,
     streaming: bool | None = None,
+    no_fma: bool = False,
 ) -> Any:
     """Fused gather-matmul-combine for MoE down-projection (dense weights).
 
@@ -1268,7 +1298,11 @@ def gather_qmm_combine(
         return mx.sum(proj_stacked * mx.expand_dims(gate, axis=-1), axis=1)
 
     # Streaming: accumulate without (B, K, D_out) intermediate
-    k_acc = _weighted_accumulate_kernel(D_out)
+    k_acc = (
+        _weighted_accumulate_kernel_no_fma(D_out)
+        if no_fma
+        else _weighted_accumulate_kernel(D_out)
+    )
 
     output = mx.zeros((B, D_out), dtype=act.dtype)
     for k_idx in range(K):
@@ -1302,6 +1336,7 @@ def gather_qmm_combine_quantized(
     group_size: int = 64,
     bits: int = 4,
     streaming: bool | None = None,
+    no_fma: bool = False,
 ) -> Any:
     """Fused gather-qmm-combine for MoE down-projection (quantized weights).
 
@@ -1349,7 +1384,11 @@ def gather_qmm_combine_quantized(
         return mx.sum(proj_stacked * mx.expand_dims(gate, axis=-1), axis=1)
 
     # Streaming: accumulate without (B, K, D_out) intermediate
-    k_acc = _weighted_accumulate_kernel(D_out)
+    k_acc = (
+        _weighted_accumulate_kernel_no_fma(D_out)
+        if no_fma
+        else _weighted_accumulate_kernel(D_out)
+    )
 
     output = mx.zeros((B, D_out), dtype=act.dtype)
     for k_idx in range(K):

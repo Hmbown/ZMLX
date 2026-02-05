@@ -146,7 +146,9 @@ def main() -> None:
         default=None,
         help=(
             "Variant names to run (default: all). "
-            "Choices: control_swiglu_moe, glm47_rope, shared_experts_overlap_streams2"
+            "Choices: control_swiglu_moe, control_swiglu_moe_residual_norm, "
+            "control_swiglu_moe_downproj_combine, glm47_rope, "
+            "shared_experts_overlap_streams2"
         ),
     )
     args = parser.parse_args()
@@ -215,6 +217,15 @@ def main() -> None:
             "notes": (
                 "Experimental: residual_norm fusion (breaks greedy token fidelity on "
                 "GLM-4.7-Flash in current testing)."
+            ),
+        },
+        {
+            "name": "control_swiglu_moe_downproj_combine",
+            "patterns": ["swiglu_mlp", "moe_mlp"],
+            "env": {"ZMLX_GLM_FUSED_DOWNPROJ_COMBINE": "1"},
+            "notes": (
+                "Experimental: fuse down-proj + combine for decode-like shapes "
+                "(GLM only; token-fidelity-sensitive)."
             ),
         },
         {
