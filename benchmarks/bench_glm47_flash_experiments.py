@@ -209,6 +209,15 @@ def main() -> None:
             "notes": "Control: current best patch set (no RoPE fusion).",
         },
         {
+            "name": "control_swiglu_moe_residual_norm",
+            "patterns": ["swiglu_mlp", "moe_mlp", "residual_norm"],
+            "env": {},
+            "notes": (
+                "Experimental: residual_norm fusion (breaks greedy token fidelity on "
+                "GLM-4.7-Flash in current testing)."
+            ),
+        },
+        {
             "name": "glm47_rope",
             "patterns": ["swiglu_mlp", "moe_mlp", "glm47_rope"],
             "env": {},
