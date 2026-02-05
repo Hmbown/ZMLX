@@ -679,7 +679,9 @@ class _MoEMLPPattern:
                         x,
                         indices,
                         gate_weights,
-                        max_tokens=fused_swiglu_max_tokens,
+                        # Decode-only: avoid prefill OOM/regressions from the
+                        # Python-level K-loop (keep this strictly for small M).
+                        max_tokens=min(fused_swiglu_max_tokens, 16),
                         no_fma=True,  # GLM requires no-FMA semantics for fidelity
                     )
                 if is_qwen3 or is_lfm2:
