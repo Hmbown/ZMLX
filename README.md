@@ -21,7 +21,7 @@ ZMLX's flagship result is **token-identical decode speedups** on `mlx-community/
 
 **Stress benchmark protocol:** 5 prompts × 3 generation lengths × 5 runs (15 configs), greedy decode, token-by-token fidelity across configs. The benchmark runner is [`benchmarks/bench_glm_stress.py`](benchmarks/bench_glm_stress.py).
 
-**Result (Apple M4 Max 36 GB, MLX `0.30.4.dev20260204+2f324cc`):** 76.9 → 83.4 tok/s average decode throughput (**+8.5%**), **15/15 configs token-identical**. Capsule: [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json).
+**Result (Apple M4 Max 36 GB, MLX `0.30.4.dev20260204+2f324cc`):** 76.8 → 83.5 tok/s average decode throughput (**+8.8%**, mean of per-config **median** tok/s), **15/15 configs token-identical**. Capsule: [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json).
 
 **Speedup vs length (avg across prompts)**
 | Length | Avg Baseline | Avg Patched | Avg Speedup |
@@ -215,7 +215,7 @@ As of **2026-02-05**, ZMLX also fuses GLM's dense `shared_experts` SwiGLU MLP in
 
 | Model | Hardware | Decode (baseline -> patched) | Change | Fidelity | Capsule |
 |:--|:--|--:|--:|:--|:--|
-| GLM-4.7-Flash-4bit | M4 Max 36 GB | 76.9 tok/s -> 83.4 tok/s | **+8.5%** | 15/15 configs identical | [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json) |
+| GLM-4.7-Flash-4bit | M4 Max 36 GB | 76.8 tok/s -> 83.5 tok/s | **+8.8%** | 15/15 configs identical | [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json) |
 | Qwen3-30B-A3B-4bit | M4 Max 36 GB | 106.6 tok/s -> 115.0 tok/s | +7.9% | 200/200 tokens identical | [`benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json`](benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json) |
 
 For the full GLM-4.7-Flash stress benchmark protocol + tables, see the “GLM-4.7-Flash — Stress-Benchmark-Verified Decode Speedups” section above.
