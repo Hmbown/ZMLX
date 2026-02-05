@@ -62,6 +62,31 @@ Notes:
 - Grouped routing (`n_group > 1`) is supported as long as `n_group` divides
   `n_routed_experts`.
 
+## Exo Labs quickstart
+
+`zmlx.exo` can launch exo with ZMLX patching enabled (no exo source changes).
+
+```bash
+source .venv/bin/activate
+
+# Apply patches on model load inside exo. Patterns are opt-in here.
+EXO_ZMLX_PATTERNS=deepseek_router,swiglu_mlp,moe_mlp \
+EXO_ZMLX_VERBOSE=1 \
+python -m zmlx.exo
+```
+
+Notes:
+- **Tensor-parallel exo:** avoid `moe_mlp` (exo wraps MoE distribution). Prefer:
+
+  ```bash
+  EXO_ZMLX_PATTERNS=deepseek_router,swiglu_mlp \
+  EXO_ZMLX_VERBOSE=1 \
+  python -m zmlx.exo
+  ```
+
+- `deepseek_router` should be safe to enable in both modes, but validate fidelity
+  and performance.
+
 ## Next steps (higher ROI)
 
 1) **Broaden router coverage**
