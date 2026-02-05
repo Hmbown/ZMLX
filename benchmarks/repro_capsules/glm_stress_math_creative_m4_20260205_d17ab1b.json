@@ -1,0 +1,287 @@
+{
+  "metadata": {
+    "model": "mlx-community/GLM-4.7-Flash-4bit",
+    "date": "2026-02-05 11:24:48",
+    "platform": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.14.2",
+    "mlx_version": "0.30.4.dev20260204+2f324cc",
+    "has_gather_qmm_swiglu": true,
+    "chip": "Apple M4 Max",
+    "memory_gb": 36.0,
+    "zmlx_commit": "d17ab1b",
+    "git_sha": "d17ab1b9b6406bf08c7e2c4424865351d08ccbf6",
+    "log": "benchmarks/results/glm_stress/glm_stress_full_20260205_110754.log"
+  },
+  "generation_lengths": [
+    256,
+    1024,
+    2048
+  ],
+  "prompt_names": [
+    "math_reasoning",
+    "creative"
+  ],
+  "prompt_texts": {
+    "math_reasoning": "Solve the following: Find all integer pairs (x, y) such that x^2 - 3y^2 = 1. Explain your reasoning and describe the general solution family.",
+    "creative": "Write a short, vivid scene (300-500 words) about a late-night debugging session on a new GPU kernel. Use sensory details and keep the tone grounded, not comedic."
+  },
+  "runs_per_config": 5,
+  "baseline_stats": {
+    "math_reasoning@256": {
+      "prompt_name": "math_reasoning",
+      "max_tokens": 256,
+      "config": "baseline",
+      "n_runs": 5,
+      "median_gen_tps": 83.91499622102423,
+      "mean_gen_tps": 83.02326079062999,
+      "stdev_gen_tps": 1.5560881396938966,
+      "ci95_gen_tps": [
+        81.09143191992624,
+        84.95508966133374
+      ],
+      "median_ttft_ms": 172.43629199219868,
+      "median_prompt_tps": 308.5689209653345,
+      "p50_token_ms": 11.973583023063838,
+      "p95_token_ms": 13.011008087778464,
+      "p99_token_ms": 13.531463597901165,
+      "peak_mem_gb": 16.928279858
+    },
+    "math_reasoning@1024": {
+      "prompt_name": "math_reasoning",
+      "max_tokens": 1024,
+      "config": "baseline",
+      "n_runs": 5,
+      "median_gen_tps": 78.36344300990277,
+      "mean_gen_tps": 78.1955032248602,
+      "stdev_gen_tps": 0.5553348098023031,
+      "ci95_gen_tps": [
+        77.50607452791382,
+        78.88493192180658
+      ],
+      "median_ttft_ms": 231.38691700296476,
+      "median_prompt_tps": 216.76195160584774,
+      "p50_token_ms": 12.962790991878137,
+      "p95_token_ms": 13.785712720709853,
+      "p99_token_ms": 14.200316840433516,
+      "peak_mem_gb": 16.944148156
+    },
+    "math_reasoning@2048": {
+      "prompt_name": "math_reasoning",
+      "max_tokens": 2048,
+      "config": "baseline",
+      "n_runs": 5,
+      "median_gen_tps": 74.93928678326742,
+      "mean_gen_tps": 74.90075007338518,
+      "stdev_gen_tps": 0.3856447772215295,
+      "ci95_gen_tps": [
+        74.42198560274329,
+        75.37951454402707
+      ],
+      "median_ttft_ms": 309.5045829832088,
+      "median_prompt_tps": 156.160038425367,
+      "p50_token_ms": 13.548959017498419,
+      "p95_token_ms": 14.195283793378621,
+      "p99_token_ms": 14.904295269516297,
+      "peak_mem_gb": 17.009616964
+    },
+    "creative@256": {
+      "prompt_name": "creative",
+      "max_tokens": 256,
+      "config": "baseline",
+      "n_runs": 5,
+      "median_gen_tps": 81.53151428398094,
+      "mean_gen_tps": 69.72329784464891,
+      "stdev_gen_tps": 17.23668694268835,
+      "ci95_gen_tps": [
+        48.324555304449305,
+        91.12204038484852
+      ],
+      "median_ttft_ms": 183.9420420001261,
+      "median_prompt_tps": 281.5896125037044,
+      "p50_token_ms": 12.42887502303347,
+      "p95_token_ms": 31.689933894085698,
+      "p99_token_ms": 40.061536434805014,
+      "peak_mem_gb": 17.009616964
+    },
+    "creative@1024": {
+      "prompt_name": "creative",
+      "max_tokens": 1024,
+      "config": "baseline",
+      "n_runs": 5,
+      "median_gen_tps": 75.8819737128676,
+      "mean_gen_tps": 66.03255970412744,
+      "stdev_gen_tps": 13.935591038509974,
+      "ci95_gen_tps": [
+        48.73201199620011,
+        83.33310741205477
+      ],
+      "median_ttft_ms": 239.4196670211386,
+      "median_prompt_tps": 194.45033347404575,
+      "p50_token_ms": 13.513957994291559,
+      "p95_token_ms": 33.960550095071085,
+      "p99_token_ms": 43.896513631916584,
+      "peak_mem_gb": 17.009616964
+    },
+    "creative@2048": {
+      "prompt_name": "creative",
+      "max_tokens": 2048,
+      "config": "baseline",
+      "n_runs": 5,
+      "median_gen_tps": 73.48909313125496,
+      "mean_gen_tps": 73.79198500824283,
+      "stdev_gen_tps": 0.7001794914402857,
+      "ci95_gen_tps": [
+        72.92273671713697,
+        74.6612332993487
+      ],
+      "median_ttft_ms": 333.05524999741465,
+      "median_prompt_tps": 133.2769783914675,
+      "p50_token_ms": 13.732791994698346,
+      "p95_token_ms": 14.415941888000816,
+      "p99_token_ms": 14.821954504004676,
+      "peak_mem_gb": 17.009616964
+    }
+  },
+  "patched_stats": {
+    "math_reasoning@256": {
+      "prompt_name": "math_reasoning",
+      "max_tokens": 256,
+      "config": "patched",
+      "n_runs": 5,
+      "median_gen_tps": 79.54956920880308,
+      "mean_gen_tps": 81.2838765987746,
+      "stdev_gen_tps": 3.821478471459931,
+      "ci95_gen_tps": [
+        76.53964505325855,
+        86.02810814429064
+      ],
+      "median_ttft_ms": 192.25716599612497,
+      "median_prompt_tps": 293.30236602109966,
+      "p50_token_ms": 12.02512500458397,
+      "p95_token_ms": 13.587658706819639,
+      "p99_token_ms": 15.793017329415306,
+      "peak_mem_gb": 17.009616964
+    },
+    "math_reasoning@1024": {
+      "prompt_name": "math_reasoning",
+      "max_tokens": 1024,
+      "config": "patched",
+      "n_runs": 5,
+      "median_gen_tps": 79.10734749329822,
+      "mean_gen_tps": 68.97530924775076,
+      "stdev_gen_tps": 15.871819427848276,
+      "ci95_gen_tps": [
+        49.271001876482146,
+        88.67961661901937
+      ],
+      "median_ttft_ms": 240.72833301033825,
+      "median_prompt_tps": 210.5007022986126,
+      "p50_token_ms": 12.867334007751197,
+      "p95_token_ms": 33.37637490476482,
+      "p99_token_ms": 43.778443248011094,
+      "peak_mem_gb": 17.009616964
+    },
+    "math_reasoning@2048": {
+      "prompt_name": "math_reasoning",
+      "max_tokens": 2048,
+      "config": "patched",
+      "n_runs": 5,
+      "median_gen_tps": 76.66660286718155,
+      "mean_gen_tps": 74.58013032475857,
+      "stdev_gen_tps": 5.682939601389612,
+      "ci95_gen_tps": [
+        67.52496004719976,
+        81.63530060231739
+      ],
+      "median_ttft_ms": 329.1225840221159,
+      "median_prompt_tps": 146.54113602381824,
+      "p50_token_ms": 13.042083010077477,
+      "p95_token_ms": 14.233204611809924,
+      "p99_token_ms": 33.87419979029801,
+      "peak_mem_gb": 17.01999642
+    },
+    "creative@256": {
+      "prompt_name": "creative",
+      "max_tokens": 256,
+      "config": "patched",
+      "n_runs": 5,
+      "median_gen_tps": 86.09348137834037,
+      "mean_gen_tps": 86.0589855643643,
+      "stdev_gen_tps": 0.8693962015149459,
+      "ci95_gen_tps": [
+        84.97966066025114,
+        87.13831046847747
+      ],
+      "median_ttft_ms": 177.02708300203085,
+      "median_prompt_tps": 285.1456916684217,
+      "p50_token_ms": 11.64545799838379,
+      "p95_token_ms": 12.1856036799727,
+      "p99_token_ms": 12.56516907887999,
+      "peak_mem_gb": 17.01999642
+    },
+    "creative@1024": {
+      "prompt_name": "creative",
+      "max_tokens": 1024,
+      "config": "patched",
+      "n_runs": 5,
+      "median_gen_tps": 80.42689059127684,
+      "mean_gen_tps": 70.012903605975,
+      "stdev_gen_tps": 15.01388420629836,
+      "ci95_gen_tps": [
+        51.373692734002226,
+        88.65211447794778
+      ],
+      "median_ttft_ms": 240.95691699767485,
+      "median_prompt_tps": 194.68772900186482,
+      "p50_token_ms": 12.628666998352855,
+      "p95_token_ms": 32.41609619581141,
+      "p99_token_ms": 42.081976741319515,
+      "peak_mem_gb": 17.01999642
+    },
+    "creative@2048": {
+      "prompt_name": "creative",
+      "max_tokens": 2048,
+      "config": "patched",
+      "n_runs": 5,
+      "median_gen_tps": 79.69754987154136,
+      "mean_gen_tps": 79.3569295203161,
+      "stdev_gen_tps": 0.974118703068341,
+      "ci95_gen_tps": [
+        78.14759530197928,
+        80.56626373865292
+      ],
+      "median_ttft_ms": 311.90904197865166,
+      "median_prompt_tps": 142.02408985014503,
+      "p50_token_ms": 12.792124995030463,
+      "p95_token_ms": 13.57655459723901,
+      "p99_token_ms": 13.993024061783217,
+      "peak_mem_gb": 17.01999642
+    }
+  },
+  "fidelity": {
+    "math_reasoning@256": {
+      "verdict": "PASS",
+      "detail": "256/256"
+    },
+    "math_reasoning@1024": {
+      "verdict": "PASS",
+      "detail": "1024/1024"
+    },
+    "math_reasoning@2048": {
+      "verdict": "PASS",
+      "detail": "2048/2048"
+    },
+    "creative@256": {
+      "verdict": "PASS",
+      "detail": "256/256"
+    },
+    "creative@1024": {
+      "verdict": "PASS",
+      "detail": "1024/1024"
+    },
+    "creative@2048": {
+      "verdict": "PASS",
+      "detail": "2048/2048"
+    }
+  }
+}

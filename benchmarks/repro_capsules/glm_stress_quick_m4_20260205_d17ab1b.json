@@ -1,0 +1,202 @@
+{
+  "metadata": {
+    "model": "mlx-community/GLM-4.7-Flash-4bit",
+    "date": "2026-02-05 10:17:21",
+    "platform": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.14.2",
+    "mlx_version": "0.30.4.dev20260204+2f324cc",
+    "has_gather_qmm_swiglu": true,
+    "chip": "Apple M4 Max",
+    "memory_gb": 36.0,
+    "zmlx_commit": "d17ab1b",
+    "git_sha": "d17ab1b9b6406bf08c7e2c4424865351d08ccbf6",
+    "log": "benchmarks/results/glm_stress/glm_stress_full_20260205_101406.log"
+  },
+  "generation_lengths": [
+    256,
+    512
+  ],
+  "prompt_names": [
+    "english_technical",
+    "chinese"
+  ],
+  "prompt_texts": {
+    "english_technical": "Explain how GLM-style MoE transformers route tokens to experts during decode. Cover gating math, load balancing, and why kernel launch overhead matters on Apple Silicon. Be technical and precise.",
+    "chinese": "\u8bf7\u7528\u4e2d\u6587\u89e3\u91ca\u6df7\u5408\u4e13\u5bb6\uff08MoE\uff09\u6a21\u578b\u5728\u63a8\u7406\u9636\u6bb5\u5982\u4f55\u8fdb\u884c\u8def\u7531\u4e0e\u4e13\u5bb6\u9009\u62e9\uff0c\u5e76\u8bf4\u660e\u4e3a\u4ec0\u4e48\u5728 Apple Silicon \u4e0a\u5185\u5b58\u5e26\u5bbd\u548c kernel \u542f\u52a8\u5f00\u9500\u4f1a\u5f71\u54cd\u89e3\u7801\u901f\u5ea6\u3002\u8981\u6c42\u4e25\u8c28\u3001\u6e05\u6670\u3002"
+  },
+  "runs_per_config": 3,
+  "baseline_stats": {
+    "english_technical@256": {
+      "prompt_name": "english_technical",
+      "max_tokens": 256,
+      "config": "baseline",
+      "n_runs": 3,
+      "median_gen_tps": 86.0984037495411,
+      "mean_gen_tps": 85.33524984246796,
+      "stdev_gen_tps": 1.4030585733543681,
+      "ci95_gen_tps": [
+        81.8495778201686,
+        88.82092186476731
+      ],
+      "median_ttft_ms": 168.4095830132719,
+      "median_prompt_tps": 307.9022521692431,
+      "p50_token_ms": 11.668166000163183,
+      "p95_token_ms": 12.470692209899426,
+      "p99_token_ms": 12.661838645581156,
+      "peak_mem_gb": 16.927116338
+    },
+    "english_technical@512": {
+      "prompt_name": "english_technical",
+      "max_tokens": 512,
+      "config": "baseline",
+      "n_runs": 3,
+      "median_gen_tps": 84.34879139568329,
+      "mean_gen_tps": 84.36645871522121,
+      "stdev_gen_tps": 0.2241575137539021,
+      "ci95_gen_tps": [
+        83.80957563911971,
+        84.92334179132271
+      ],
+      "median_ttft_ms": 188.56033400516026,
+      "median_prompt_tps": 269.29648006069516,
+      "p50_token_ms": 11.76399999530986,
+      "p95_token_ms": 12.775716593023386,
+      "p99_token_ms": 13.526567004155368,
+      "peak_mem_gb": 16.932049586
+    },
+    "chinese@256": {
+      "prompt_name": "chinese",
+      "max_tokens": 256,
+      "config": "baseline",
+      "n_runs": 3,
+      "median_gen_tps": 85.91997343199503,
+      "mean_gen_tps": 85.65431964522307,
+      "stdev_gen_tps": 0.6482662815535315,
+      "ci95_gen_tps": [
+        84.04380695279218,
+        87.26483233765396
+      ],
+      "median_ttft_ms": 187.3801669862587,
+      "median_prompt_tps": 319.5538562667282,
+      "p50_token_ms": 11.676750000333413,
+      "p95_token_ms": 12.238341610645875,
+      "p99_token_ms": 12.476351881632581,
+      "peak_mem_gb": 16.937046538
+    },
+    "chinese@512": {
+      "prompt_name": "chinese",
+      "max_tokens": 512,
+      "config": "baseline",
+      "n_runs": 3,
+      "median_gen_tps": 83.67534985658847,
+      "mean_gen_tps": 83.85424377045118,
+      "stdev_gen_tps": 0.3671383330143459,
+      "ci95_gen_tps": [
+        82.94214798200363,
+        84.76633955889872
+      ],
+      "median_ttft_ms": 197.70704102120362,
+      "median_prompt_tps": 300.0649320772024,
+      "p50_token_ms": 11.7965420067776,
+      "p95_token_ms": 13.178450003033504,
+      "p99_token_ms": 13.751589539460838,
+      "peak_mem_gb": 16.93704669
+    }
+  },
+  "patched_stats": {
+    "english_technical@256": {
+      "prompt_name": "english_technical",
+      "max_tokens": 256,
+      "config": "patched",
+      "n_runs": 3,
+      "median_gen_tps": 91.03074134020385,
+      "mean_gen_tps": 90.27110396528899,
+      "stdev_gen_tps": 1.315972348685784,
+      "ci95_gen_tps": [
+        87.00178357835239,
+        93.54042435222559
+      ],
+      "median_ttft_ms": 170.35087500698864,
+      "median_prompt_tps": 305.6330978888364,
+      "p50_token_ms": 11.034625000320375,
+      "p95_token_ms": 11.788308789255098,
+      "p99_token_ms": 12.006405121646821,
+      "peak_mem_gb": 16.93704669
+    },
+    "english_technical@512": {
+      "prompt_name": "english_technical",
+      "max_tokens": 512,
+      "config": "patched",
+      "n_runs": 3,
+      "median_gen_tps": 89.5162375170877,
+      "mean_gen_tps": 89.31158498452974,
+      "stdev_gen_tps": 0.4459429358131868,
+      "ci95_gen_tps": [
+        88.20371191035733,
+        90.41945805870216
+      ],
+      "median_ttft_ms": 189.76108398055658,
+      "median_prompt_tps": 268.0553041450037,
+      "p50_token_ms": 11.108208011137322,
+      "p95_token_ms": 12.16354219941422,
+      "p99_token_ms": 12.551219994202256,
+      "peak_mem_gb": 16.93704669
+    },
+    "chinese@256": {
+      "prompt_name": "chinese",
+      "max_tokens": 256,
+      "config": "patched",
+      "n_runs": 3,
+      "median_gen_tps": 91.04059623814683,
+      "mean_gen_tps": 90.55080488865424,
+      "stdev_gen_tps": 1.0272710420339854,
+      "ci95_gen_tps": [
+        87.99871618862547,
+        93.10289358868302
+      ],
+      "median_ttft_ms": 183.174500009045,
+      "median_prompt_tps": 330.7203364257128,
+      "p50_token_ms": 11.020207981346175,
+      "p95_token_ms": 11.679841601289809,
+      "p99_token_ms": 11.909021231113002,
+      "peak_mem_gb": 16.93704669
+    },
+    "chinese@512": {
+      "prompt_name": "chinese",
+      "max_tokens": 512,
+      "config": "patched",
+      "n_runs": 3,
+      "median_gen_tps": 88.80383531984906,
+      "mean_gen_tps": 89.02593139478893,
+      "stdev_gen_tps": 0.5137440457787582,
+      "ci95_gen_tps": [
+        87.74961743256233,
+        90.30224535701552
+      ],
+      "median_ttft_ms": 197.74645901634358,
+      "median_prompt_tps": 301.20607936281107,
+      "p50_token_ms": 11.124125012429431,
+      "p95_token_ms": 12.406808190280572,
+      "p99_token_ms": 12.652076872764155,
+      "peak_mem_gb": 16.93704669
+    }
+  },
+  "fidelity": {
+    "english_technical@256": {
+      "verdict": "PASS",
+      "detail": "256/256"
+    },
+    "english_technical@512": {
+      "verdict": "PASS",
+      "detail": "512/512"
+    },
+    "chinese@256": {
+      "verdict": "PASS",
+      "detail": "256/256"
+    },
+    "chinese@512": {
+      "verdict": "PASS",
+      "detail": "512/512"
+    }
+  }
+}
