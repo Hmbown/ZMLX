@@ -36,7 +36,7 @@ class TestDefkernelUnary:
         from zmlx.dsl.expr import Var, max_
 
         x = Var("x")
-        expr = max_(x, Var("(T)0"))  # slightly unusual but valid
+        _expr = max_(x, Var("(T)0"))  # verify Expr tree builds; kernel uses string
         my_relu = defkernel("kk_test_relu_expr", "metal::max(x, (T)0)")
         kernel = my_relu()
         inp = mx.array([-2.0, -1.0, 0.0, 1.0])

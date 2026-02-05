@@ -8,7 +8,6 @@ from zmlx.dsl.expr import (
     BinOp,
     Call,
     Const,
-    Expr,
     Let,
     RawMetal,
     Ternary,
@@ -27,7 +26,6 @@ from zmlx.dsl.expr import (
     sqrt,
     tanh,
 )
-
 
 # ---------------------------------------------------------------------------
 # Basic node construction and to_metal()
