@@ -151,6 +151,14 @@ def main() -> None:
             "shared_experts_overlap_streams2"
         ),
     )
+    parser.add_argument(
+        "--allow-unsafe",
+        action="store_true",
+        help=(
+            "Run variants marked unsafe. These may crash the Python process "
+            "(e.g. Metal OOM)."
+        ),
+    )
     args = parser.parse_args()
 
     from zmlx import __version__ as zmlx_version
@@ -223,6 +231,7 @@ def main() -> None:
             "name": "control_swiglu_moe_downproj_combine",
             "patterns": ["swiglu_mlp", "moe_mlp"],
             "env": {"ZMLX_GLM_FUSED_DOWNPROJ_COMBINE": "1"},
+            "unsafe": True,
             "notes": (
                 "Experimental: fuse down-proj + combine for decode-like shapes "
                 "(GLM only; token-fidelity-sensitive)."
@@ -269,6 +278,7 @@ def main() -> None:
         name = v["name"]
         patterns = v["patterns"]
         env = v["env"]
+        unsafe = bool(v.get("unsafe", False))
         note = v["notes"]
 
         cmd = f"python -m zmlx.validate {model_id} --patterns {' '.join(patterns)} --runs {runs} --max-tokens {max_tokens}"
@@ -283,34 +293,70 @@ def main() -> None:
             cmd = f"{prefix} {cmd}"
         meta[f"command_{name}"] = cmd
 
-        with _temp_env(env):
-            patched = _bench_config(
-                model_path=model_id,
-                label=f"ZMLX Patched ({name})",
-                patterns=patterns,
-                profile=None,
-                prompt=prompt,
-                max_tokens=max_tokens,
-                runs=runs,
-                gen_kwargs=gen_kwargs,
+        patched = None
+        err: str | None = None
+        if unsafe and not args.allow_unsafe:
+            err = (
+                "SKIPPED: unsafe variant (pass --allow-unsafe to run; "
+                "may crash with Metal OOM)"
             )
+        else:
+            try:
+                with _temp_env(env):
+                    patched = _bench_config(
+                        model_path=model_id,
+                        label=f"ZMLX Patched ({name})",
+                        patterns=patterns,
+                        profile=None,
+                        prompt=prompt,
+                        max_tokens=max_tokens,
+                        runs=runs,
+                        gen_kwargs=gen_kwargs,
+                    )
+            except Exception as e:
+                err = f"{type(e).__name__}: {e}"
 
-        p0 = patched.runs[0] if patched.runs else _RunMetrics()
-        match, total, _ = _compare_tokens(b0, p0)
-        fidelity = {
-            "matched": int(match),
-            "total": int(total),
-            "verdict": "PASS" if total > 0 and match == total else "FAIL",
-        }
-
-        patched_stats = _summarize_config(patched)
         b_dec = float(baseline_stats["median_decode"])
-        p_dec = float(patched_stats["median_decode"])
         b_pre = float(baseline_stats["median_prefill"])
-        p_pre = float(patched_stats["median_prefill"])
+        p0 = _RunMetrics()
+        match = 0
+        total = 0
 
-        modules_patched = int(getattr(patched, "patched_count", 0) or 0)
-        patterns_applied = sorted(getattr(patched, "pattern_counts", {}).keys())
+        if patched is not None and err is None:
+            p0 = patched.runs[0] if patched.runs else _RunMetrics()
+            match, total, _ = _compare_tokens(b0, p0)
+            fidelity = {
+                "matched": int(match),
+                "total": int(total),
+                "verdict": "PASS" if total > 0 and match == total else "FAIL",
+            }
+
+            patched_stats = _summarize_config(patched)
+            p_dec = float(patched_stats["median_decode"])
+            p_pre = float(patched_stats["median_prefill"])
+
+            modules_patched = int(getattr(patched, "patched_count", 0) or 0)
+            patterns_applied = sorted(getattr(patched, "pattern_counts", {}).keys())
+        else:
+            verdict = "ERROR"
+            if err is not None and err.startswith("SKIPPED"):
+                verdict = "SKIP"
+            fidelity = {
+                "matched": 0,
+                "total": int(getattr(b0, "gen_tokens", 0) or 0),
+                "verdict": verdict,
+            }
+            patched_stats = {
+                "prefill_tok_s": [],
+                "decode_tok_s": [],
+                "median_prefill": 0.0,
+                "median_decode": 0.0,
+                "peak_mem_gb": 0.0,
+            }
+            p_dec = 0.0
+            p_pre = 0.0
+            modules_patched = 0
+            patterns_applied = list(patterns)
 
         entry = {
             "model": model_id,
@@ -331,6 +377,8 @@ def main() -> None:
             },
             "notes": note,
         }
+        if err is not None:
+            entry["error"] = err
 
         capsule[_capsule_key(name)] = entry
 
@@ -350,7 +398,7 @@ def main() -> None:
                 custom_mlx=bool(has_fused),
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 fidelity=str(fidelity["verdict"]),
-                fidelity_detail=f"{match}/{total} tokens identical",
+                fidelity_detail=err if err is not None else f"{match}/{total} tokens identical",
                 modules_patched=modules_patched,
                 decode_tps_baseline=b_dec,
                 decode_tps_patched=p_dec,
