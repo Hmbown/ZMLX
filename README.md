@@ -15,22 +15,31 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 - **Proven on stock MLX:** LFM2-8B-A1B shows **+5-12% decode** on released MLX with no custom builds needed. These gains come from ZMLX's own Metal kernels for fused gating, combine, and SwiGLU activation.
 - **Next test target:** Qwen3-80B Coder (planned).
 
-## Kimi-K2.5 (Branch Notes)
+## DeepSeek-V3.2 + Kimi-K2.5 (Experimental)
 
-This `kimik2.5` branch tracks planning for **Kimi-K2.5** integration (DeepSeek-V3-style MoE + MLA).
+DeepSeek-V3.2 and Kimi-K2.5 share a DeepSeek-V3-style MoE routing stack. ZMLX
+includes an **opt-in** fused router (`deepseek_router`) plus existing MoE
+combine/SwiGLU fusions (`moe_mlp`, `swiglu_mlp`) that may apply depending on
+your MLX/MLX-LM build.
 
-Next steps (when compute is available):
+We have **not** yet validated end-to-end fidelity/throughput on real
+DeepSeek-V3.2 / Kimi-K2.5 weights in this repo due to hardware constraints.
+Community benchmarking help is welcome.
 
-- Add model cards for `mlx-community/Kimi-K2.5` (and any instruct variants) under `exo/resources/inference_model_cards/`.
-- Verify Kimi stop tokens for K2.5 and update `exo/src/exo/worker/engines/mlx/utils_mlx.py`:
-  - Official `moonshotai/Kimi-K2.5` uses `<|end_of_text|>` (ID `163585`).
-  - MLX conversions may use `<|im_user|>` (ID `163586`) as EOS/stop.
-- Confirm the required `mlx-lm` version/fork for `mlx_lm.models.kimi_k25` and ensure it matches the chosen weights.
-- Benchmark `zmlx.patch.patch()` / `zmlx.patch.smart_patch()` on K2.5:
-  - Fidelity: `python -m zmlx.validate <model_id> --max-tokens 200`
-  - Throughput: `benchmarks/bench_moe_e2e.py`, `benchmarks/inference_benchmark.py`
-- Consider extending `src/zmlx/patch/patterns/moe_mlp.py` to enable fused down-proj + combine for DeepSeek/Kimi MoE blocks.
-- (Optional) Prototype MLA-specific attention fusions (Q/KV projections + RoPE + cache + SDPA).
+If you have a machine that can load these models, the most useful validation is:
+
+```bash
+source .venv/bin/activate
+
+# Greedy token fidelity + throughput
+python -m zmlx.validate <model_id> \
+  --patterns deepseek_router moe_mlp swiglu_mlp \
+  --runs 3 --max-tokens 200
+```
+
+Notes:
+- `deepseek_router` is intentionally opt-in and only changes expert routing.
+- For exo users, see the quickstart in [`docs/HANDOFF_DEEPSEEK_KIMI.md`](docs/HANDOFF_DEEPSEEK_KIMI.md).
 
 ## Quick Start
 
