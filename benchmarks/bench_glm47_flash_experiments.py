@@ -111,6 +111,24 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--max-tokens", type=int, default=200)
     parser.add_argument(
+        "--kv-bits",
+        type=int,
+        default=None,
+        help="Quantize KV cache to N bits during generation (passed to zmlx.validate).",
+    )
+    parser.add_argument(
+        "--kv-group-size",
+        type=int,
+        default=None,
+        help="Group size for KV cache quantization (passed to zmlx.validate).",
+    )
+    parser.add_argument(
+        "--quantized-kv-start",
+        type=int,
+        default=None,
+        help="Step to begin using a quantized KV cache (passed to zmlx.validate).",
+    )
+    parser.add_argument(
         "--json-out",
         type=str,
         required=True,
@@ -134,6 +152,7 @@ def main() -> None:
     args = parser.parse_args()
 
     from zmlx import __version__ as zmlx_version
+    from zmlx.kv_cache import kv_cache_kwargs
     from zmlx.validate import _bench_config, _compare_tokens, _RunMetrics
 
     chip, mem_gb = _hardware_meta()
@@ -147,6 +166,11 @@ def main() -> None:
     prompt = args.prompt
     runs = int(args.runs)
     max_tokens = int(args.max_tokens)
+    gen_kwargs = kv_cache_kwargs(
+        kv_bits=args.kv_bits,
+        kv_group_size=args.kv_group_size,
+        quantized_kv_start=args.quantized_kv_start,
+    )
 
     json_out = Path(args.json_out)
     json_out.parent.mkdir(parents=True, exist_ok=True)
@@ -172,7 +196,7 @@ def main() -> None:
         prompt=prompt,
         max_tokens=max_tokens,
         runs=runs,
-        gen_kwargs=None,
+        gen_kwargs=gen_kwargs,
     )
     baseline_stats = _summarize_config(baseline)
     b0 = baseline.runs[0] if baseline.runs else _RunMetrics()
@@ -228,6 +252,12 @@ def main() -> None:
         note = v["notes"]
 
         cmd = f"python -m zmlx.validate {model_id} --patterns {' '.join(patterns)} --runs {runs} --max-tokens {max_tokens}"
+        if args.kv_bits is not None:
+            cmd += f" --kv-bits {int(args.kv_bits)}"
+        if args.kv_group_size is not None:
+            cmd += f" --kv-group-size {int(args.kv_group_size)}"
+        if args.quantized_kv_start is not None:
+            cmd += f" --quantized-kv-start {int(args.quantized_kv_start)}"
         if env:
             prefix = " ".join(f"{k}={v}" for k, v in env.items())
             cmd = f"{prefix} {cmd}"
@@ -242,7 +272,7 @@ def main() -> None:
                 prompt=prompt,
                 max_tokens=max_tokens,
                 runs=runs,
-                gen_kwargs=None,
+                gen_kwargs=gen_kwargs,
             )
 
         p0 = patched.runs[0] if patched.runs else _RunMetrics()
