@@ -54,6 +54,12 @@ train = [
   "transformers>=4.40.0",
   "huggingface_hub>=0.20.0",
 ]
+vllm = [
+  "vllm-metal>=0.1.0",
+]
+
+[project.entry-points."vllm.general_plugins"]
+zmlx = "zmlx.vllm_metal:register"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/zmlx"]

@@ -52,6 +52,8 @@ _worktrees/
 stable-diffcoder-mlx/
 experiments/
 exo/
+vllm/
+vllm-metal/
 .aleph/
 NEXT_SESSION_PROMPT.md
 .hf_cache/
