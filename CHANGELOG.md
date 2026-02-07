@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.8.2] - 2026-02-07
+
+### Fixed
+
+- README and EXO docs quick-start commands now point to the tracked setup script (`bash setup_zmlx.sh`) instead of `exo/setup_zmlx.sh` (the `exo/` checkout is local and gitignored).
+- README custom-primitive benchmark table now links each reported number to a committed repro capsule.
+- Removed duplicate wheel entry for `zmlx/_exo_bootstrap/sitecustomize.py` by dropping redundant wheel `force-include`.
+
+### Changed
+
+- Version bumped to `0.8.2`.
+- Marked local-only external worktrees (`vllm-metal/`, `zmlx_kvtc_integration/`) as gitignored so repo-wide lint runs focus on shipped code.
+
 ## [0.8.1] - 2026-02-05
 
 ### Added

@@ -209,16 +209,14 @@ python -m zmlx.bench.report benchmarks/repro_capsules/<capsule>.json
 
 GLM-4.7-Flash and Qwen3-30B-A3B gains come from `gather_qmm_swiglu`, a **custom C++ Metal primitive we wrote** (~800 lines of C++/Metal). It fuses gate projection + up projection + SwiGLU activation for quantized MoE experts into a single GPU dispatch. This primitive is not part of released MLX — build it by applying the patch described in [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md).
 
-ZMLX provides the model-side integration: auto-detecting MoE architectures, rewiring forward passes to use the fused primitive, and a deterministic no-FMA combine kernel to preserve token fidelity on GLM.
-
-As of **2026-02-05**, ZMLX also fuses GLM's dense `shared_experts` SwiGLU MLP inside each MoE block (token-identical under greedy decode). Quick capsule (200 tokens, 3 runs): [`benchmarks/repro_capsules/glm47_flash_shared_experts_swiglu_m4max_20260205_1d9ee0e.json`](benchmarks/repro_capsules/glm47_flash_shared_experts_swiglu_m4max_20260205_1d9ee0e.json).
+ZMLX provides the model-side integration: auto-detecting MoE architectures, rewiring forward passes to use the fused primitive, and using native MLX combine ops on GLM/Qwen3 for fidelity and lower dispatch overhead.
 
 **On stock MLX (released 0.30.4/0.30.5), ZMLX auto-skips these models** (0 modules patched, 0% change) to avoid regressions. `patch()` is always safe to call.
 
 | Model | Hardware | Decode (baseline -> patched) | Change | Fidelity | Capsule |
 |:--|:--|--:|--:|:--|:--|
-| GLM-4.7-Flash-4bit | M4 Max 36 GB | 66.3 tok/s -> 70.7 tok/s | **+6.6%** | 15/15 configs identical | [`benchmarks/repro_capsules/glm_stress_m4_20260205_rerun_mlx0304dev2f324cc.json`](benchmarks/repro_capsules/glm_stress_m4_20260205_rerun_mlx0304dev2f324cc.json) |
-| Qwen3-30B-A3B-4bit | M4 Max 36 GB | 96.5 tok/s -> 104.3 tok/s | **+8.1%** | 200/200 tokens identical | [`benchmarks/repro_capsules/qwen3_a3b_profile_qwen3_m4max_20260205_rerun2_mlx0304dev2f324cc.json`](benchmarks/repro_capsules/qwen3_a3b_profile_qwen3_m4max_20260205_rerun2_mlx0304dev2f324cc.json) |
+| GLM-4.7-Flash-4bit | M4 Max 36 GB | 86.6 tok/s -> 92.4 tok/s | **+6.7%** | 200/200 tokens identical | [`benchmarks/repro_capsules/glm47_flash_control_m4max_20260205.json`](benchmarks/repro_capsules/glm47_flash_control_m4max_20260205.json) |
+| Qwen3-30B-A3B-4bit | M4 Max 36 GB | 106.6 tok/s -> 115.0 tok/s | **+7.9%** | 200/200 tokens identical | [`benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json`](benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json) |
 
 For the full GLM-4.7-Flash stress benchmark protocol + tables, see the “GLM-4.7-Flash — Stress-Benchmark-Verified Decode Speedups” section above.
 
@@ -317,7 +315,7 @@ Next steps:
 <details>
 <summary>Precision note</summary>
 
-Most kernels compute internally in **float32** regardless of input dtype. The exception is `moe_combine_exact`, which accumulates in the input dtype to match MLX's bfloat16 semantics for Qwen3. GLM uses `moe_combine_no_fma` to disable FMA contraction and match MLX's non-fused multiply-then-sum reduction order.
+Most kernels compute internally in **float32** regardless of input dtype. The exception is `moe_combine_exact`, which accumulates in the input dtype to match MLX's bfloat16 semantics. GLM and Qwen3 use native MLX ops for the combine step (`(y * scores[..., None]).sum(axis=-2)`) to match the original model code exactly and avoid custom-kernel dispatch overhead.
 
 </details>
 

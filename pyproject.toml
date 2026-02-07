@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zmlx"
-version = "0.8.1"
+version = "0.8.2"
 description = "ZMLX: Metal-kernel toolkit and optimization lab for MLX on Apple Silicon. Fused MoE decode (+5-12% on LFM2-8B-A1B), custom GPU kernels in one line, 70+ kernel catalog."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -48,18 +48,22 @@ dev = [
   "pyyaml>=6.0",
   "types-PyYAML>=6.0",
 ]
+kvtc = [
+  "numpy>=1.24.0",
+]
 train = [
   "mlx-lm>=0.25.0",
   "pyyaml>=6.0",
   "transformers>=4.40.0",
   "huggingface_hub>=0.20.0",
 ]
+discover = [
+  "anthropic>=0.40.0",
+  "openai>=1.50.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/zmlx"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/zmlx/_exo_bootstrap" = "zmlx/_exo_bootstrap"
 
 [tool.ruff]
 line-length = 100

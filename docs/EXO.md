@@ -6,7 +6,7 @@ ZMLX integrates with [exo](https://github.com/exo-explore/exo) to speed up MoE d
 
 ## Quick start
 
-In a **Python 3.13+** environment (exo requires >= 3.13):
+In a **Python 3.13+** environment (exo requires >= 3.13; custom MLX builds must match your Python minor version):
 
 ```bash
 # From a ZMLX checkout (recommended):
@@ -34,7 +34,7 @@ GLM and Qwen3 require the custom MLX primitive (`gather_qmm_swiglu`). Without it
 ## Prerequisites
 
 - **macOS 14+** on Apple Silicon (M1 or later)
-- **Python 3.13+** (exo requires >= 3.13). If you build a custom MLX, it must match the Python minor version you run exo with.
+- **Python 3.13+** (exo requires >= 3.13). If you build custom MLX, its Python ABI must match the interpreter you use for exo.
 - **uv** (recommended) — `brew install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 ## Custom MLX primitive (optional, for GLM/Qwen3)

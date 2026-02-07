@@ -28,7 +28,7 @@ Model helpers (require mlx-lm):
     zmlx.load, zmlx.lora, zmlx.train, zmlx.generate
 """
 
-__version__ = "0.8.1"
+__version__ = "0.8.2"
 
 from ._compat import is_supported_host
 
@@ -38,6 +38,11 @@ _IMPORT_ERROR = (
 )
 
 def __getattr__(name: str):
+    # KVTC is pure NumPy and platform-independent — allow import before guard
+    if name == "kvtc":
+        import importlib
+        return importlib.import_module(f"{__name__}.{name}")
+
     if not is_supported_host():
         raise RuntimeError(_IMPORT_ERROR)
 
@@ -104,6 +109,8 @@ __all__ = [
     "registry",
     # Patch system
     "patch",
+    # KVTC (pure NumPy, platform-independent)
+    "kvtc",
     # Model helpers
     "load",
     "lora",
