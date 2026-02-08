@@ -32,6 +32,17 @@ from ...kernels.fused_moe import has_gather_qmm_swiglu
 from .._registry import register
 from .._types import PatchConfig
 
+# Discovered kernel imports — safe no-ops if not exported yet.
+try:
+    from ...kernels.discovered.glm_moe_combine import glm_moe_combine as _disc_moe_combine
+except Exception:
+    _disc_moe_combine = None
+
+try:
+    from ...kernels.discovered.glm_fused_swiglu import glm_fused_swiglu as _disc_swiglu
+except Exception:
+    _disc_swiglu = None
+
 
 def _is_qwen3_moe_block(mod: Any) -> bool:
     """Return True if this module looks like Qwen3's MoE block."""
@@ -77,6 +88,20 @@ def _glm_allow_fused_swiglu() -> bool:
         return int(raw) != 0
     except ValueError:
         return True
+
+
+def _qwen_allow_fused_swiglu() -> bool:
+    """Return True if Qwen should use gather_qmm_swiglu fused SwiGLU.
+
+    Default: disabled. Set ``ZMLX_QWEN_FUSED_SWIGLU=1`` to opt in.
+    """
+    raw = os.environ.get("ZMLX_QWEN_FUSED_SWIGLU")
+    if raw is None:
+        return False
+    try:
+        return int(raw) != 0
+    except ValueError:
+        return raw.strip().lower() in {"true", "yes", "on"}
 
 
 def _gating(
@@ -514,7 +539,11 @@ def _try_fused_downproj_combine(
     try:
         gate_act = gate_proj(x, indices)
         up_act = up_proj(x, indices)
-        activated = transformer.swiglu2(gate_act, up_act)
+        # Try discovered SwiGLU kernel (1.23x micro-bench on GLM dims)
+        activated = (_disc_swiglu(gate_act, up_act)
+                     if _disc_swiglu is not None else None)
+        if activated is None:
+            activated = transformer.swiglu2(gate_act, up_act)
     except Exception:
         return None
     flat = _flatten_for_fused_combine(activated, gate, indices)
@@ -618,6 +647,13 @@ class _MoEMLPPattern:
         is_gpt_oss = _is_gpt_oss_block(module)
         is_glm = _is_glm_moe_block(module)
         use_exact_combine = is_qwen3
+        if is_qwen3 and _use_fused_swiglu and not _qwen_allow_fused_swiglu():
+            if config.verbose:
+                print(
+                    "  [moe_mlp] Qwen detected: fused SwiGLU disabled by default. "
+                    "Set ZMLX_QWEN_FUSED_SWIGLU=1 to opt in."
+                )
+            _use_fused_swiglu = False
         if is_glm and _use_fused_swiglu and not _glm_allow_fused_swiglu():
             if config.verbose:
                 print(
@@ -747,7 +783,11 @@ class _MoEMLPPattern:
             # multiply + reduce and avoids custom-kernel dispatch overhead.
             if expert_outputs is not None:
                 if is_glm:
-                    y = (expert_outputs * gate_weights[..., None]).sum(axis=-2)
+                    # Try discovered optimized combine (1.64x micro-bench)
+                    y = (_disc_moe_combine(expert_outputs, gate_weights)
+                         if _disc_moe_combine is not None else None)
+                    if y is None:
+                        y = (expert_outputs * gate_weights[..., None]).sum(axis=-2)
                     y = y.astype(expert_outputs.dtype)
                 elif is_qwen3:
                     # Qwen3: (y * scores[..., None]).sum(axis=-2)

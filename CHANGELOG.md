@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.8.3] - 2026-02-08
+
+### Fixed
+
+- Qwen3 `moe_mlp` default path now disables fused `gather_qmm_swiglu` unless explicitly enabled via `ZMLX_QWEN_FUSED_SWIGLU=1`, preventing the custom-fused path from regressing decode throughput on newer MLX baselines.
+- Added regression tests for the Qwen fused-SwiGLU env gate.
+
+### Changed
+
+- Custom MLX setup helper now defaults to MLX `v0.30.6` (`185b06d9...`) for `gather_qmm_swiglu` integration.
+- Lab notebook updated with reproducible bring-up notes and sequential GLM/Qwen validation results on custom MLX `0.30.6`.
+
 ## [0.8.2] - 2026-02-07
 
 ### Fixed
