@@ -13,7 +13,7 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 - **Model patching:** `patch(model)` replaces MoE gating/combine/activation sequences with fused Metal kernels, reducing dispatch overhead during decode. Token-identical output; verify with `python -m zmlx.validate`.
 - **Optional custom primitive (GLM/Qwen3):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash and Qwen3-30B-A3B. See the GLM-4.7-Flash stress benchmark results below + [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md). On stock MLX these models auto-skip safely.
 - **Proven on stock MLX:** LFM2-8B-A1B shows **+8-13% decode** on released MLX with no custom builds needed. These gains come from ZMLX's own Metal kernels for fused gating, combine, and SwiGLU activation.
-- **Next test target:** Qwen3-80B Coder (planned).
+- **Next release prep:** Qwen3.5 support scaffolding (pending official `Qwen/*` release on Hugging Face).
 
 ## GLM-4.7-Flash — Stress-Benchmark-Verified Decode Speedups (Custom Primitive)
 
@@ -67,6 +67,25 @@ python benchmarks/bench_glm_stress.py \
 - Treat **`glm47_rope` as low-priority**: currently modest decode gain (`1.013x`) in quick reruns (`benchmarks/repro_capsules/glm47_flash_rope_m4max_20260205_rerun2_mlx0304dev2f324cc.json`).
 - For **Qwen3-30B-A3B**, current best decode uplift is `96.5 -> 104.3 tok/s` (**+8.1%**) with `patch(model, profile="qwen3")` (`benchmarks/repro_capsules/qwen3_a3b_profile_qwen3_m4max_20260205_rerun2_mlx0304dev2f324cc.json`).
 - For **Qwen3**, keep no-KV as the performance baseline for now: quick 1024-token reruns with `kv_bits=4, quantized_kv_start=128` did not beat no-KV absolute decode tok/s (`benchmarks/repro_capsules/qwen3_a3b_nokv_t1024_m4max_20260205_rerun_mlx0304dev2f324cc.json` vs `benchmarks/repro_capsules/qwen3_a3b_kv4_t1024_s128_m4max_20260205_rerun_mlx0304dev2f324cc.json`).
+- 2026-02-08 sanity checks on current MLX showed smaller relative gains on default patching:
+  - GLM-4.7-Flash-4bit: `1.048x` (200 tok), `1.037x` (2000 tok)
+  - Qwen3-30B-A3B-4bit: `1.022x` (200 tok), `1.034x` (2000 tok)
+  These are still token-identical; benchmark deltas vary with decode length, thermals, and MLX baseline changes.
+- Prepare **Qwen3.5** integration in advance (once official checkpoints are published under the `Qwen` org):
+  - Add matrix catalog aliases in `src/zmlx/matrix/models.py` for new model ID patterns.
+  - Add/adjust KVTC geometry presets in `src/zmlx/kvtc/presets.py` if architecture differs from current Qwen3 MoE.
+  - Validate with `python -m zmlx.validate <model> --max-tokens 200 --runs 3` first, then long-run checks (1000/2000 tokens).
+
+### Qwen3.5 Watchlist (Hugging Face)
+
+As of 2026-02-08, there are no official `Qwen/Qwen3.5*` model IDs in the Hugging Face API; community repos with `qwen-3.5` names exist but are not authoritative release targets.
+
+Quick checks:
+
+```bash
+curl -s "https://huggingface.co/api/models?author=Qwen&search=Qwen3&limit=50"
+curl -s "https://huggingface.co/api/models?author=Qwen&search=3.5&limit=20"
+```
 
 ## DeepSeek-V3.2 + Kimi-K2.5 Experiments (Experimental)
 
