@@ -80,14 +80,14 @@ _FIDELITY_EXCLUDES: dict[str, set[str]] = {
     "qwen": {"swiglu_mlp", "residual_norm"},
     "gpt_oss": {"residual_norm"},
     "mixtral": {"moe_mlp"},
-    # GLM: moe_mlp/swiglu_mlp are fidelity-safe (validated) as of 2026-02-04.
-    "glm": set(),
+    # GLM: rmsnorm replacement diverges in generation on GLM-4.7-Flash.
+    "glm": {"rmsnorm"},
 }
 
 # Patterns known to regress performance per model family.
 _PERF_EXCLUDES: dict[str, set[str]] = {
     "qwen": {"moe_mlp"},
-    "glm": {"moe_mlp", "swiglu_mlp"},
+    "glm": {"moe_mlp", "swiglu_mlp", "rmsnorm"},
 }
 
 
@@ -255,7 +255,9 @@ def patch(
         except Exception:
             # If detection fails, keep the conservative perf exclude.
             pass
-    # GLM: moe_mlp is the primary perf win (+7%) but requires gather_qmm_swiglu.
+    # GLM: moe_mlp is the primary perf win.  On custom MLX with
+    # gather_qmm_swiglu the gain is ~8%.  On stock MLX, discovered kernels
+    # (glm_moe_combine, glm_fused_swiglu) still deliver ~5-7%.
     # swiglu_mlp on shared_experts always regresses (Python dispatch overhead
     # exceeds any activation-fusion benefit for these dense layers).
     if family == "glm":
@@ -266,7 +268,17 @@ def patch(
         except Exception:
             has_fused = False
 
-        if has_fused:
+        # Also check for discovered kernels — they make moe_mlp beneficial
+        # even on stock MLX (no gather_qmm_swiglu needed).
+        has_discovered = False
+        try:
+            from ..kernels.discovered.glm_moe_combine import glm_moe_combine  # noqa: F401
+
+            has_discovered = True
+        except Exception:
+            pass
+
+        if has_fused or has_discovered:
             perf_risks.discard("moe_mlp")
     allow_perf_risk = os.environ.get("ZMLX_PATCH_ALLOW_PERF_RISK", "").strip().lower() in {
         "1",
