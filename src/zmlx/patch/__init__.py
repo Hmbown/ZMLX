@@ -87,7 +87,7 @@ _FIDELITY_EXCLUDES: dict[str, set[str]] = {
 # Patterns known to regress performance per model family.
 _PERF_EXCLUDES: dict[str, set[str]] = {
     "qwen": {"moe_mlp"},
-    "glm": {"moe_mlp"},
+    "glm": {"moe_mlp", "swiglu_mlp"},
 }
 
 
@@ -255,10 +255,9 @@ def patch(
         except Exception:
             # If detection fails, keep the conservative perf exclude.
             pass
-    # GLM: fused SwiGLU is the primary win (and keeps moe_mlp from regressing).
-    # On stock MLX (no `mx.gather_qmm_swiglu`), default patches are typically
-    # neutral-to-negative, so keep them excluded unless the fused primitive
-    # is available (or the user explicitly overrides).
+    # GLM: moe_mlp is the primary perf win (+7%) but requires gather_qmm_swiglu.
+    # swiglu_mlp on shared_experts always regresses (Python dispatch overhead
+    # exceeds any activation-fusion benefit for these dense layers).
     if family == "glm":
         try:
             from ..kernels.fused_moe import has_gather_qmm_swiglu
@@ -269,9 +268,6 @@ def patch(
 
         if has_fused:
             perf_risks.discard("moe_mlp")
-        else:
-            perf_risks.add("moe_mlp")
-            perf_risks.add("swiglu_mlp")
     allow_perf_risk = os.environ.get("ZMLX_PATCH_ALLOW_PERF_RISK", "").strip().lower() in {
         "1",
         "true",

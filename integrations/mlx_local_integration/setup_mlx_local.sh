@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 MLX_DIR="${REPO_ROOT}/mlx_local"
 MLX_REPO_URL="${MLX_REPO_URL:-https://github.com/ml-explore/mlx.git}"
-MLX_REF="${MLX_REF:-2f324cc3b200700b422db4811ae3ff8bd5bf48b4}"
+MLX_REF="${MLX_REF:-8fe1d0921e934e0856e8ae29a98e07cb91b8e2d3}"
 PATCH_FILE="${SCRIPT_DIR}/gather_qmm_swiglu.patch"
 
 NO_BUILD=0

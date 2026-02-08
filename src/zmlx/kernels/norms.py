@@ -39,15 +39,7 @@ def _rmsnorm_kernel(d: int, tg: int, eps: float) -> Any:
             float v = (float)inp[base + j];
             sumsq += v * v;
         }}
-        buf[tid] = sumsq;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-
-        for (uint stride = TG / 2; stride > 0; stride >>= 1) {{
-            if (tid < stride) {{
-                buf[tid] += buf[tid + stride];
-            }}
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-        }}
+        KK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);
 
         float inv = metal::rsqrt(buf[0] / (float)D + EPS);
         threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -149,12 +141,7 @@ def _rmsnorm_bwd_kernel(d: int, tg: int, eps: float) -> Any:
             float v = (float)inp[base + j];
             sumsq += v * v;
         }}
-        buf[tid] = sumsq;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        for (uint s = TG/2; s > 0; s >>= 1) {{
-            if (tid < s) buf[tid] += buf[tid + s];
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-        }}
+        KK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);
         float rms = metal::rsqrt(buf[0] / (float)D + EPS);
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
@@ -170,12 +157,7 @@ def _rmsnorm_bwd_kernel(d: int, tg: int, eps: float) -> Any:
             float y_raw = x * rms;
             m_dot += g * w * y_raw;
         }}
-        buf[tid] = m_dot;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        for (uint s = TG/2; s > 0; s >>= 1) {{
-            if (tid < s) buf[tid] += buf[tid + s];
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-        }}
+        KK_SIMD_REDUCE_SUM(buf, m_dot, tid, TG);
         float mean_dot = buf[0] / (float)D;
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
@@ -250,15 +232,7 @@ def _rmsnorm_no_weight_kernel(d: int, tg: int, eps: float) -> Any:
             float v = (float)inp[base + j];
             sumsq += v * v;
         }}
-        buf[tid] = sumsq;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-
-        for (uint stride = TG / 2; stride > 0; stride >>= 1) {{
-            if (tid < stride) {{
-                buf[tid] += buf[tid + stride];
-            }}
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-        }}
+        KK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);
 
         float inv = metal::rsqrt(buf[0] / (float)D + EPS);
         threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -615,15 +589,7 @@ def _residual_rmsnorm_kernel(d: int, tg: int, eps: float) -> Any:
             float v = (float)inp[base + j] + (float)residual[base + j];
             sumsq += v * v;
         }}
-        buf[tid] = sumsq;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-
-        for (uint stride = TG / 2; stride > 0; stride >>= 1) {{
-            if (tid < stride) {{
-                buf[tid] += buf[tid + stride];
-            }}
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-        }}
+        KK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);
 
         float inv = metal::rsqrt(buf[0] / (float)D + EPS);
         threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -678,12 +644,15 @@ def _add_rmsnorm_kernel(d: int, tg: int, eps: float) -> Any:
     eps_f = float(eps)
     eps_str = str(eps_f).replace(".", "_").replace("-", "_")
 
-    # Two-pass rowwise parallel reduction.
-    # Key design: pass 2 re-reads x and residual from global memory rather than
-    # reading from h_out. This avoids the T-cast precision loss when T=float16.
+    # Single-pass kernel: cache h = inp + residual in thread-local registers
+    # during the reduction pass, then reuse for the normalization output.
+    # This avoids re-reading inp and residual from global memory in a second
+    # pass while still computing in float32 for precision.
+    EPT = (D + TG - 1) // TG  # elements per thread
     source = f"""
         constexpr uint D = {D};
         constexpr uint TG = {TG};
+        constexpr uint EPT = {EPT};
         constexpr float EPS = {eps_f}f;
 
         uint gid = thread_position_in_grid.x;
@@ -693,31 +662,32 @@ def _add_rmsnorm_kernel(d: int, tg: int, eps: float) -> Any:
 
         threadgroup float buf[TG];
 
-        // Pass 1: compute sumsq of (x + residual), write h_out = (T)(x + residual)
-        float sumsq = 0.0f;
-        for (uint j = tid; j < D; j += TG) {{
-            float h = (float)inp[base + j] + (float)residual[base + j];
-            h_out[base + j] = (T)h;
-            sumsq += h * h;
-        }}
-        buf[tid] = sumsq;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
+        // Cache h values in thread-local registers to avoid re-reading globals.
+        float h_local[EPT];
 
-        for (uint stride = TG / 2; stride > 0; stride >>= 1) {{
-            if (tid < stride) {{
-                buf[tid] += buf[tid + stride];
+        // Pass 1: compute h = inp + residual, store in registers, accumulate sumsq
+        float sumsq = 0.0f;
+        for (uint idx = 0; idx < EPT; ++idx) {{
+            uint j = tid + idx * TG;
+            if (j < D) {{
+                float h = (float)inp[base + j] + (float)residual[base + j];
+                h_local[idx] = h;
+                h_out[base + j] = (T)h;
+                sumsq += h * h;
             }}
-            threadgroup_barrier(mem_flags::mem_threadgroup);
         }}
+        KK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);
 
         float inv = metal::rsqrt(buf[0] / (float)D + EPS);
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
-        // Pass 2: re-read x + residual in float32 for precision, apply norm + weight
-        for (uint j = tid; j < D; j += TG) {{
-            float h = (float)inp[base + j] + (float)residual[base + j];
-            float w = (float)weight[j];
-            normed[base + j] = (T)(h * inv * w);
+        // Pass 2: apply norm using cached h values (no global re-read)
+        for (uint idx = 0; idx < EPT; ++idx) {{
+            uint j = tid + idx * TG;
+            if (j < D) {{
+                float w = (float)weight[j];
+                normed[base + j] = (T)(h_local[idx] * inv * w);
+            }}
         }}
     """
 
@@ -739,13 +709,14 @@ def _add_rmsnorm_bwd_kernel(d: int, tg: int, eps: float) -> Any:
     eps_f = float(eps)
     eps_str = str(eps_f).replace(".", "_").replace("-", "_")
 
-    # Three-pass backward:
-    # 1. Recompute sumsq and rms from x + residual
-    # 2. Compute mean_dot = mean(d_out * w * y_raw)
-    # 3. Write d_val = rms * (d_out * w - y_raw * mean_dot) + d_h_passthrough
+    # Three-pass backward with register caching:
+    # Cache val = inp + residual in thread-local registers during pass 1
+    # to avoid re-reading from global memory in passes 2 and 3.
+    EPT = (D + TG - 1) // TG  # elements per thread
     source = f"""
         constexpr uint D = {D};
         constexpr uint TG = {TG};
+        constexpr uint EPT = {EPT};
         constexpr float EPS = {eps_f}f;
 
         uint gid = thread_position_in_grid.x;
@@ -755,48 +726,49 @@ def _add_rmsnorm_bwd_kernel(d: int, tg: int, eps: float) -> Any:
 
         threadgroup float buf[TG];
 
-        // Pass 1: Recompute RMS of (x + residual)
+        // Cache val = inp + residual in thread-local registers.
+        float val_local[EPT];
+
+        // Pass 1: Recompute RMS of (x + residual), cache values
         float sumsq = 0.0f;
-        for (uint j = tid; j < D; j += TG) {{
-            float val = (float)inp[base + j] + (float)residual[base + j];
-            sumsq += val * val;
+        for (uint idx = 0; idx < EPT; ++idx) {{
+            uint j = tid + idx * TG;
+            if (j < D) {{
+                float val = (float)inp[base + j] + (float)residual[base + j];
+                val_local[idx] = val;
+                sumsq += val * val;
+            }}
         }}
-        buf[tid] = sumsq;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        for (uint s = TG / 2; s > 0; s >>= 1) {{
-            if (tid < s) buf[tid] += buf[tid + s];
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-        }}
+        KK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);
         float rms = metal::rsqrt(buf[0] / (float)D + EPS);
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
         // Pass 2: mean_dot = sum(d_out * weight * y_raw) / D
         float m_dot = 0.0f;
-        for (uint j = tid; j < D; j += TG) {{
-            float val = (float)inp[base + j] + (float)residual[base + j];
-            float y_raw = val * rms;
-            float g = (float)d_out[base + j];
-            float w = (float)weight[j];
-            m_dot += g * w * y_raw;
+        for (uint idx = 0; idx < EPT; ++idx) {{
+            uint j = tid + idx * TG;
+            if (j < D) {{
+                float y_raw = val_local[idx] * rms;
+                float g = (float)d_out[base + j];
+                float w = (float)weight[j];
+                m_dot += g * w * y_raw;
+            }}
         }}
-        buf[tid] = m_dot;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        for (uint s = TG / 2; s > 0; s >>= 1) {{
-            if (tid < s) buf[tid] += buf[tid + s];
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-        }}
+        KK_SIMD_REDUCE_SUM(buf, m_dot, tid, TG);
         float mean_dot = buf[0] / (float)D;
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
         // Pass 3: d_val = rms * (d_out * w - y_raw * mean_dot) + d_h_passthrough
-        for (uint j = tid; j < D; j += TG) {{
-            float val = (float)inp[base + j] + (float)residual[base + j];
-            float y_raw = val * rms;
-            float g = (float)d_out[base + j];
-            float w = (float)weight[j];
-            float d_norm = rms * (g * w - y_raw * mean_dot);
-            float d_h_j = (float)d_h[base + j];
-            d_val[base + j] = (T)(d_norm + d_h_j);
+        for (uint idx = 0; idx < EPT; ++idx) {{
+            uint j = tid + idx * TG;
+            if (j < D) {{
+                float y_raw = val_local[idx] * rms;
+                float g = (float)d_out[base + j];
+                float w = (float)weight[j];
+                float d_norm = rms * (g * w - y_raw * mean_dot);
+                float d_h_j = (float)d_h[base + j];
+                d_val[base + j] = (T)(d_norm + d_h_j);
+            }}
         }}
     """
 

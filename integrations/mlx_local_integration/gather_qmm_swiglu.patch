@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 457d4bf..13af4c0 100644
+index 041a476c..5d32bbba 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -187,14 +187,22 @@ if(MLX_BUILD_METAL)
@@ -29,7 +29,7 @@ index 457d4bf..13af4c0 100644
    execute_process(
      COMMAND
 diff --git a/mlx/backend/cpu/quantized.cpp b/mlx/backend/cpu/quantized.cpp
-index 3c3643a..cd5ff87 100644
+index 3c3643a3..cd5ff877 100644
 --- a/mlx/backend/cpu/quantized.cpp
 +++ b/mlx/backend/cpu/quantized.cpp
 @@ -1,5 +1,7 @@
@@ -195,7 +195,7 @@ index 3c3643a..cd5ff87 100644
    if (!std::isfinite(x)) {
      return 0xFF;
 diff --git a/mlx/backend/metal/custom_kernel.cpp b/mlx/backend/metal/custom_kernel.cpp
-index eec6645..9f181e0 100644
+index eec6645b..9f181e07 100644
 --- a/mlx/backend/metal/custom_kernel.cpp
 +++ b/mlx/backend/metal/custom_kernel.cpp
 @@ -1,5 +1,7 @@
@@ -278,7 +278,7 @@ index eec6645..9f181e0 100644
              ensure_row_contiguous,
              init_value,
 diff --git a/mlx/backend/metal/device.cpp b/mlx/backend/metal/device.cpp
-index de61b0f..8586635 100644
+index de61b0f2..8586635e 100644
 --- a/mlx/backend/metal/device.cpp
 +++ b/mlx/backend/metal/device.cpp
 @@ -35,8 +35,13 @@ auto get_metal_version() {
@@ -298,7 +298,7 @@ index de61b0f..8586635 100644
      throw std::runtime_error("Failed to load device");
    }
 diff --git a/mlx/backend/metal/kernels/CMakeLists.txt b/mlx/backend/metal/kernels/CMakeLists.txt
-index 7d010e6..c66103d 100644
+index 7d010e6c..c66103d1 100644
 --- a/mlx/backend/metal/kernels/CMakeLists.txt
 +++ b/mlx/backend/metal/kernels/CMakeLists.txt
 @@ -21,6 +21,10 @@ function(build_kernel_base TARGET SRCFILE DEPS)
@@ -313,10 +313,10 @@ index 7d010e6..c66103d 100644
      set(METAL_FLAGS ${METAL_FLAGS} -fmetal-enable-logging)
    endif()
 diff --git a/mlx/backend/metal/kernels/quantized.h b/mlx/backend/metal/kernels/quantized.h
-index bf63981..b2109de 100644
+index 5ac4c6e1..03bfc033 100644
 --- a/mlx/backend/metal/kernels/quantized.h
 +++ b/mlx/backend/metal/kernels/quantized.h
-@@ -1940,6 +1940,203 @@ template <typename T, int group_size, int bits>
+@@ -1946,6 +1946,195 @@ template <typename T, int group_size, int bits>
        simd_lid);
  }
  
@@ -377,11 +377,9 @@ index bf63981..b2109de 100644
 +  y += tid.x * out_vec_size + out_row;
 +
 +  for (int k = 0; k < in_vec_size; k += block_size) {
-+    // Load x once, use for both gate and up dot products
 +    U sum = load_vector<T, U, values_per_thread, bits>(x, x_thread);
 +
 +    for (int row = 0; row < results_per_simdgroup; row++) {
-+      // Gate projection dot product
 +      auto gwl = (const device uint8_t*)(gate_ws + row * in_vec_size_w);
 +      const device T* gsl = gate_scales + row * in_vec_size_g;
 +      const device T* gbl = gate_biases + row * in_vec_size_g;
@@ -389,7 +387,6 @@ index bf63981..b2109de 100644
 +      U gb = gbl[0];
 +      gate_result[row] += qdot<U, values_per_thread, bits>(gwl, x_thread, gs, gb, sum);
 +
-+      // Up projection dot product (reuses x_thread)
 +      auto uwl = (const device uint8_t*)(up_ws + row * in_vec_size_w);
 +      const device T* usl = up_scales + row * in_vec_size_g;
 +      const device T* ubl = up_biases + row * in_vec_size_g;
@@ -407,15 +404,10 @@ index bf63981..b2109de 100644
 +    x += block_size;
 +  }
 +
-+  // Reduce across simdgroup, apply SwiGLU, and write
 +  for (int row = 0; row < results_per_simdgroup; row++) {
 +    U g = simd_sum(gate_result[row]);
 +    U u = simd_sum(up_result[row]);
 +    if (simd_lid == 0) {
-+      // SwiGLU: silu(gate) * up = gate * sigmoid(gate) * up
-+      // Match MLX sigmoid: y = 1 / (1 + exp(abs(x))), then
-+      // return y if x < 0 else 1 - y.
-+      // Keep math in T to mirror MLX unary kernel behavior.
 +      T g_t = static_cast<T>(g);
 +      T u_t = static_cast<T>(u);
 +      T y_t = (T)1 / ((T)1 + metal::exp(metal::abs(g_t)));
@@ -521,7 +513,7 @@ index bf63981..b2109de 100644
  [[kernel]] void affine_gather_qvm(
      const device uint32_t* w [[buffer(0)]],
 diff --git a/mlx/backend/metal/kernels/quantized.metal b/mlx/backend/metal/kernels/quantized.metal
-index f734b9b..18e3ff1 100644
+index f734b9bc..18e3ff1f 100644
 --- a/mlx/backend/metal/kernels/quantized.metal
 +++ b/mlx/backend/metal/kernels/quantized.metal
 @@ -89,6 +89,7 @@
@@ -533,7 +525,7 @@ index f734b9b..18e3ff1 100644
    instantiate_quantized(affine_gather_qvm, type, group_size, bits)     \
    instantiate_quantized(affine_gather_qmm_n, type, group_size, bits)
 diff --git a/mlx/backend/metal/make_compiled_preamble.sh b/mlx/backend/metal/make_compiled_preamble.sh
-index bb55ed3..73af1cd 100644
+index bb55ed3a..73af1cd8 100644
 --- a/mlx/backend/metal/make_compiled_preamble.sh
 +++ b/mlx/backend/metal/make_compiled_preamble.sh
 @@ -31,7 +31,11 @@ OUTPUT_FILE=${OUTPUT_DIR}/${SRC_NAME}.cpp
@@ -550,7 +542,7 @@ index bb55ed3..73af1cd 100644
  
  # Remove any included system frameworks (for MetalPerformancePrimitive headers)
 diff --git a/mlx/backend/metal/quantized.cpp b/mlx/backend/metal/quantized.cpp
-index cb67c74..20d0666 100644
+index cb67c74f..20d0666a 100644
 --- a/mlx/backend/metal/quantized.cpp
 +++ b/mlx/backend/metal/quantized.cpp
 @@ -928,6 +928,80 @@ void gather_qmv(
@@ -693,7 +685,7 @@ index cb67c74..20d0666 100644
      const array& in,
      array& out,
 diff --git a/mlx/ops.cpp b/mlx/ops.cpp
-index 076de69..94f5852 100644
+index 076de699..94f58522 100644
 --- a/mlx/ops.cpp
 +++ b/mlx/ops.cpp
 @@ -5027,6 +5027,113 @@ array gather_qmm(
@@ -811,7 +803,7 @@ index 076de69..94f5852 100644
      const array& a,
      const array& b,
 diff --git a/mlx/ops.h b/mlx/ops.h
-index 1ff3bbf..de31f99 100644
+index 1ff3bbfa..de31f997 100644
 --- a/mlx/ops.h
 +++ b/mlx/ops.h
 @@ -1435,6 +1435,23 @@ MLX_API array gather_qmm(
@@ -839,7 +831,7 @@ index 1ff3bbf..de31f99 100644
  MLX_API array tensordot(
      const array& a,
 diff --git a/mlx/primitives.cpp b/mlx/primitives.cpp
-index b078625..7627daf 100644
+index b0786251..7627daf0 100644
 --- a/mlx/primitives.cpp
 +++ b/mlx/primitives.cpp
 @@ -3670,6 +3670,33 @@ bool GatherQMM::is_equivalent(const Primitive& other) const {
@@ -877,7 +869,7 @@ index b078625..7627daf 100644
      const std::vector<array>& inputs,
      const std::vector<int>& axes) {
 diff --git a/mlx/primitives.h b/mlx/primitives.h
-index 4091aaf..0e0fbdf 100644
+index 4091aafc..0e0fbdf0 100644
 --- a/mlx/primitives.h
 +++ b/mlx/primitives.h
 @@ -1712,6 +1712,38 @@ class GatherQMM : public UnaryPrimitive {
@@ -920,7 +912,7 @@ index 4091aaf..0e0fbdf 100644
   public:
    explicit RandomBits(Stream stream, const Shape& shape, int width)
 diff --git a/mlx/transforms.cpp b/mlx/transforms.cpp
-index 4967c50..db68ca3 100644
+index 4967c50a..db68ca3a 100644
 --- a/mlx/transforms.cpp
 +++ b/mlx/transforms.cpp
 @@ -3,6 +3,7 @@
@@ -976,7 +968,7 @@ index 4967c50..db68ca3 100644
          (get_active_memory() > get_memory_limit() &&
           scheduler::n_active_tasks() > 0)) {
 diff --git a/mlx/utils.h b/mlx/utils.h
-index bb2de46..d0dc3fd 100644
+index bb2de466..d0dc3fd1 100644
 --- a/mlx/utils.h
 +++ b/mlx/utils.h
 @@ -159,6 +159,12 @@ inline bool metal_fast_synch() {
@@ -993,7 +985,7 @@ index bb2de46..d0dc3fd 100644
    static bool enable_tf32_ = get_var("MLX_ENABLE_TF32", 1);
    return enable_tf32_;
 diff --git a/python/src/ops.cpp b/python/src/ops.cpp
-index de51ad5..d41368c 100644
+index de51ad50..d41368c3 100644
 --- a/python/src/ops.cpp
 +++ b/python/src/ops.cpp
 @@ -4449,6 +4449,55 @@ void init_ops(nb::module_& m) {

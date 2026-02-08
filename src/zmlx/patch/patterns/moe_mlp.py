@@ -742,10 +742,17 @@ class _MoEMLPPattern:
                         moe_stream_reduce or "serial",
                     )
 
-            # 3. Combine
+            # 3. Combine — use native ops matching each model's original combine.
+            # Native (y * w[..., None]).sum(axis=-2) lets MLX fuse the broadcast-
+            # multiply + reduce and avoids custom-kernel dispatch overhead.
             if expert_outputs is not None:
                 if is_glm:
-                    y = moe.moe_combine_no_fma(expert_outputs, gate_weights)
+                    y = (expert_outputs * gate_weights[..., None]).sum(axis=-2)
+                    y = y.astype(expert_outputs.dtype)
+                elif is_qwen3:
+                    # Qwen3: (y * scores[..., None]).sum(axis=-2)
+                    # scores are float32 from precise softmax; MLX promotes naturally.
+                    y = (expert_outputs * gate_weights[..., None]).sum(axis=-2)
                 elif is_gpt_oss:
                     # GPT-OSS: match MLX's dtype promotion and sum order.
                     if gate_weights.dtype == mx.float32:
@@ -753,7 +760,6 @@ class _MoEMLPPattern:
                     else:
                         y = moe.moe_combine_exact(expert_outputs, gate_weights)
                 elif use_exact_combine:
-                    # Qwen3: match MLX dtype promotion if weights are float32.
                     if gate_weights.dtype == mx.float32:
                         y = moe.moe_combine_fp32(expert_outputs, gate_weights)
                     else:

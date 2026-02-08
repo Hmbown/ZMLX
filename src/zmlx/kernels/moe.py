@@ -1550,9 +1550,10 @@ def _weighted_accumulate_kernel(d_out: int) -> Any:
     """Fused out = acc + gate_weight * projection — avoids materializing gate * proj."""
     D_out = int(d_out)
     source = f"""
-        uint elem = thread_position_in_grid.x;
+        uint col = thread_position_in_grid.x;
+        uint row = thread_position_in_grid.y;
         constexpr uint D = {D_out};
-        uint row = elem / D;
+        uint elem = row * D + col;
         float w = (float)gate[row];
         float v = (float)proj[elem];
         out[elem] = (T)((float)acc[elem] + w * v);
@@ -1578,9 +1579,10 @@ def _weighted_accumulate_kernel_no_fma(d_out: int) -> Any:
     D_out = int(d_out)
     source = f"""
         #pragma clang fp contract(off)
-        uint elem = thread_position_in_grid.x;
+        uint col = thread_position_in_grid.x;
+        uint row = thread_position_in_grid.y;
         constexpr uint D = {D_out};
-        uint row = elem / D;
+        uint elem = row * D + col;
         float w = (float)gate[row];
         float v = (float)proj[elem];
         float prod = w * v;
@@ -1675,7 +1677,7 @@ def gather_qmm_combine(
             proj_k,
             gate_k,
             template=[("T", act.dtype)],
-            grid=(B * D_out, 1, 1),
+            grid=(D_out, B, 1),
             threadgroup=(min(D_out, 256), 1, 1),
             output_shapes=[(B, D_out)],
             output_dtypes=[act.dtype],
@@ -1769,7 +1771,7 @@ def gather_qmm_combine_quantized(
             proj_k,
             gate_k,
             template=[("T", act.dtype)],
-            grid=(B * D_out, 1, 1),
+            grid=(D_out, B, 1),
             threadgroup=(min(D_out, 256), 1, 1),
             output_shapes=[(B, D_out)],
             output_dtypes=[act.dtype],
