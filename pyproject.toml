@@ -36,7 +36,6 @@ Issues = "https://github.com/Hmbown/ZMLX/issues"
 Changelog = "https://github.com/Hmbown/ZMLX/blob/main/CHANGELOG.md"
 
 [project.scripts]
-zmlx = "zmlx.train.cli:main"
 zmlx-exo = "zmlx.exo:main"
 
 [project.optional-dependencies]
@@ -51,11 +50,8 @@ dev = [
 kvtc = [
   "numpy>=1.24.0",
 ]
-train = [
+lm = [
   "mlx-lm>=0.25.0",
-  "pyyaml>=6.0",
-  "transformers>=4.40.0",
-  "huggingface_hub>=0.20.0",
 ]
 discover = [
   "anthropic>=0.40.0",

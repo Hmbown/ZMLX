@@ -122,7 +122,7 @@ Notes:
 1. Install (patching examples use `mlx-lm`):
 
 ```bash
-pip install "zmlx[train]"    # includes mlx-lm for model patching
+pip install "zmlx[lm]"       # includes mlx-lm for model patching
 # pip install zmlx            # kernel authoring only
 ```
 
@@ -159,7 +159,6 @@ Tip: large model downloads use the Hugging Face cache; set `HF_HOME` to control 
 - **Kernel authoring:** `zmlx.api.elementwise()`, `reduce()`, `map_reduce()`, and `@zmlx.jit`.
 - **Autograd support:** optional custom VJP paths via MLX custom functions.
 - **Benchmarking:** `zmlx.bench.compare()` and `python -m zmlx.bench.report` (repro capsules in `benchmarks/repro_capsules/`).
-- **Training CLI (optional):** `zmlx train`.
 - **Custom MLX primitive (opt-in):** build a custom MLX with `gather_qmm_swiglu` (see [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md); patch lives in `integrations/mlx_local_integration/`).
 
 ## exo Integration
@@ -267,7 +266,6 @@ import mlx.core as mx
 from zmlx.patch import patch, smart_patch
 
 patch(model)                      # inference defaults (auto-skips unsafe patterns)
-patch(model, mode="training")     # training preset (adds norms/residual fusions)
 patch(model, patterns=["moe_mlp"])  # override safety; validate first
 
 # Auto-benchmark: apply only patterns that actually help on your sample
@@ -324,7 +322,7 @@ Next steps:
 | Symptom | Fix |
 |:--|:--|
 | `ModuleNotFoundError: No module named 'mlx'` | Requires Apple Silicon macOS. ZMLX does not support Intel Macs or Linux. |
-| `ModuleNotFoundError: No module named 'mlx_lm'` | Install with `pip install "zmlx[train]"` for model patching examples. |
+| `ModuleNotFoundError: No module named 'mlx_lm'` | Install with `pip install "zmlx[lm]"` for model patching examples. |
 | Model downloads fill disk | Set `HF_HOME` to a larger drive before running. |
 | `patch()` shows 0 modules patched | The model may not match any patterns, or ZMLX auto-skipped them for safety. Run `python -m zmlx.validate <model>` to verify. |
 | GLM/Qwen shows 0 modules patched | Expected on stock MLX. Requires building the custom `gather_qmm_swiglu` primitive in `mlx_local/` (see [docs](docs/EXPERIMENTAL_MLX.md)). |

@@ -4,7 +4,6 @@ Usage::
 
     import zmlx
     model = zmlx.patch.patch(model)                       # inference default
-    model = zmlx.patch.patch(model, mode="training")      # training preset
     model = zmlx.patch.patch(model, patterns=ALL_PATTERNS)  # explicit full set
     model = zmlx.patch.smart_patch(model, sample)         # auto-benchmark
 
@@ -13,7 +12,6 @@ Presets::
     FUSED_ACTIVATIONS — SwiGLU/GeGLU/MoE fusions only (default for inference).
         Best results on MoE when fused SwiGLU is available; on stock MLX use
         ``smart_patch`` to avoid regressions.
-    TRAINING_RECOMMENDED — activations + norms + fused residual (best for training).
     ALL_PATTERNS — all 7 patterns including norms and softmax.
         WARNING: can regress on inference. Benchmark before enabling.
 
@@ -113,18 +111,6 @@ def _apply_family_excludes(
 #: On stock MLX, MoE gating+combine can regress; use smart_patch to validate.
 FUSED_ACTIVATIONS: list[str] = ["swiglu_mlp", "geglu_mlp", "moe_mlp"]
 
-#: Recommended for training workloads.  Includes fused activations plus norm
-#: replacements and residual-norm fusion, which benefit training (weight
-#: gradients, fused loss).  Not recommended for inference — MLX's built-in
-#: ``mx.fast.rms_norm`` is faster than custom norm kernels.
-TRAINING_RECOMMENDED: list[str] = [
-    "swiglu_mlp",
-    "geglu_mlp",
-    "rmsnorm",
-    "layernorm",
-    "residual_norm",
-]
-
 #: All 7 patterns.  **WARNING**: can regress on inference. Norm and softmax
 #: kernels are often slower than MLX's built-in ``mx.fast.rms_norm`` /
 #: ``mx.softmax``. Only use this preset if you have benchmarked it on your
@@ -162,9 +148,7 @@ def patch(
         mode: Shorthand for common workloads.  ``"inference"`` (default)
             selects :data:`FUSED_ACTIVATIONS` — best results on MoE when
             fused SwiGLU is available; on stock MLX use ``smart_patch`` to
-            avoid regressions.  ``"training"`` selects
-            :data:`TRAINING_RECOMMENDED` — adds norm fusions that benefit
-            backward passes.  Ignored if ``patterns`` is provided explicitly.
+            avoid regressions. Ignored if ``patterns`` is provided explicitly.
         profile: Optional profile name that selects a curated pattern set.
             Overrides ``mode`` when provided (unless ``patterns`` is set).
         patterns: Explicit list of pattern names.  Overrides ``mode`` when
@@ -184,7 +168,6 @@ def patch(
     Examples::
 
         patch(model)                    # inference (safe default)
-        patch(model, mode="training")   # training preset
         patch(model, patterns=["swiglu_mlp", "moe_mlp"])  # explicit
         patch(model, profile="qwen3")   # Qwen3 minimal (moe only)
 
@@ -198,7 +181,6 @@ def patch(
 
     _MODES = {
         "inference": FUSED_ACTIVATIONS,
-        "training": TRAINING_RECOMMENDED,
     }
     _PROFILES = {
         "qwen3": ["moe_mlp"],
@@ -535,7 +517,6 @@ __all__ = [
     "list_patterns",
     "ALL_PATTERNS",
     "FUSED_ACTIVATIONS",
-    "TRAINING_RECOMMENDED",
     "PatchConfig",
     "PatchResult",
 ]

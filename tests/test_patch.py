@@ -448,27 +448,6 @@ def test_patch_mode_inference():
     assert mx.allclose(out_before, out_after, atol=1e-3).item()
 
 
-def test_patch_mode_training():
-    """mode='training' applies TRAINING_RECOMMENDED (includes norm replacement)."""
-    from zmlx.patch import patch
-    from zmlx.patch._modules import ZMLXRMSNorm
-
-    model = TinyModel(dims=64, hidden=128, n_layers=2)
-    x = mx.random.normal((2, 64))
-
-    out_before = model(x)
-    mx.eval(out_before)
-
-    patch(model, mode="training")
-
-    # Training mode SHOULD replace norms
-    assert isinstance(model.norm, ZMLXRMSNorm)
-
-    out_after = model(x)
-    mx.eval(out_after)
-    assert mx.allclose(out_before, out_after, atol=1e-3).item()
-
-
 def test_patch_mode_invalid():
     """Invalid mode raises ValueError."""
     import pytest
@@ -487,8 +466,8 @@ def test_patch_patterns_overrides_mode():
 
     model = TinyModel(dims=64, hidden=128, n_layers=2)
 
-    # Even with mode="training", explicit patterns=["swiglu_mlp"] should win
-    patch(model, mode="training", patterns=["swiglu_mlp"])
+    # Even with mode="inference", explicit patterns=["swiglu_mlp"] should win
+    patch(model, mode="inference", patterns=["swiglu_mlp"])
 
     # Norms should NOT be replaced because explicit patterns didn't include them
     assert not isinstance(model.norm, ZMLXRMSNorm)

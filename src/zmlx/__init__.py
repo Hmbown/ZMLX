@@ -25,7 +25,7 @@ Kernel catalog:
     zmlx.kernels.*     — 70+ ready-to-use and reference-implementation kernels
 
 Model helpers (require mlx-lm):
-    zmlx.load, zmlx.lora, zmlx.train, zmlx.generate
+    zmlx.load, zmlx.generate
 """
 
 __version__ = "0.8.2"
@@ -65,7 +65,7 @@ def __getattr__(name: str):
         return getattr(_api, name)
 
     # Model helpers (from api.py)
-    if name in {"load", "lora", "train", "generate"}:
+    if name in {"load", "generate"}:
         from . import api as _api
         return getattr(_api, name)
 
@@ -113,7 +113,5 @@ __all__ = [
     "kvtc",
     # Model helpers
     "load",
-    "lora",
-    "train",
     "generate",
 ]
