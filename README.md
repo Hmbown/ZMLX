@@ -12,36 +12,40 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 - **Metal kernels from Python:** write `elementwise("x * tanh(log(1 + exp(x)))")` and get a compiled Metal kernel with caching, autograd support, and the 70+ kernel catalog.
 - **Model patching:** `patch(model)` replaces MoE gating/combine/activation sequences with fused Metal kernels, reducing dispatch overhead during decode. Token-identical output; verify with `python -m zmlx.validate`.
 - **Optional custom primitive (GLM/Qwen3):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash and Qwen3-30B-A3B. See the GLM-4.7-Flash stress benchmark results below + [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md). On stock MLX these models auto-skip safely.
-- **Proven on stock MLX:** LFM2-8B-A1B shows **+8-13% decode** on released MLX with no custom builds needed. These gains come from ZMLX's own Metal kernels for fused gating, combine, and SwiGLU activation.
-- **Next release prep:** Qwen3.5 support scaffolding (pending official `Qwen/*` release on Hugging Face).
+- **Proven on current MLX:** LFM2-8B-A1B-4bit shows consistent decode gains in current matrix runs with token-identical output.
 
-## GLM-4.7-Flash — Stress-Benchmark-Verified Decode Speedups (Custom Primitive)
+## Benchmark Snapshot (2026-02-08)
 
-ZMLX's flagship result is **token-identical decode speedups** on `mlx-community/GLM-4.7-Flash-4bit` when running with a custom MLX build that includes `gather_qmm_swiglu` (see [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md)).
+Latest sequential 4-bit MoE sweep (`--max-tokens 1000 --runs 1`, default patch path, token-identical):
 
-**Stress benchmark protocol:** 5 prompts × 3 generation lengths × 5 runs (15 configs), greedy decode, token-by-token fidelity across configs. The benchmark runner is [`benchmarks/bench_glm_stress.py`](benchmarks/bench_glm_stress.py).
+| Model | Baseline | Patched | Speedup | Fidelity |
+|:--|--:|--:|--:|:--|
+| `mlx-community/LFM2-8B-A1B-4bit` | 209.79 tok/s | 235.68 tok/s | **1.123x** | PASS |
+| `mlx-community/GLM-4.7-Flash-4bit` | 74.54 tok/s | 78.57 tok/s | 1.054x | PASS |
+| `mlx-community/Qwen3-30B-A3B-4bit` | 103.27 tok/s | 106.26 tok/s | 1.029x | PASS |
 
-**Result (Apple M4 Max 36 GB, MLX `0.30.4.dev20260204+2f324cc`):** 66.3 → 70.7 tok/s average decode throughput (**+6.6%**, mean of per-config **median** tok/s), **15/15 configs token-identical**. Capsule: [`benchmarks/repro_capsules/glm_stress_m4_20260205_rerun_mlx0304dev2f324cc.json`](benchmarks/repro_capsules/glm_stress_m4_20260205_rerun_mlx0304dev2f324cc.json).
+Revalidation at 200 tokens (GLM default path, 3 runs):
+- `mlx-community/GLM-4.7-Flash-4bit`: `82.23 -> 89.63 tok/s` (`1.090x`, PASS)
 
-Prior rerun capsule (same machine + MLX): [`benchmarks/repro_capsules/glm_stress_m4_20260205_d17ab1b.json`](benchmarks/repro_capsules/glm_stress_m4_20260205_d17ab1b.json).
+Source of truth:
+- `benchmarks/matrix.jsonl` (entries dated `2026-02-08`)
+- Capsules under `benchmarks/repro_capsules/`
 
-**Speedup vs length (avg across prompts)**
-| Length | Avg Baseline | Avg Patched | Avg Speedup |
-|:--|--:|--:|--:|
-| 256 | 70.2 | 73.6 | 1.049x |
-| 1024 | 65.0 | 70.3 | **1.081x** |
-| 2048 | 63.8 | 68.1 | 1.068x |
+Why these are lower than earlier 8-12% headlines on GLM/Qwen3:
+- MLX baseline has improved in newer versions, shrinking relative uplift from the same ZMLX patch path.
+- Speedups vary with decode length and thermal state; use multiple runs for release-quality numbers.
 
-**Speedup vs prompt type (avg across lengths)**
-| Prompt | Avg Baseline | Avg Patched | Avg Speedup |
-|:--|--:|--:|--:|
-| english_technical | 66.2 | 69.9 | 1.055x |
-| chinese | 66.7 | 68.8 | 1.031x |
-| code | 64.6 | 69.6 | **1.078x** |
-| math_reasoning | 66.7 | 69.0 | 1.035x |
-| creative | 67.3 | 76.2 | **1.133x** |
+Near-term roadmap:
+- Prepare Qwen3.5 model aliases/presets once official `Qwen/*` checkpoints are published on Hugging Face, then validate with `python -m zmlx.validate <model> --max-tokens 200 --runs 3` before long-run matrix entries.
 
-Reproduce on your machine (writes a new capsule + log):
+## GLM-4.7-Flash Stress Benchmark (Historical Reference)
+
+Historical stress result (M4 Max, MLX `0.30.4.dev20260204+2f324cc`, 5 prompts x 3 lengths x 5 runs):
+- Average decode throughput: `66.3 -> 70.7 tok/s` (`+6.6%`)
+- Fidelity: `15/15` configs token-identical
+- Capsule: `benchmarks/repro_capsules/glm_stress_m4_20260205_rerun_mlx0304dev2f324cc.json`
+
+Reproduce stress benchmark:
 
 ```bash
 source .venv/bin/activate
@@ -51,40 +55,6 @@ python benchmarks/bench_glm_stress.py \
   --lengths 256,1024,2048 \
   --runs 5 \
   --json-out benchmarks/repro_capsules/glm_stress_<your_machine>_<date>.json
-```
-
-### What We Learned (Hypotheses)
-
-- **Prompt-dependent speedups:** the stress test shows larger gains on some prompt types (e.g. `code`) than others (e.g. `english_technical`). A working hypothesis is that **expert routing distributions** differ across prompt styles (hot experts vs high-entropy routing), which changes how much overhead the fused expert path saves.
-- **Benchmarking needs diversity:** single-prompt validation can over/under-estimate performance; the 15-config stress protocol catches these differences and is the recommended regression gate for GLM work.
-
-### Next Steps
-
-- Add an **opt-in routing histogram** mode (log Top‑K expert IDs/weights during the stress run) to correlate routing entropy with speedups and identify “hot” experts worth special-casing.
-- Prioritize **GLM KV-cache experiments with delayed quantization**: `kv_bits=4, quantized_kv_start=128` reached `72.9 -> 78.9 tok/s` (**+8.2%**) at 1024 tokens in quick reruns (`benchmarks/repro_capsules/glm47_flash_kv4_t1024_s128_m4max_20260205_rerun_mlx0304dev2f324cc.json`).
-- Keep **shared-expert overlap** disabled for now: `shared_experts_overlap_streams2` regressed to `0.734x` in reruns (`benchmarks/repro_capsules/glm47_flash_shared_overlap_m4max_20260205_rerun2_mlx0304dev2f324cc.json`).
-- Keep **`residual_norm` disabled** on GLM: still fails greedy token fidelity (`1/200` identical) in reruns (`benchmarks/repro_capsules/glm47_flash_residual_norm_m4max_20260205_rerun2_mlx0304dev2f324cc.json`).
-- Treat **`glm47_rope` as low-priority**: currently modest decode gain (`1.013x`) in quick reruns (`benchmarks/repro_capsules/glm47_flash_rope_m4max_20260205_rerun2_mlx0304dev2f324cc.json`).
-- For **Qwen3-30B-A3B**, current best decode uplift is `96.5 -> 104.3 tok/s` (**+8.1%**) with `patch(model, profile="qwen3")` (`benchmarks/repro_capsules/qwen3_a3b_profile_qwen3_m4max_20260205_rerun2_mlx0304dev2f324cc.json`).
-- For **Qwen3**, keep no-KV as the performance baseline for now: quick 1024-token reruns with `kv_bits=4, quantized_kv_start=128` did not beat no-KV absolute decode tok/s (`benchmarks/repro_capsules/qwen3_a3b_nokv_t1024_m4max_20260205_rerun_mlx0304dev2f324cc.json` vs `benchmarks/repro_capsules/qwen3_a3b_kv4_t1024_s128_m4max_20260205_rerun_mlx0304dev2f324cc.json`).
-- 2026-02-08 sanity checks on current MLX showed smaller relative gains on default patching:
-  - GLM-4.7-Flash-4bit: `1.048x` (200 tok), `1.037x` (2000 tok)
-  - Qwen3-30B-A3B-4bit: `1.022x` (200 tok), `1.034x` (2000 tok)
-  These are still token-identical; benchmark deltas vary with decode length, thermals, and MLX baseline changes.
-- Prepare **Qwen3.5** integration in advance (once official checkpoints are published under the `Qwen` org):
-  - Add matrix catalog aliases in `src/zmlx/matrix/models.py` for new model ID patterns.
-  - Add/adjust KVTC geometry presets in `src/zmlx/kvtc/presets.py` if architecture differs from current Qwen3 MoE.
-  - Validate with `python -m zmlx.validate <model> --max-tokens 200 --runs 3` first, then long-run checks (1000/2000 tokens).
-
-### Qwen3.5 Watchlist (Hugging Face)
-
-As of 2026-02-08, there are no official `Qwen/Qwen3.5*` model IDs in the Hugging Face API; community repos with `qwen-3.5` names exist but are not authoritative release targets.
-
-Quick checks:
-
-```bash
-curl -s "https://huggingface.co/api/models?author=Qwen&search=Qwen3&limit=50"
-curl -s "https://huggingface.co/api/models?author=Qwen&search=3.5&limit=20"
 ```
 
 ## DeepSeek-V3.2 + Kimi-K2.5 Experiments (Experimental)
@@ -209,9 +179,7 @@ Full methodology and raw data: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 | Model | Hardware | Decode (baseline -> patched) | Change | Fidelity | Capsule |
 |:--|:--|--:|--:|:--|:--|
 | LFM2-8B-A1B-4bit | M4 Max 36 GB | 197.8 tok/s -> 223.2 tok/s | **+12.8%** | token-identical | [`benchmarks/repro_capsules/lfm2_m4max_20260205_rerun_mlx0304dev2f324cc.json`](benchmarks/repro_capsules/lfm2_m4max_20260205_rerun_mlx0304dev2f324cc.json) |
-| LFM2-8B-A1B-8bit | M4 Max 36 GB | 134.0 tok/s -> 145.4 tok/s | +8.5% | token-identical | [`benchmarks/repro_capsules/lfm2_m4max_20260205_rerun_mlx0304dev2f324cc.json`](benchmarks/repro_capsules/lfm2_m4max_20260205_rerun_mlx0304dev2f324cc.json) |
 | LFM2-8B-A1B-4bit | M1 Pro 16 GB | 105.5 tok/s -> 115.3 tok/s | +9.3% | token-identical | [`benchmarks/repro_capsules/lfm2_m1pro_20260131.json`](benchmarks/repro_capsules/lfm2_m1pro_20260131.json) |
-| LFM2-8B-A1B-8bit | M1 Pro 16 GB | 72.8 tok/s -> 76.4 tok/s | +5.0% | token-identical | [`benchmarks/repro_capsules/lfm2_m1pro_20260131.json`](benchmarks/repro_capsules/lfm2_m1pro_20260131.json) |
 | GPT-OSS-20B-4bit | M4 Max 36 GB | 121.8 tok/s -> 122.9 tok/s | +1.0% | token-identical | — |
 
 To print a report from a capsule:
@@ -233,10 +201,11 @@ ZMLX provides the model-side integration: auto-detecting MoE architectures, rewi
 
 | Model | Hardware | Decode (baseline -> patched) | Change | Fidelity | Capsule |
 |:--|:--|--:|--:|:--|:--|
-| GLM-4.7-Flash-4bit | M4 Max 36 GB | 86.6 tok/s -> 92.4 tok/s | **+6.7%** | 200/200 tokens identical | [`benchmarks/repro_capsules/glm47_flash_control_m4max_20260205.json`](benchmarks/repro_capsules/glm47_flash_control_m4max_20260205.json) |
-| Qwen3-30B-A3B-4bit | M4 Max 36 GB | 106.6 tok/s -> 115.0 tok/s | **+7.9%** | 200/200 tokens identical | [`benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json`](benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json) |
+| GLM-4.7-Flash-4bit | M4 Max 36 GB | 82.23 tok/s -> 89.63 tok/s | **+9.0%** | 200/200 tokens identical | matrix `2026-02-08T22:16:36Z` |
+| GLM-4.7-Flash-4bit | M4 Max 36 GB | 74.54 tok/s -> 78.57 tok/s | +5.4% | 1000/1000 tokens identical | matrix `2026-02-08T22:24:10Z` |
+| Qwen3-30B-A3B-4bit | M4 Max 36 GB | 103.27 tok/s -> 106.26 tok/s | +2.9% | 1000/1000 tokens identical | matrix `2026-02-08T22:25:19Z` |
 
-For the full GLM-4.7-Flash stress benchmark protocol + tables, see the “GLM-4.7-Flash — Stress-Benchmark-Verified Decode Speedups” section above.
+For the full GLM-4.7-Flash stress protocol + tables, see “GLM-4.7-Flash Stress Benchmark (Historical Reference)” above.
 
 Capsules and logs:
 - Historical full stress run: [`benchmarks/repro_capsules/glm_stress_m4_20260204.json`](benchmarks/repro_capsules/glm_stress_m4_20260204.json) (log under `benchmarks/results/glm_stress/`)

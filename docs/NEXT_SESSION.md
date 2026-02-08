@@ -14,12 +14,15 @@ and integrate improvements into ZMLX's default kernel set.
 ## Prerequisites
 
 ```bash
-cd /Volumes/VIXinSSD/ZMLX
+cd <REPO_ROOT>
 source .venv/bin/activate
 ```
 
 No API keys needed — the `claude-code` backend shells out to the local `claude`
 CLI with `--dangerously-skip-permissions`.
+
+Notebook policy: record all experimental and documentation decisions in
+`docs/LAB_NOTEBOOK.md` using dated append-only entries.
 
 ## Step 1: Run Full Autorun
 
