@@ -1,0 +1,98 @@
+{
+  "suite": "qwen3",
+  "timestamp_utc": "20260210T182927Z",
+  "script": "bench_qwen3_a3b_experiments.py",
+  "runs": 2,
+  "max_tokens": 1024,
+  "variants": [
+    "control_patterns_moe_mlp",
+    "qwen_combine_exact"
+  ],
+  "env_overrides": {},
+  "results": [
+    {
+      "variant": "control_patterns_moe_mlp",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_combo_v9_repro_t1024_r2_control_patterns_moe_mlp.json",
+      "command": [
+        ".venv/bin/python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_combo_v9_repro_t1024_r2_control_patterns_moe_mlp.json",
+        "--variants",
+        "control_patterns_moe_mlp",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "control_patterns_moe_mlp",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 112.3,
+          "patched": 114.9,
+          "speedup": 1.0232
+        },
+        "prefill": {
+          "baseline": 331.8,
+          "patched": 336.8,
+          "change": 0.0151
+        },
+        "memory_gb": {
+          "baseline": 17.33,
+          "patched": 17.34
+        }
+      }
+    },
+    {
+      "variant": "qwen_combine_exact",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_combo_v9_repro_t1024_r2_qwen_combine_exact.json",
+      "command": [
+        ".venv/bin/python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_combo_v9_repro_t1024_r2_qwen_combine_exact.json",
+        "--variants",
+        "qwen_combine_exact",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_combine_exact",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 111.5,
+          "patched": 119.5,
+          "speedup": 1.0717
+        },
+        "prefill": {
+          "baseline": 326.7,
+          "patched": 336.6,
+          "change": 0.0303
+        },
+        "memory_gb": {
+          "baseline": 17.33,
+          "patched": 17.34
+        }
+      }
+    }
+  ]
+}

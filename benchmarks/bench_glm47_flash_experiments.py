@@ -155,7 +155,8 @@ def main() -> None:
         help=(
             "Variant names to run (default: all). "
             "Choices: control_swiglu_moe, control_swiglu_moe_residual_norm, "
-            "control_swiglu_moe_downproj_combine, glm47_rope, "
+            "control_swiglu_moe_downproj_combine, glm_combine_exact, "
+            "glm_combine_fp32, glm_combine_fp32_no_fma, glm47_rope, "
             "shared_experts_overlap_streams2"
         ),
     )
@@ -244,6 +245,33 @@ def main() -> None:
             "notes": (
                 "Experimental: fuse down-proj + combine for decode-like shapes "
                 "(GLM only; token-fidelity-sensitive)."
+            ),
+        },
+        {
+            "name": "glm_combine_exact",
+            "patterns": ["swiglu_mlp", "moe_mlp"],
+            "env": {"ZMLX_GLM_COMBINE_MODE": "exact"},
+            "notes": (
+                "Experimental: force GLM combine via ZMLX exact-dtype kernel "
+                "(ZMLX_GLM_COMBINE_MODE=exact)."
+            ),
+        },
+        {
+            "name": "glm_combine_fp32",
+            "patterns": ["swiglu_mlp", "moe_mlp"],
+            "env": {"ZMLX_GLM_COMBINE_MODE": "fp32"},
+            "notes": (
+                "Experimental: force GLM combine via ZMLX fp32 kernel "
+                "(ZMLX_GLM_COMBINE_MODE=fp32)."
+            ),
+        },
+        {
+            "name": "glm_combine_fp32_no_fma",
+            "patterns": ["swiglu_mlp", "moe_mlp"],
+            "env": {"ZMLX_GLM_COMBINE_MODE": "fp32_no_fma"},
+            "notes": (
+                "Experimental: force GLM combine via ZMLX fp32 no-FMA kernel "
+                "(ZMLX_GLM_COMBINE_MODE=fp32_no_fma)."
             ),
         },
         {

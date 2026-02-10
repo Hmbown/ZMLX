@@ -194,3 +194,17 @@ def test_topk_gating_softmax_with_bias_matches_reference():
     mx.eval(i0, w0, i1, w1)
     assert mx.all(i0 == i1).item()
     assert mx.allclose(w0, w1, rtol=2e-3, atol=2e-3).item()
+
+
+def test_router_argpartition_logits_topk_matches_reference():
+    x = mx.random.normal((5, 64)).astype(mx.float32)
+    k = 8
+
+    weights, indices = moe.router_argpartition_logits_topk(x, k=k, compute_dtype=mx.float32)
+
+    inds_ref = mx.argpartition(x, kth=-k, axis=-1)[..., -k:].astype(mx.uint32)
+    w_ref = mx.softmax(mx.take_along_axis(x, inds_ref, axis=-1), axis=-1, precise=True)
+
+    mx.eval(weights, indices, w_ref, inds_ref)
+    assert mx.all(indices == inds_ref).item()
+    assert mx.allclose(weights, w_ref, rtol=1e-6, atol=1e-6).item()

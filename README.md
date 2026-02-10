@@ -38,6 +38,25 @@ Why these are lower than earlier 8-12% headlines on GLM/Qwen3:
 Near-term roadmap:
 - Prepare Qwen3.5 model aliases/presets once official `Qwen/*` checkpoints are published on Hugging Face, then validate with `python -m zmlx.validate <model> --max-tokens 200 --runs 3` before long-run matrix entries.
 
+## Latest Promoted Stack (2026-02-10, v8)
+
+Promoted setup is **custom MLX + ZMLX together**:
+- custom MLX primitive: `gather_qmm_swiglu`
+- ZMLX patch stack: `qwen_combine_exact` (Qwen) and `glm_combine_fp32_no_fma` (GLM)
+
+Compared against current ZMLX control variants in the same benchmark suites:
+
+| Model | Tokens | Current ZMLX control | Promoted v8 variant | Incremental vs control | Fidelity | Capsule |
+|:--|--:|--:|--:|--:|:--|:--|
+| Qwen3-30B-A3B-4bit | 200 | 1.0241x | 1.0549x | +3.01% | PASS | `benchmarks/repro_capsules/qwen3_a3b_combo_v8_fp32nofmaonly_t200_r2_summary.json` |
+| Qwen3-30B-A3B-4bit | 1024 | 1.0276x | 1.0551x | +2.68% | PASS | `benchmarks/repro_capsules/qwen3_a3b_combo_v8_fp32nofmaonly_t1024_r2_summary.json` |
+| GLM-4.7-Flash-4bit | 200 | 1.0352x | 1.0619x | +2.58% | PASS | `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t200_r2_summary.json` |
+| GLM-4.7-Flash-4bit | 1024 | 1.0363x | 1.0667x | +2.93% | PASS | `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t1024_r2_summary.json` |
+
+Memory stayed effectively flat in these confirms:
+- Qwen: ~`17.24 GB` (@200), ~`17.33/17.34 GB` (@1024)
+- GLM: ~`16.91 GB` (@200), ~`16.94/16.95 GB` (@1024)
+
 ## GLM-4.7-Flash Stress Benchmark (Historical Reference)
 
 Historical stress result (M4 Max, MLX `0.30.4.dev20260204+2f324cc`, 5 prompts x 3 lengths x 5 runs):
@@ -203,9 +222,10 @@ ZMLX provides the model-side integration: auto-detecting MoE architectures, rewi
 
 | Model | Hardware | Decode (baseline -> patched) | Change | Fidelity | Capsule |
 |:--|:--|--:|--:|:--|:--|
-| GLM-4.7-Flash-4bit | M4 Max 36 GB | 82.23 tok/s -> 89.63 tok/s | **+9.0%** | 200/200 tokens identical | matrix `2026-02-08T22:16:36Z` |
-| GLM-4.7-Flash-4bit | M4 Max 36 GB | 74.54 tok/s -> 78.57 tok/s | +5.4% | 1000/1000 tokens identical | matrix `2026-02-08T22:24:10Z` |
-| Qwen3-30B-A3B-4bit | M4 Max 36 GB | 103.27 tok/s -> 106.26 tok/s | +2.9% | 1000/1000 tokens identical | matrix `2026-02-08T22:25:19Z` |
+| GLM-4.7-Flash-4bit | M4 Max 36 GB | 85.6 tok/s -> 90.9 tok/s | **+6.2%** | 200/200 tokens identical | `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t200_r2_summary.json` |
+| GLM-4.7-Flash-4bit | M4 Max 36 GB | 79.5 tok/s -> 84.8 tok/s | **+6.7%** | 1024/1024 tokens identical | `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t1024_r2_summary.json` |
+| Qwen3-30B-A3B-4bit | M4 Max 36 GB | 116.6 tok/s -> 123.0 tok/s | **+5.5%** | 200/200 tokens identical | `benchmarks/repro_capsules/qwen3_a3b_combo_v8_fp32nofmaonly_t200_r2_summary.json` |
+| Qwen3-30B-A3B-4bit | M4 Max 36 GB | 112.5 tok/s -> 118.7 tok/s | **+5.5%** | 1024/1024 tokens identical | `benchmarks/repro_capsules/qwen3_a3b_combo_v8_fp32nofmaonly_t1024_r2_summary.json` |
 
 For the full GLM-4.7-Flash stress protocol + tables, see “GLM-4.7-Flash Stress Benchmark (Historical Reference)” above.
 

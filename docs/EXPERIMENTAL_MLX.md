@@ -4,7 +4,7 @@ This document describes `gather_qmm_swiglu`, a **custom C++ Metal primitive** im
 
 ## What this is
 
-`mlx_local/` is a local checkout of upstream MLX (`ml-explore/mlx`, commit `2f324cc`) with ~800 lines of custom C++ and Metal shader code adding the `GatherQMMSwiGLU` primitive. This fuses **gate projection + up projection + SwiGLU activation** for quantized MoE experts into a single GPU dispatch, eliminating multiple kernel launches per expert per layer during decode.
+`mlx_local/` is a local checkout of upstream MLX (`ml-explore/mlx`) at the commit pinned by `MLX_REF` in `integrations/mlx_local_integration/setup_mlx_local.sh` (default: `185b06d9...`) with ~800 lines of custom C++ and Metal shader code adding the `GatherQMMSwiGLU` primitive. This fuses **gate projection + up projection + SwiGLU activation** for quantized MoE experts into a single GPU dispatch, eliminating multiple kernel launches per expert per layer during decode.
 
 The primitive is exposed as `mx.gather_qmm_swiglu()` in Python when the custom build is active.
 
@@ -40,7 +40,7 @@ Manual (equivalent):
 ```bash
 git clone https://github.com/ml-explore/mlx.git mlx_local
 cd mlx_local
-git checkout 2f324cc3b200700b422db4811ae3ff8bd5bf48b4
+git checkout 185b06d9efc1c869540eccfb5baff853fff3659d
 git apply <REPO_ROOT>/integrations/mlx_local_integration/gather_qmm_swiglu.patch
 ```
 
@@ -89,3 +89,13 @@ See [`UPSTREAM_PLAN.md`](../UPSTREAM_PLAN.md). The intent is to contribute `gath
 - N must be divisible by 8, K by 512.
 - Only `transpose=True` and `mode='affine'` are implemented.
 - CPU fallback exists but is not optimized (Metal GPU path only).
+
+## Experimental Router Flags (Qwen)
+
+These are off by default and intended for controlled benchmarks only.
+
+- `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1`
+  - uses Qwen argpartition(logits) + top-k softmax routing path
+- `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=1`
+  - enables fused Metal top-k softmax on top of the argpartition(logits) path
+  - requires `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1`

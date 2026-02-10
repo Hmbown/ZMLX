@@ -154,7 +154,21 @@ def main() -> None:
         default=None,
         help=(
             "Variant names to run (default: all). "
-            "Choices: control_profile_qwen3, control_patterns_moe_mlp"
+            "Choices: control_profile_qwen3, control_patterns_moe_mlp, "
+            "qwen_fused_router_topk, qwen_fused_swiglu, "
+            "qwen_router_argpartition_logits, "
+            "qwen_router_argpartition_logits_topk, "
+            "qwen_combine_fp32, qwen_combine_exact, "
+            "qwen_combine_fp32_no_fma, "
+            "qwen_router_argpartition_logits_combine_fp32, "
+            "qwen_router_argpartition_logits_combine_exact, "
+            "qwen_router_argpartition_logits_combine_fp32_no_fma, "
+            "qwen_router_argpartition_logits_topk_combine_exact, "
+            "qwen_router_argpartition_logits_downproj, "
+            "qwen_router_argpartition_logits_downproj_kvec, "
+            "qwen_fused_swiglu_downproj_kvec, qwen_fused_downproj_combine, "
+            "qwen_fused_downproj_combine_kvec, "
+            "qwen_fused_router_topk_downproj_kvec"
         ),
     )
     args = parser.parse_args()
@@ -224,6 +238,242 @@ def main() -> None:
             "profile": None,
             "env": {},
             "notes": "Control: patch(model, patterns=['moe_mlp'])",
+        },
+        {
+            "name": "qwen_fused_router_topk",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_FUSED_ROUTER_TOPK": "1",
+            },
+            "notes": (
+                "Experimental: Qwen fused router top-k softmax "
+                "(ZMLX_QWEN_FUSED_ROUTER_TOPK=1)"
+            ),
+        },
+        {
+            "name": "qwen_fused_swiglu",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_FUSED_SWIGLU": "1",
+            },
+            "notes": (
+                "Experimental: Qwen fused SwiGLU gate+up "
+                "(ZMLX_QWEN_FUSED_SWIGLU=1)"
+            ),
+        },
+        {
+            "name": "qwen_router_argpartition_logits",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+            },
+            "notes": (
+                "Experimental: Qwen router fast path using argpartition on "
+                "logits with top-k softmax "
+                "(ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1)"
+            ),
+        },
+        {
+            "name": "qwen_router_argpartition_logits_topk",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK": "1",
+            },
+            "notes": (
+                "Experimental: Qwen argpartition(logits) with fused top-k "
+                "softmax kernel "
+                "(ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 "
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=1)"
+            ),
+        },
+        {
+            "name": "qwen_combine_fp32",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_COMBINE_MODE": "fp32",
+            },
+            "notes": (
+                "Experimental: Qwen combine via ZMLX fp32 kernel "
+                "(ZMLX_QWEN_COMBINE_MODE=fp32)"
+            ),
+        },
+        {
+            "name": "qwen_combine_exact",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_COMBINE_MODE": "exact",
+            },
+            "notes": (
+                "Experimental: Qwen combine via ZMLX exact-dtype kernel "
+                "(ZMLX_QWEN_COMBINE_MODE=exact)"
+            ),
+        },
+        {
+            "name": "qwen_combine_fp32_no_fma",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_COMBINE_MODE": "fp32_no_fma",
+            },
+            "notes": (
+                "Experimental: Qwen combine via ZMLX fp32 no-FMA kernel "
+                "(ZMLX_QWEN_COMBINE_MODE=fp32_no_fma)"
+            ),
+        },
+        {
+            "name": "qwen_router_argpartition_logits_combine_fp32",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+                "ZMLX_QWEN_COMBINE_MODE": "fp32",
+            },
+            "notes": (
+                "Experimental: Qwen router argpartition(logits)+topk softmax "
+                "plus fp32 combine kernel "
+                "(ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 "
+                "ZMLX_QWEN_COMBINE_MODE=fp32)"
+            ),
+        },
+        {
+            "name": "qwen_router_argpartition_logits_combine_exact",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+                "ZMLX_QWEN_COMBINE_MODE": "exact",
+            },
+            "notes": (
+                "Experimental: Qwen router argpartition(logits)+topk softmax "
+                "plus exact-dtype combine kernel "
+                "(ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 "
+                "ZMLX_QWEN_COMBINE_MODE=exact)"
+            ),
+        },
+        {
+            "name": "qwen_router_argpartition_logits_combine_fp32_no_fma",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+                "ZMLX_QWEN_COMBINE_MODE": "fp32_no_fma",
+            },
+            "notes": (
+                "Experimental: Qwen router argpartition(logits)+topk softmax "
+                "plus fp32 no-FMA combine kernel "
+                "(ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 "
+                "ZMLX_QWEN_COMBINE_MODE=fp32_no_fma)"
+            ),
+        },
+        {
+            "name": "qwen_router_argpartition_logits_topk_combine_exact",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK": "1",
+                "ZMLX_QWEN_COMBINE_MODE": "exact",
+            },
+            "notes": (
+                "Experimental: Qwen argpartition(logits) fused top-k softmax "
+                "plus exact combine kernel "
+                "(ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 "
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=1 "
+                "ZMLX_QWEN_COMBINE_MODE=exact)"
+            ),
+        },
+        {
+            "name": "qwen_router_argpartition_logits_downproj",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE": "1",
+            },
+            "notes": (
+                "Experimental: Qwen router argpartition(logits)+topk softmax "
+                "plus fused down-proj+combine "
+                "(ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 "
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE=1)"
+            ),
+        },
+        {
+            "name": "qwen_router_argpartition_logits_downproj_kvec",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE": "1",
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC": "1",
+            },
+            "notes": (
+                "Experimental: Qwen router argpartition(logits)+topk softmax "
+                "plus fused down-proj+combine K-vectorized path "
+                "(ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 "
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE=1 "
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC=1)"
+            ),
+        },
+        {
+            "name": "qwen_fused_swiglu_downproj_kvec",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_FUSED_SWIGLU": "1",
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE": "1",
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC": "1",
+            },
+            "notes": (
+                "Experimental: Qwen fused SwiGLU + fused down-proj+combine "
+                "K-vectorized path"
+            ),
+        },
+        {
+            "name": "qwen_fused_downproj_combine",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE": "1",
+            },
+            "notes": (
+                "Experimental: Qwen fused down-proj+combine "
+                "(ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE=1)"
+            ),
+        },
+        {
+            "name": "qwen_fused_downproj_combine_kvec",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE": "1",
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC": "1",
+            },
+            "notes": (
+                "Experimental: Qwen fused down-proj+combine with K-vectorized "
+                "gather combine (ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE=1 "
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC=1)"
+            ),
+        },
+        {
+            "name": "qwen_fused_router_topk_downproj_kvec",
+            "patterns": ["moe_mlp"],
+            "profile": None,
+            "env": {
+                "ZMLX_QWEN_FUSED_ROUTER_TOPK": "1",
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE": "1",
+                "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC": "1",
+            },
+            "notes": (
+                "Experimental: Qwen fused router top-k + fused down-proj+combine "
+                "K-vectorized path"
+            ),
         },
     ]
 
@@ -394,4 +644,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
