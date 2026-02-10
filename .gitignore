@@ -57,3 +57,4 @@ zmlx_kvtc_integration/
 .aleph/
 NEXT_SESSION_PROMPT.md
 .hf_cache/
+src/zmlx/foundry/

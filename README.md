@@ -152,12 +152,23 @@ Tip: large model downloads use the Hugging Face cache; set `HF_HOME` to control 
 
 ## exo Integration
 
-ZMLX works with [exo](https://github.com/exo-explore/exo) for faster GLM-4.7-Flash and Qwen3-30B-A3B decode. No source patching needed:
+ZMLX works with [exo](https://github.com/exo-explore/exo) for faster GLM-4.7-Flash and Qwen3-30B-A3B decode. No source patching needed.
+
+From a ZMLX checkout (recommended; clones exo into `./exo` and generates `exo/run_zmlx.sh`):
 
 ```bash
 bash setup_zmlx.sh
 bash exo/run_zmlx.sh
 ```
+
+If `exo` is already installed in your environment:
+
+```bash
+pip install zmlx
+zmlx-exo
+```
+
+For GLM/Qwen3 speedups, first build the optional custom MLX primitive (`gather_qmm_swiglu`) per [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md), then re-run `bash setup_zmlx.sh` so the exo venv picks it up.
 
 ZMLX hooks into exo's model loading at runtime — when GLM/Qwen3 load with the custom MLX primitive, MoE expert dispatch is fused. Measured speedups vary by prompt/length; see [`docs/EXO.md`](docs/EXO.md) and repro capsules in `benchmarks/repro_capsules/`.
 

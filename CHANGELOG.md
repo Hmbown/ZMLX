@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.8.4] - 2026-02-10
+
+### Added
+
+- Experimental Qwen routing path: `router_argpartition_logits_topk()` kernel and env-gated enablement via `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1` plus `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=1` (off by default).
+- New benchmark variants + committed repro capsules for v8 promoted stack and v9 reproduction/routertopk experiments (`benchmarks/repro_capsules/`, `benchmarks/matrix.jsonl`, and experiment drivers under `benchmarks/`).
+- Kernel discovery and knowledge-base tooling plus interleaved benchmarking helpers (see `docs/kernel_discovery.md` and `docs/KNOWLEDGE_BASE.md`).
+
+### Fixed
+
+- Benchmark summary JSON now records repository-relative paths (prevents machine-specific absolute paths from leaking into committed artifacts).
+
+### Changed
+
+- Updated kernel tests and env-gate coverage for MoE routing/fusion changes.
+
 ## [0.8.3] - 2026-02-08
 
 ### Fixed

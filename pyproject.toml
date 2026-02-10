@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zmlx"
-version = "0.8.3"
+version = "0.8.4"
 description = "ZMLX: Metal-kernel toolkit and optimization lab for MLX on Apple Silicon. Fused MoE decode (+5-12% on LFM2-8B-A1B), custom GPU kernels in one line, 70+ kernel catalog."
 readme = "README.md"
 requires-python = ">=3.10"
