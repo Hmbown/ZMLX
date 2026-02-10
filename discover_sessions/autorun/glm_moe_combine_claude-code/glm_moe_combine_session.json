@@ -1,0 +1,2488 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "session_id": "4a82a9ba06d1485b",
+    "target_name": "glm_moe_combine",
+    "llm_backend": "claude-code",
+    "device_chip": "Apple M4",
+    "device_memory_gb": 36,
+    "os_version": "Darwin 25.1.0",
+    "started_at": "2026-02-08T13:06:39-0600",
+    "updated_at": "2026-02-08T13:11:21-0600",
+    "total_steps": 10,
+    "total_candidates": 40,
+    "total_evaluated": 40,
+    "best_reward": 1.614281540079141,
+    "best_speedup": 1.6404200531101634,
+    "best_source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    float w0 = (float)weights[token_idx * K + 0];\n    float e0 = (float)expert_outputs[(token_idx * K + 0) * D + d_idx];\n    float acc = w0 * e0;\n    \n    float w1 = (float)weights[token_idx * K + 1];\n    float e1 = (float)expert_outputs[(token_idx * K + 1) * D + d_idx];\n    acc += w1 * e1;\n    \n    float w2 = (float)weights[token_idx * K + 2];\n    float e2 = (float)expert_outputs[(token_idx * K + 2) * D + d_idx];\n    acc += w2 * e2;\n    \n    float w3 = (float)weights[token_idx * K + 3];\n    float e3 = (float)expert_outputs[(token_idx * K + 3) * D + d_idx];\n    acc += w3 * e3;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "baseline_us": 163.084
+  },
+  "tree_data": {
+    "c_puct": 1.0,
+    "root": {
+      "node_id": "root",
+      "candidate": {
+        "spec": {
+          "name": "kk_moe_combine_D2048_K4",
+          "input_names": [
+            "expert_outputs",
+            "weights"
+          ],
+          "output_names": [
+            "out"
+          ],
+          "source": "\n        constexpr uint D = 2048;\n        constexpr uint K = 4;\n        uint token_idx = thread_position_in_grid.y;\n        uint d_idx = thread_position_in_grid.x;\n\n        float acc = 0.0f;\n        for (uint i = 0; i < K; ++i) {\n            float w = (float)weights[token_idx * K + i];\n            float v = (float)expert_outputs[(token_idx * K + i) * D + d_idx];\n            acc += w * v;\n        }\n        out[token_idx * D + d_idx] = (T)acc;\n    ",
+          "header": "",
+          "threadgroup": [
+            256,
+            1,
+            1
+          ],
+          "template_params": [
+            [
+              "T",
+              "float32"
+            ]
+          ]
+        },
+        "parent_id": null,
+        "generation": 0,
+        "llm_reasoning": "baseline"
+      },
+      "visit_count": 41,
+      "max_reward": 1.614281540079141,
+      "prior": 1.0,
+      "eval_result": {
+        "compiled": true,
+        "correct": true,
+        "compile_error": null,
+        "correctness_error": null,
+        "timings_us": [
+          129.334,
+          124.459,
+          126.25,
+          141.541,
+          130.583,
+          127.334,
+          144.083,
+          155.917,
+          127.25,
+          124.375,
+          116.875,
+          116.0,
+          119.958,
+          120.375,
+          120.917,
+          119.834,
+          121.833,
+          127.583,
+          124.416,
+          124.417
+        ],
+        "median_us": 124.459,
+        "reward": 1.2858076428345935,
+        "speedup": 1.310343165219068
+      },
+      "children": [
+        {
+          "node_id": "gen1_372998762342",
+          "candidate": {
+            "spec": {
+              "name": "kk_glm_moe_combine_gen1",
+              "input_names": [
+                "expert_outputs",
+                "weights"
+              ],
+              "output_names": [
+                "out"
+              ],
+              "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 4;\n\nif (d_base + 3 < D) {\n    float4 acc = float4(0.0f);\n    for (uint i = 0; i < K; ++i) {\n        float w = (float)weights[token_idx * K + i];\n        device const T* expert_base = expert_outputs + (token_idx * K + i) * D + d_base;\n        float4 v = float4((float)expert_base[0], (float)expert_base[1], (float)expert_base[2], (float)expert_base[3]);\n        acc += w * v;\n    }\n    device T* out_base = out + token_idx * D + d_base;\n    out_base[0] = (T)acc.x;\n    out_base[1] = (T)acc.y;\n    out_base[2] = (T)acc.z;\n    out_base[3] = (T)acc.w;\n} else {\n    for (uint d_off = 0; d_off < 4 && d_base + d_off < D; ++d_off) {\n        uint d_idx = d_base + d_off;\n        float acc = 0.0f;\n        for (uint i = 0; i < K; ++i) {\n            float w = (float)weights[token_idx * K + i];\n            float v = (float)expert_outputs[(token_idx * K + i) * D + d_idx];\n            acc += w * v;\n        }\n        out[token_idx * D + d_idx] = (T)acc;\n    }\n}",
+              "header": "",
+              "threadgroup": [
+                256,
+                1,
+                1
+              ],
+              "template_params": [
+                [
+                  "T",
+                  "float32"
+                ]
+              ]
+            },
+            "parent_id": "root",
+            "generation": 1,
+            "llm_reasoning": "Vectorized loads with float4 to read 4 consecutive hidden dimensions per iteration, reducing memory transactions and increasing memory bandwidth utilization."
+          },
+          "visit_count": 37,
+          "max_reward": 1.614281540079141,
+          "prior": 0.25,
+          "eval_result": {
+            "compiled": true,
+            "correct": true,
+            "compile_error": null,
+            "correctness_error": null,
+            "timings_us": [
+              703.875,
+              563.334,
+              185.959,
+              608.208,
+              524.0,
+              529.541,
+              536.542,
+              516.917,
+              520.917,
+              184.667,
+              145.958,
+              153.875,
+              145.292,
+              149.375,
+              146.458,
+              157.041,
+              148.708,
+              140.166,
+              150.958,
+              146.291
+            ],
+            "median_us": 184.667,
+            "reward": 0.6320035625036017,
+            "speedup": 0.8831247597025998
+          },
+          "children": [
+            {
+              "node_id": "gen2_403e1f9451db",
+              "candidate": {
+                "spec": {
+                  "name": "kk_glm_moe_combine_gen2",
+                  "input_names": [
+                    "expert_outputs",
+                    "weights"
+                  ],
+                  "output_names": [
+                    "out"
+                  ],
+                  "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    float acc = 0.0f;\n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    float v0 = (float)expert_outputs[(token_idx * K + 0) * D + d_idx];\n    float v1 = (float)expert_outputs[(token_idx * K + 1) * D + d_idx];\n    acc += w0 * v0 + w1 * v1;\n    \n    float v2 = (float)expert_outputs[(token_idx * K + 2) * D + d_idx];\n    float v3 = (float)expert_outputs[(token_idx * K + 3) * D + d_idx];\n    acc += w2 * v2 + w3 * v3;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                  "header": "",
+                  "threadgroup": [
+                    256,
+                    1,
+                    1
+                  ],
+                  "template_params": [
+                    [
+                      "T",
+                      "float32"
+                    ]
+                  ]
+                },
+                "parent_id": "gen1_372998762342",
+                "generation": 2,
+                "llm_reasoning": "Use SIMD shuffle to broadcast weights across SIMD lanes, reducing redundant weight loads and enabling better instruction pipelining."
+              },
+              "visit_count": 1,
+              "max_reward": 0.9523225475870568,
+              "prior": 0.25,
+              "eval_result": {
+                "compiled": true,
+                "correct": true,
+                "compile_error": null,
+                "correctness_error": null,
+                "timings_us": [
+                  586.875,
+                  524.708,
+                  160.292,
+                  147.708,
+                  149.75,
+                  146.375,
+                  147.542,
+                  144.334,
+                  145.166,
+                  145.125,
+                  146.834,
+                  162.541,
+                  155.0,
+                  156.416,
+                  151.042,
+                  135.75,
+                  137.208,
+                  143.792,
+                  175.625,
+                  159.625
+                ],
+                "median_us": 149.75,
+                "reward": 0.9523225475870568,
+                "speedup": 1.089041736227045
+              },
+              "children": []
+            },
+            {
+              "node_id": "gen2_425c5698773a",
+              "candidate": {
+                "spec": {
+                  "name": "kk_glm_moe_combine_gen2",
+                  "input_names": [
+                    "expert_outputs",
+                    "weights"
+                  ],
+                  "output_names": [
+                    "out"
+                  ],
+                  "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    device const T* w_base = weights + token_idx * K;\n    device const T* e_base = expert_outputs + token_idx * K * D + d_idx;\n    \n    float acc = (float)w_base[0] * (float)e_base[0];\n    acc += (float)w_base[1] * (float)e_base[D];\n    acc += (float)w_base[2] * (float)e_base[2 * D];\n    acc += (float)w_base[3] * (float)e_base[3 * D];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                  "header": "",
+                  "threadgroup": [
+                    256,
+                    1,
+                    1
+                  ],
+                  "template_params": [
+                    [
+                      "T",
+                      "float32"
+                    ]
+                  ]
+                },
+                "parent_id": "gen1_372998762342",
+                "generation": 2,
+                "llm_reasoning": "Manual K=4 unroll with FMA operations to enable hardware multiply-add fusion and reduce instruction count."
+              },
+              "visit_count": 1,
+              "max_reward": 0.0,
+              "prior": 0.25,
+              "eval_result": {
+                "compiled": true,
+                "correct": false,
+                "compile_error": null,
+                "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:497:21: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\n    device const T* w_base = weights + token_idx * K;\n                    ^        ~~~~~~~~~~~~~~~~~~~~~~~\nmlx/backend/metal/kernels/utils.h:509:145: note: in instantiation of function template specialization 'custom_kernel_kk_glm_moe_combine_gen2__float<float>' requested here\ntemplate [[host_name(\"custom_kernel_kk_glm_moe_combine_gen2__float\")]] [[kernel]] decltype(custom_kernel_kk_glm_moe_combine_gen2__float<float>) custom_kernel_kk_glm_moe_combine_gen2__float<float>;\n                                                                                                                                                ^\n\n",
+                "timings_us": [],
+                "median_us": Infinity,
+                "reward": 0.0,
+                "speedup": 0.0
+              },
+              "children": []
+            },
+            {
+              "node_id": "gen2_526f3dcb3caa",
+              "candidate": {
+                "spec": {
+                  "name": "kk_glm_moe_combine_gen2",
+                  "input_names": [
+                    "expert_outputs",
+                    "weights"
+                  ],
+                  "output_names": [
+                    "out"
+                  ],
+                  "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    float acc0 = 0.0f, acc1 = 0.0f;\n    for (uint i = 0; i < K; ++i) {\n        float w = (float)weights[token_idx * K + i];\n        device const T* expert_base = expert_outputs + (token_idx * K + i) * D + d_base;\n        acc0 += w * (float)expert_base[0];\n        acc1 += w * (float)expert_base[1];\n    }\n    device T* out_base = out + token_idx * D + d_base;\n    out_base[0] = (T)acc0;\n    out_base[1] = (T)acc1;\n} else if (d_base < D) {\n    float acc = 0.0f;\n    for (uint i = 0; i < K; ++i) {\n        float w = (float)weights[token_idx * K + i];\n        acc += w * (float)expert_outputs[(token_idx * K + i) * D + d_base];\n    }\n    out[token_idx * D + d_base] = (T)acc;\n}",
+                  "header": "",
+                  "threadgroup": [
+                    256,
+                    1,
+                    1
+                  ],
+                  "template_params": [
+                    [
+                      "T",
+                      "float32"
+                    ]
+                  ]
+                },
+                "parent_id": "gen1_372998762342",
+                "generation": 2,
+                "llm_reasoning": "Process 2 dimensions per thread to reduce grid launch overhead while maintaining coalesced memory access."
+              },
+              "visit_count": 5,
+              "max_reward": 0.9802647484089411,
+              "prior": 0.25,
+              "eval_result": {
+                "compiled": true,
+                "correct": true,
+                "compile_error": null,
+                "correctness_error": null,
+                "timings_us": [
+                  149.333,
+                  743.917,
+                  456.292,
+                  173.291,
+                  150.958,
+                  144.958,
+                  140.792,
+                  144.458,
+                  143.334,
+                  143.209,
+                  144.208,
+                  138.792,
+                  141.833,
+                  139.667,
+                  144.25,
+                  143.208,
+                  142.084,
+                  143.084,
+                  140.333,
+                  140.708
+                ],
+                "median_us": 143.334,
+                "reward": 0.9802647484089411,
+                "speedup": 1.1377900567904335
+              },
+              "children": [
+                {
+                  "node_id": "gen10_fdf9fe509447",
+                  "candidate": {
+                    "spec": {
+                      "name": "kk_glm_moe_combine_gen10",
+                      "input_names": [
+                        "expert_outputs",
+                        "weights"
+                      ],
+                      "output_names": [
+                        "out"
+                      ],
+                      "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 4;\n\nif (d_base + 3 < D) {\n    float4 acc = float4(0.0f);\n    device const T* weights_base = weights + token_idx * K;\n    device const T* expert_base = expert_outputs + token_idx * K * D + d_base;\n    \n    for (uint i = 0; i < K; ++i) {\n        float w = (float)weights_base[i];\n        // Load 4 consecutive dims from expert i\n        device const T* src = expert_base + i * D;\n        float4 vals = float4((float)src[0], (float)src[1], (float)src[2], (float)src[3]);\n        acc += w * vals;\n    }\n    \n    device T* out_base = out + token_idx * D + d_base;\n    out_base[0] = (T)acc.x;\n    out_base[1] = (T)acc.y;\n    out_base[2] = (T)acc.z;\n    out_base[3] = (T)acc.w;\n} else {\n    // Handle remainder\n    for (uint d = d_base; d < min(d_base + 4, D); ++d) {\n        float acc = 0.0f;\n        for (uint i = 0; i < K; ++i) {\n            float w = (float)weights[token_idx * K + i];\n            acc += w * (float)expert_outputs[(token_idx * K + i) * D + d];\n        }\n        out[token_idx * D + d] = (T)acc;\n    }\n}",
+                      "header": "",
+                      "threadgroup": [
+                        256,
+                        1,
+                        1
+                      ],
+                      "template_params": [
+                        [
+                          "T",
+                          "float32"
+                        ]
+                      ]
+                    },
+                    "parent_id": "gen2_526f3dcb3caa",
+                    "generation": 10,
+                    "llm_reasoning": "Use float4 vectorization for processing 4 consecutive dimensions per thread, enabling coalesced loads and SIMD-level operations across expert dimension for better memory throughput."
+                  },
+                  "visit_count": 1,
+                  "max_reward": 0.0,
+                  "prior": 0.25,
+                  "eval_result": {
+                    "compiled": true,
+                    "correct": false,
+                    "compile_error": null,
+                    "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:498:21: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\n    device const T* weights_base = weights + token_idx * K;\n                    ^              ~~~~~~~~~~~~~~~~~~~~~~~\nmlx/backend/metal/kernels/utils.h:527:147: note: in instantiation of function template specialization 'custom_kernel_kk_glm_moe_combine_gen10__float<float>' requested here\ntemplate [[host_name(\"custom_kernel_kk_glm_moe_combine_gen10__float\")]] [[kernel]] decltype(custom_kernel_kk_glm_moe_combine_gen10__float<float>) custom_kernel_kk_glm_moe_combine_gen10__float<float>;\n                                                                                                                                                  ^\n\n",
+                    "timings_us": [],
+                    "median_us": Infinity,
+                    "reward": 0.0,
+                    "speedup": 0.0
+                  },
+                  "children": []
+                },
+                {
+                  "node_id": "gen10_a36e1e53d4cd",
+                  "candidate": {
+                    "spec": {
+                      "name": "kk_glm_moe_combine_gen10",
+                      "input_names": [
+                        "expert_outputs",
+                        "weights"
+                      ],
+                      "output_names": [
+                        "out"
+                      ],
+                      "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint lane_id = thread_position_in_threadgroup.x % 32;\n    \n    // Load all 4 expert values for this dimension into SIMD lanes\n    float vals[K];\n    device const T* expert_base = expert_outputs + token_idx * K * D + d_idx;\n    for (uint i = 0; i < K; ++i) {\n        vals[i] = (float)expert_base[i * D];\n    }\n    \n    // Load weights\n    device const T* weights_base = weights + token_idx * K;\n    float w0 = (float)weights_base[0];\n    float w1 = (float)weights_base[1];\n    float w2 = (float)weights_base[2];\n    float w3 = (float)weights_base[3];\n    \n    // Compute using FMA chain\n    float acc = w0 * vals[0];\n    acc += w1 * vals[1];\n    acc += w2 * vals[2];\n    acc += w3 * vals[3];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                      "header": "",
+                      "threadgroup": [
+                        256,
+                        1,
+                        1
+                      ],
+                      "template_params": [
+                        [
+                          "T",
+                          "float32"
+                        ]
+                      ]
+                    },
+                    "parent_id": "gen2_526f3dcb3caa",
+                    "generation": 10,
+                    "llm_reasoning": "Transpose computation to process all K experts for one dimension at SIMD-level, using simd_shuffle to broadcast weights across lanes and simd_sum for final reduction, maximizing SIMD utilization."
+                  },
+                  "visit_count": 1,
+                  "max_reward": 0.0,
+                  "prior": 0.25,
+                  "eval_result": {
+                    "compiled": true,
+                    "correct": false,
+                    "compile_error": null,
+                    "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:498:10: warning: unused variable 'lane_id' [-Wunused-variable]\n    uint lane_id = thread_position_in_threadgroup.x % 32;\n         ^\nmlx/backend/metal/kernels/utils.h:508:21: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\n    device const T* weights_base = weights + token_idx * K;\n                    ^              ~~~~~~~~~~~~~~~~~~~~~~~\nmlx/backend/metal/kernels/utils.h:524:147: note: in instantiation of function template specialization 'custom_kernel_kk_glm_moe_combine_gen10__float<float>' requested here\ntemplate [[host_name(\"custom_kernel_kk_glm_moe_combine_gen10__float\")]] [[kernel]] decltype(custom_kernel_kk_glm_moe_combine_gen10__float<float>) custom_kernel_kk_glm_moe_combine_gen10__float<float>;\n                                                                                                                                                  ^\n\n",
+                    "timings_us": [],
+                    "median_us": Infinity,
+                    "reward": 0.0,
+                    "speedup": 0.0
+                  },
+                  "children": []
+                },
+                {
+                  "node_id": "gen10_86e44a557a7b",
+                  "candidate": {
+                    "spec": {
+                      "name": "kk_glm_moe_combine_gen10",
+                      "input_names": [
+                        "expert_outputs",
+                        "weights"
+                      ],
+                      "output_names": [
+                        "out"
+                      ],
+                      "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 3;\n\nif (d_base + 2 < D) {\n    device const T* weights_base = weights + token_idx * K;\n    float w0 = (float)weights_base[0];\n    float w1 = (float)weights_base[1];\n    float w2 = (float)weights_base[2];\n    float w3 = (float)weights_base[3];\n    \n    float acc0 = 0.0f, acc1 = 0.0f, acc2 = 0.0f;\n    device const T* expert_base = expert_outputs + token_idx * K * D + d_base;\n    \n    // Expert 0\n    device const T* e0 = expert_base;\n    acc0 += w0 * (float)e0[0];\n    acc1 += w0 * (float)e0[1];\n    acc2 += w0 * (float)e0[2];\n    \n    // Expert 1\n    device const T* e1 = expert_base + D;\n    acc0 += w1 * (float)e1[0];\n    acc1 += w1 * (float)e1[1];\n    acc2 += w1 * (float)e1[2];\n    \n    // Expert 2\n    device const T* e2 = expert_base + 2 * D;\n    acc0 += w2 * (float)e2[0];\n    acc1 += w2 * (float)e2[1];\n    acc2 += w2 * (float)e2[2];\n    \n    // Expert 3\n    device const T* e3 = expert_base + 3 * D;\n    acc0 += w3 * (float)e3[0];\n    acc1 += w3 * (float)e3[1];\n    acc2 += w3 * (float)e3[2];\n    \n    device T* out_base = out + token_idx * D + d_base;\n    out_base[0] = (T)acc0;\n    out_base[1] = (T)acc1;\n    out_base[2] = (T)acc2;\n} else {\n    // Handle remainder\n    for (uint d = d_base; d < min(d_base + 3, D); ++d) {\n        float acc = 0.0f;\n        for (uint i = 0; i < K; ++i) {\n            float w = (float)weights[token_idx * K + i];\n            acc += w * (float)expert_outputs[(token_idx * K + i) * D + d];\n        }\n        out[token_idx * D + d] = (T)acc;\n    }\n}",
+                      "header": "",
+                      "threadgroup": [
+                        256,
+                        1,
+                        1
+                      ],
+                      "template_params": [
+                        [
+                          "T",
+                          "float32"
+                        ]
+                      ]
+                    },
+                    "parent_id": "gen2_526f3dcb3caa",
+                    "generation": 10,
+                    "llm_reasoning": "Process 3 dimensions per thread with manual K=4 unroll and interleaved weight broadcasts to balance ILP and register pressure, targeting sweet spot between 2x and 4x variants."
+                  },
+                  "visit_count": 1,
+                  "max_reward": 0.0,
+                  "prior": 0.25,
+                  "eval_result": {
+                    "compiled": true,
+                    "correct": false,
+                    "compile_error": null,
+                    "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:497:21: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\n    device const T* weights_base = weights + token_idx * K;\n                    ^              ~~~~~~~~~~~~~~~~~~~~~~~\nmlx/backend/metal/kernels/utils.h:547:147: note: in instantiation of function template specialization 'custom_kernel_kk_glm_moe_combine_gen10__float<float>' requested here\ntemplate [[host_name(\"custom_kernel_kk_glm_moe_combine_gen10__float\")]] [[kernel]] decltype(custom_kernel_kk_glm_moe_combine_gen10__float<float>) custom_kernel_kk_glm_moe_combine_gen10__float<float>;\n                                                                                                                                                  ^\n\n",
+                    "timings_us": [],
+                    "median_us": Infinity,
+                    "reward": 0.0,
+                    "speedup": 0.0
+                  },
+                  "children": []
+                },
+                {
+                  "node_id": "gen10_262b4cdb1aba",
+                  "candidate": {
+                    "spec": {
+                      "name": "kk_glm_moe_combine_gen10",
+                      "input_names": [
+                        "expert_outputs",
+                        "weights"
+                      ],
+                      "output_names": [
+                        "out"
+                      ],
+                      "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    device const T* weights_base = weights + token_idx * K;\n    device const T* expert_base = expert_outputs + token_idx * K * D + d_base;\n    \n    // Process expert pairs with independent accumulation chains\n    // Pair 0: experts 0+1\n    float w01_0 = (float)weights_base[0];\n    float w01_1 = (float)weights_base[1];\n    device const T* e0 = expert_base;\n    device const T* e1 = expert_base + D;\n    \n    float acc0_pair01 = w01_0 * (float)e0[0] + w01_1 * (float)e1[0];\n    float acc1_pair01 = w01_0 * (float)e0[1] + w01_1 * (float)e1[1];\n    \n    // Pair 1: experts 2+3\n    float w23_0 = (float)weights_base[2];\n    float w23_1 = (float)weights_base[3];\n    device const T* e2 = expert_base + 2 * D;\n    device const T* e3 = expert_base + 3 * D;\n    \n    float acc0_pair23 = w23_0 * (float)e2[0] + w23_1 * (float)e3[0];\n    float acc1_pair23 = w23_0 * (float)e2[1] + w23_1 * (float)e3[1];\n    \n    // Combine pairs\n    device T* out_base = out + token_idx * D + d_base;\n    out_base[0] = (T)(acc0_pair01 + acc0_pair23);\n    out_base[1] = (T)(acc1_pair01 + acc1_pair23);\n} else if (d_base < D) {\n    float acc = 0.0f;\n    for (uint i = 0; i < K; ++i) {\n        float w = (float)weights[token_idx * K + i];\n        acc += w * (float)expert_outputs[(token_idx * K + i) * D + d_base];\n    }\n    out[token_idx * D + d_base] = (T)acc;\n}",
+                      "header": "",
+                      "threadgroup": [
+                        256,
+                        1,
+                        1
+                      ],
+                      "template_params": [
+                        [
+                          "T",
+                          "float32"
+                        ]
+                      ]
+                    },
+                    "parent_id": "gen2_526f3dcb3caa",
+                    "generation": 10,
+                    "llm_reasoning": "Use expert-pair fusion with alternating accumulation to maximize instruction-level parallelism while reducing memory port contention by grouping expert loads into pairs with independent FMA chains."
+                  },
+                  "visit_count": 1,
+                  "max_reward": 0.0,
+                  "prior": 0.25,
+                  "eval_result": {
+                    "compiled": true,
+                    "correct": false,
+                    "compile_error": null,
+                    "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:497:21: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\n    device const T* weights_base = weights + token_idx * K;\n                    ^              ~~~~~~~~~~~~~~~~~~~~~~~\nmlx/backend/metal/kernels/utils.h:533:147: note: in instantiation of function template specialization 'custom_kernel_kk_glm_moe_combine_gen10__float<float>' requested here\ntemplate [[host_name(\"custom_kernel_kk_glm_moe_combine_gen10__float\")]] [[kernel]] decltype(custom_kernel_kk_glm_moe_combine_gen10__float<float>) custom_kernel_kk_glm_moe_combine_gen10__float<float>;\n                                                                                                                                                  ^\n\n",
+                    "timings_us": [],
+                    "median_us": Infinity,
+                    "reward": 0.0,
+                    "speedup": 0.0
+                  },
+                  "children": []
+                }
+              ]
+            },
+            {
+              "node_id": "gen2_2b5f062331c9",
+              "candidate": {
+                "spec": {
+                  "name": "kk_glm_moe_combine_gen2",
+                  "input_names": [
+                    "expert_outputs",
+                    "weights"
+                  ],
+                  "output_names": [
+                    "out"
+                  ],
+                  "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    float v[4];\n    v[0] = (float)expert_outputs[(token_idx * K + 0) * D + d_idx];\n    v[1] = (float)expert_outputs[(token_idx * K + 1) * D + d_idx];\n    v[2] = (float)expert_outputs[(token_idx * K + 2) * D + d_idx];\n    v[3] = (float)expert_outputs[(token_idx * K + 3) * D + d_idx];\n    \n    float acc = 0.0f;\n    for (uint i = 0; i < K; ++i) {\n        acc += (float)weights[token_idx * K + i] * v[i];\n    }\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                  "header": "",
+                  "threadgroup": [
+                    256,
+                    1,
+                    1
+                  ],
+                  "template_params": [
+                    [
+                      "T",
+                      "float32"
+                    ]
+                  ]
+                },
+                "parent_id": "gen1_372998762342",
+                "generation": 2,
+                "llm_reasoning": "Prefetch all expert values into registers before multiplication to reduce memory latency stalls."
+              },
+              "visit_count": 29,
+              "max_reward": 1.614281540079141,
+              "prior": 0.25,
+              "eval_result": {
+                "compiled": true,
+                "correct": true,
+                "compile_error": null,
+                "correctness_error": null,
+                "timings_us": [
+                  136.125,
+                  148.0,
+                  151.125,
+                  134.25,
+                  138.542,
+                  135.125,
+                  145.833,
+                  137.208,
+                  802.708,
+                  607.25,
+                  160.042,
+                  133.333,
+                  137.833,
+                  137.459,
+                  140.0,
+                  136.708,
+                  136.042,
+                  136.75,
+                  134.5,
+                  138.167
+                ],
+                "median_us": 137.833,
+                "reward": 0.9940257198882294,
+                "speedup": 1.183199959371123
+              },
+              "children": [
+                {
+                  "node_id": "gen3_464c5c1f3e72",
+                  "candidate": {
+                    "spec": {
+                      "name": "kk_glm_moe_combine_gen3",
+                      "input_names": [
+                        "expert_outputs",
+                        "weights"
+                      ],
+                      "output_names": [
+                        "out"
+                      ],
+                      "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x * 4;\n\nif (d_idx + 3 < D) {\n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    uint base0 = (token_idx * K + 0) * D + d_idx;\n    uint base1 = (token_idx * K + 1) * D + d_idx;\n    uint base2 = (token_idx * K + 2) * D + d_idx;\n    uint base3 = (token_idx * K + 3) * D + d_idx;\n    \n    float acc0 = w0 * (float)expert_outputs[base0] + w1 * (float)expert_outputs[base1] + w2 * (float)expert_outputs[base2] + w3 * (float)expert_outputs[base3];\n    float acc1 = w0 * (float)expert_outputs[base0+1] + w1 * (float)expert_outputs[base1+1] + w2 * (float)expert_outputs[base2+1] + w3 * (float)expert_outputs[base3+1];\n    float acc2 = w0 * (float)expert_outputs[base0+2] + w1 * (float)expert_outputs[base1+2] + w2 * (float)expert_outputs[base2+2] + w3 * (float)expert_outputs[base3+2];\n    float acc3 = w0 * (float)expert_outputs[base0+3] + w1 * (float)expert_outputs[base1+3] + w2 * (float)expert_outputs[base2+3] + w3 * (float)expert_outputs[base3+3];\n    \n    out[token_idx * D + d_idx] = (T)acc0;\n    out[token_idx * D + d_idx + 1] = (T)acc1;\n    out[token_idx * D + d_idx + 2] = (T)acc2;\n    out[token_idx * D + d_idx + 3] = (T)acc3;\n}",
+                      "header": "",
+                      "threadgroup": [
+                        256,
+                        1,
+                        1
+                      ],
+                      "template_params": [
+                        [
+                          "T",
+                          "float32"
+                        ]
+                      ]
+                    },
+                    "parent_id": "gen2_2b5f062331c9",
+                    "generation": 3,
+                    "llm_reasoning": "Process 4 dimensions per thread with manual K=4 unroll and careful register reuse to maximize ILP without vectorization overhead."
+                  },
+                  "visit_count": 5,
+                  "max_reward": 1.320964877398651,
+                  "prior": 0.25,
+                  "eval_result": {
+                    "compiled": true,
+                    "correct": true,
+                    "compile_error": null,
+                    "correctness_error": null,
+                    "timings_us": [
+                      171.083,
+                      156.542,
+                      138.541,
+                      157.375,
+                      127.333,
+                      138.375,
+                      138.25,
+                      137.667,
+                      120.834,
+                      110.625,
+                      106.875,
+                      103.25,
+                      98.0,
+                      99.208,
+                      98.834,
+                      98.875,
+                      112.75,
+                      120.083,
+                      171.958,
+                      105.916
+                    ],
+                    "median_us": 120.834,
+                    "reward": 1.320964877398651,
+                    "speedup": 1.3496532432924508
+                  },
+                  "children": [
+                    {
+                      "node_id": "gen6_e6434c7e8353",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen6",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x * 4;\n\nif (d_idx + 3 < D) {\n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    uint base = token_idx * K * D + d_idx;\n    \n    float e00 = (float)expert_outputs[base];\n    float e01 = (float)expert_outputs[base + 1];\n    float e02 = (float)expert_outputs[base + 2];\n    float e03 = (float)expert_outputs[base + 3];\n    \n    float acc0 = w0 * e00;\n    float acc1 = w0 * e01;\n    float acc2 = w0 * e02;\n    float acc3 = w0 * e03;\n    \n    base += D;\n    float e10 = (float)expert_outputs[base];\n    float e11 = (float)expert_outputs[base + 1];\n    float e12 = (float)expert_outputs[base + 2];\n    float e13 = (float)expert_outputs[base + 3];\n    \n    acc0 += w1 * e10;\n    acc1 += w1 * e11;\n    acc2 += w1 * e12;\n    acc3 += w1 * e13;\n    \n    base += D;\n    float e20 = (float)expert_outputs[base];\n    float e21 = (float)expert_outputs[base + 1];\n    float e22 = (float)expert_outputs[base + 2];\n    float e23 = (float)expert_outputs[base + 3];\n    \n    acc0 += w2 * e20;\n    acc1 += w2 * e21;\n    acc2 += w2 * e22;\n    acc3 += w2 * e23;\n    \n    base += D;\n    float e30 = (float)expert_outputs[base];\n    float e31 = (float)expert_outputs[base + 1];\n    float e32 = (float)expert_outputs[base + 2];\n    float e33 = (float)expert_outputs[base + 3];\n    \n    acc0 += w3 * e30;\n    acc1 += w3 * e31;\n    acc2 += w3 * e32;\n    acc3 += w3 * e33;\n    \n    uint out_base = token_idx * D + d_idx;\n    out[out_base] = (T)acc0;\n    out[out_base + 1] = (T)acc1;\n    out[out_base + 2] = (T)acc2;\n    out[out_base + 3] = (T)acc3;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_464c5c1f3e72",
+                        "generation": 6,
+                        "llm_reasoning": "Load weights into registers first, then use FMA pattern (acc = acc + w * x) with careful register reuse to maximize hardware multiply-add fusion while minimizing memory traffic."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 1.0021621415980002,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          160.208,
+                          160.334,
+                          158.041,
+                          157.333,
+                          154.625,
+                          150.375,
+                          155.833,
+                          155.209,
+                          158.334,
+                          157.042,
+                          156.334,
+                          159.833,
+                          197.292,
+                          173.417,
+                          202.917,
+                          171.125,
+                          162.166,
+                          156.25,
+                          159.75,
+                          158.042
+                        ],
+                        "median_us": 158.334,
+                        "reward": 1.0021621415980002,
+                        "speedup": 1.0299998736847424
+                      },
+                      "children": []
+                    },
+                    {
+                      "node_id": "gen6_e8be791c99ac",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen6",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x * 8;\n\nif (d_idx + 7 < D) {\n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    uint b0 = (token_idx * K + 0) * D + d_idx;\n    uint b1 = (token_idx * K + 1) * D + d_idx;\n    uint b2 = (token_idx * K + 2) * D + d_idx;\n    uint b3 = (token_idx * K + 3) * D + d_idx;\n    \n    float a0 = w0 * (float)expert_outputs[b0] + w1 * (float)expert_outputs[b1] + w2 * (float)expert_outputs[b2] + w3 * (float)expert_outputs[b3];\n    float a1 = w0 * (float)expert_outputs[b0+1] + w1 * (float)expert_outputs[b1+1] + w2 * (float)expert_outputs[b2+1] + w3 * (float)expert_outputs[b3+1];\n    float a2 = w0 * (float)expert_outputs[b0+2] + w1 * (float)expert_outputs[b1+2] + w2 * (float)expert_outputs[b2+2] + w3 * (float)expert_outputs[b3+2];\n    float a3 = w0 * (float)expert_outputs[b0+3] + w1 * (float)expert_outputs[b1+3] + w2 * (float)expert_outputs[b2+3] + w3 * (float)expert_outputs[b3+3];\n    float a4 = w0 * (float)expert_outputs[b0+4] + w1 * (float)expert_outputs[b1+4] + w2 * (float)expert_outputs[b2+4] + w3 * (float)expert_outputs[b3+4];\n    float a5 = w0 * (float)expert_outputs[b0+5] + w1 * (float)expert_outputs[b1+5] + w2 * (float)expert_outputs[b2+5] + w3 * (float)expert_outputs[b3+5];\n    float a6 = w0 * (float)expert_outputs[b0+6] + w1 * (float)expert_outputs[b1+6] + w2 * (float)expert_outputs[b2+6] + w3 * (float)expert_outputs[b3+6];\n    float a7 = w0 * (float)expert_outputs[b0+7] + w1 * (float)expert_outputs[b1+7] + w2 * (float)expert_outputs[b2+7] + w3 * (float)expert_outputs[b3+7];\n    \n    uint out_base = token_idx * D + d_idx;\n    out[out_base] = (T)a0;\n    out[out_base+1] = (T)a1;\n    out[out_base+2] = (T)a2;\n    out[out_base+3] = (T)a3;\n    out[out_base+4] = (T)a4;\n    out[out_base+5] = (T)a5;\n    out[out_base+6] = (T)a6;\n    out[out_base+7] = (T)a7;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_464c5c1f3e72",
+                        "generation": 6,
+                        "llm_reasoning": "Process 8 dimensions per thread with aggressive unrolling and base pointer reuse to amortize index calculation overhead and enable deeper instruction pipelines."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 1.1650525059087706,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          150.125,
+                          146.209,
+                          145.458,
+                          146.375,
+                          148.0,
+                          185.708,
+                          155.833,
+                          127.084,
+                          122.125,
+                          121.625,
+                          121.25,
+                          137.583,
+                          138.292,
+                          138.417,
+                          137.417,
+                          137.334,
+                          138.166,
+                          138.791,
+                          138.292,
+                          138.167
+                        ],
+                        "median_us": 138.292,
+                        "reward": 1.1650525059087706,
+                        "speedup": 1.1792728429699477
+                      },
+                      "children": []
+                    },
+                    {
+                      "node_id": "gen6_149aa295c200",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen6",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x * 4;\n\nif (d_idx + 3 < D) {\n    uint base0 = (token_idx * K + 0) * D + d_idx;\n    uint base1 = (token_idx * K + 1) * D + d_idx;\n    uint base2 = (token_idx * K + 2) * D + d_idx;\n    uint base3 = (token_idx * K + 3) * D + d_idx;\n    \n    float e00 = (float)expert_outputs[base0];\n    float e01 = (float)expert_outputs[base0+1];\n    float e02 = (float)expert_outputs[base0+2];\n    float e03 = (float)expert_outputs[base0+3];\n    \n    float e10 = (float)expert_outputs[base1];\n    float e11 = (float)expert_outputs[base1+1];\n    float e12 = (float)expert_outputs[base1+2];\n    float e13 = (float)expert_outputs[base1+3];\n    \n    float e20 = (float)expert_outputs[base2];\n    float e21 = (float)expert_outputs[base2+1];\n    float e22 = (float)expert_outputs[base2+2];\n    float e23 = (float)expert_outputs[base2+3];\n    \n    float e30 = (float)expert_outputs[base3];\n    float e31 = (float)expert_outputs[base3+1];\n    float e32 = (float)expert_outputs[base3+2];\n    float e33 = (float)expert_outputs[base3+3];\n    \n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    float p00 = w0 * e00;\n    float p01 = w0 * e01;\n    float p02 = w0 * e02;\n    float p03 = w0 * e03;\n    \n    float p10 = w1 * e10;\n    float p11 = w1 * e11;\n    float p12 = w1 * e12;\n    float p13 = w1 * e13;\n    \n    float p20 = w2 * e20;\n    float p21 = w2 * e21;\n    float p22 = w2 * e22;\n    float p23 = w2 * e23;\n    \n    float p30 = w3 * e30;\n    float p31 = w3 * e31;\n    float p32 = w3 * e32;\n    float p33 = w3 * e33;\n    \n    float acc0 = p00 + p10 + p20 + p30;\n    float acc1 = p01 + p11 + p21 + p31;\n    float acc2 = p02 + p12 + p22 + p32;\n    float acc3 = p03 + p13 + p23 + p33;\n    \n    uint out_base = token_idx * D + d_idx;\n    out[out_base] = (T)acc0;\n    out[out_base+1] = (T)acc1;\n    out[out_base+2] = (T)acc2;\n    out[out_base+3] = (T)acc3;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_464c5c1f3e72",
+                        "generation": 6,
+                        "llm_reasoning": "Reorganize computation into two-stage pipelined pattern: load all expert values first stage, then compute all products in second stage, maximizing ILP and allowing deeper out-of-order execution."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 1.168053085300156,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          133.958,
+                          134.75,
+                          126.5,
+                          125.584,
+                          125.791,
+                          128.792,
+                          128.25,
+                          122.083,
+                          126.0,
+                          127.5,
+                          139.541,
+                          128.625,
+                          123.584,
+                          125.959,
+                          126.625,
+                          122.125,
+                          122.167,
+                          122.917,
+                          179.375,
+                          582.708
+                        ],
+                        "median_us": 126.625,
+                        "reward": 1.168053085300156,
+                        "speedup": 1.287928923988154
+                      },
+                      "children": []
+                    },
+                    {
+                      "node_id": "gen6_6c9d2dff632e",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen6",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x * 4;\n\nif (d_idx + 3 < D) {\n    device const T* exp_base = expert_outputs + token_idx * K * D + d_idx;\n    device const T* w_ptr = weights + token_idx * K;\n    \n    float w0 = (float)w_ptr[0];\n    float v00 = (float)exp_base[0];\n    float v01 = (float)exp_base[1];\n    float v02 = (float)exp_base[2];\n    float v03 = (float)exp_base[3];\n    \n    float acc0 = w0 * v00;\n    float acc1 = w0 * v01;\n    float acc2 = w0 * v02;\n    float acc3 = w0 * v03;\n    \n    float w1 = (float)w_ptr[1];\n    exp_base += D;\n    float v10 = (float)exp_base[0];\n    float v11 = (float)exp_base[1];\n    float v12 = (float)exp_base[2];\n    float v13 = (float)exp_base[3];\n    \n    acc0 += w1 * v10;\n    acc1 += w1 * v11;\n    acc2 += w1 * v12;\n    acc3 += w1 * v13;\n    \n    float w2 = (float)w_ptr[2];\n    exp_base += D;\n    float v20 = (float)exp_base[0];\n    float v21 = (float)exp_base[1];\n    float v22 = (float)exp_base[2];\n    float v23 = (float)exp_base[3];\n    \n    acc0 += w2 * v20;\n    acc1 += w2 * v21;\n    acc2 += w2 * v22;\n    acc3 += w2 * v23;\n    \n    float w3 = (float)w_ptr[3];\n    exp_base += D;\n    float v30 = (float)exp_base[0];\n    float v31 = (float)exp_base[1];\n    float v32 = (float)exp_base[2];\n    float v33 = (float)exp_base[3];\n    \n    acc0 += w3 * v30;\n    acc1 += w3 * v31;\n    acc2 += w3 * v32;\n    acc3 += w3 * v33;\n    \n    device T* out_ptr = out + token_idx * D + d_idx;\n    out_ptr[0] = (T)acc0;\n    out_ptr[1] = (T)acc1;\n    out_ptr[2] = (T)acc2;\n    out_ptr[3] = (T)acc3;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_464c5c1f3e72",
+                        "generation": 6,
+                        "llm_reasoning": "Reduce address calculation overhead by computing expert base pointers once and using constant offsets, while interleaving loads and computation to hide latency."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 0.0,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": false,
+                        "compile_error": null,
+                        "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:498:21: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\n    device const T* w_ptr = weights + token_idx * K;\n                    ^       ~~~~~~~~~~~~~~~~~~~~~~~\nmlx/backend/metal/kernels/utils.h:555:145: note: in instantiation of function template specialization 'custom_kernel_kk_glm_moe_combine_gen6__float<float>' requested here\ntemplate [[host_name(\"custom_kernel_kk_glm_moe_combine_gen6__float\")]] [[kernel]] decltype(custom_kernel_kk_glm_moe_combine_gen6__float<float>) custom_kernel_kk_glm_moe_combine_gen6__float<float>;\n                                                                                                                                                ^\n\n",
+                        "timings_us": [],
+                        "median_us": Infinity,
+                        "reward": 0.0,
+                        "speedup": 0.0
+                      },
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "node_id": "gen3_399dd03e34d5",
+                  "candidate": {
+                    "spec": {
+                      "name": "kk_glm_moe_combine_gen3",
+                      "input_names": [
+                        "expert_outputs",
+                        "weights"
+                      ],
+                      "output_names": [
+                        "out"
+                      ],
+                      "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint base = token_idx * K * D + d_idx;\n    float w[4];\n    w[0] = (float)weights[token_idx * K];\n    w[1] = (float)weights[token_idx * K + 1];\n    w[2] = (float)weights[token_idx * K + 2];\n    w[3] = (float)weights[token_idx * K + 3];\n    \n    float acc = w[0] * (float)expert_outputs[base];\n    acc += w[1] * (float)expert_outputs[base + D];\n    acc += w[2] * (float)expert_outputs[base + D * 2];\n    acc += w[3] * (float)expert_outputs[base + D * 3];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                      "header": "",
+                      "threadgroup": [
+                        256,
+                        1,
+                        1
+                      ],
+                      "template_params": [
+                        [
+                          "T",
+                          "float32"
+                        ]
+                      ]
+                    },
+                    "parent_id": "gen2_2b5f062331c9",
+                    "generation": 3,
+                    "llm_reasoning": "Coalesce expert reads by loading consecutive expert values for same dimension to improve cache locality and reduce memory latency."
+                  },
+                  "visit_count": 5,
+                  "max_reward": 1.3782258997466297,
+                  "prior": 0.25,
+                  "eval_result": {
+                    "compiled": true,
+                    "correct": true,
+                    "compile_error": null,
+                    "correctness_error": null,
+                    "timings_us": [
+                      124.667,
+                      109.041,
+                      101.25,
+                      148.334,
+                      185.5,
+                      106.417,
+                      99.625,
+                      101.0,
+                      108.084,
+                      105.958,
+                      102.167,
+                      103.042,
+                      128.167,
+                      97.25,
+                      118.667,
+                      210.917,
+                      109.5,
+                      110.084,
+                      129.334,
+                      121.792
+                    ],
+                    "median_us": 109.5,
+                    "reward": 1.3782258997466297,
+                    "speedup": 1.489351598173516
+                  },
+                  "children": [
+                    {
+                      "node_id": "gen5_f9f187584986",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen5",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\nuint local_id = thread_position_in_threadgroup.x;\n\nthreadgroup float shared_experts[256 * 4];\n\nif (d_idx < D) {\n    // Load expert outputs into threadgroup memory\n    uint base = token_idx * K * D + d_idx;\n    shared_experts[local_id * 4] = (float)expert_outputs[base];\n    shared_experts[local_id * 4 + 1] = (float)expert_outputs[base + D];\n    shared_experts[local_id * 4 + 2] = (float)expert_outputs[base + D * 2];\n    shared_experts[local_id * 4 + 3] = (float)expert_outputs[base + D * 3];\n    \n    threadgroup_barrier(mem_flags::mem_threadgroup);\n    \n    // Load weights once and broadcast via shared memory\n    float w0 = (float)weights[token_idx * K];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    float acc = w0 * shared_experts[local_id * 4];\n    acc += w1 * shared_experts[local_id * 4 + 1];\n    acc += w2 * shared_experts[local_id * 4 + 2];\n    acc += w3 * shared_experts[local_id * 4 + 3];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_399dd03e34d5",
+                        "generation": 5,
+                        "llm_reasoning": "Tile across K dimension using threadgroup memory to share expert outputs across multiple threads working on same token, reducing global memory traffic by factor of K."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 1.087448925644959,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          549.416,
+                          178.333,
+                          148.042,
+                          144.0,
+                          139.708,
+                          133.875,
+                          136.042,
+                          136.583,
+                          136.25,
+                          135.875,
+                          134.958,
+                          135.334,
+                          132.416,
+                          131.958,
+                          135.667,
+                          137.375,
+                          138.0,
+                          139.042,
+                          138.417,
+                          156.0
+                        ],
+                        "median_us": 137.375,
+                        "reward": 1.087448925644959,
+                        "speedup": 1.1871446769790719
+                      },
+                      "children": []
+                    },
+                    {
+                      "node_id": "gen5_619925b1d696",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen5",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\nuint lane_id = thread_position_in_threadgroup.x % 32;\n\nif (d_idx < D) {\n    uint base = token_idx * K * D + d_idx;\n    \n    // Each set of 4 SIMD lanes handles one expert\n    uint expert_idx = lane_id & 3;\n    float w = (float)weights[token_idx * K + expert_idx];\n    float expert_val = (float)expert_outputs[base + expert_idx * D];\n    float partial = w * expert_val;\n    \n    // Reduction across 4 lanes using SIMD shuffle\n    partial += simd_shuffle_xor(partial, 1);\n    partial += simd_shuffle_xor(partial, 2);\n    \n    // Only lane 0, 4, 8, etc. have the final result\n    if ((lane_id & 3) == 0) {\n        out[token_idx * D + d_idx] = (T)partial;\n    }\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_399dd03e34d5",
+                        "generation": 5,
+                        "llm_reasoning": "Exploit SIMD-width parallelism by having each SIMD lane handle different expert, then use simd_shuffle_xor to exchange partial products across lanes for final sum."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 0.0,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": false,
+                        "compile_error": null,
+                        "correctness_error": "\nNot equal to tolerance rtol=0.0001, atol=0.0001\nOutput 0 mismatch\nMismatched elements: 512 / 2048 (25%)\nFirst 5 mismatches are at indices:\n [0, 0]: -0.7484801411628723 (ACTUAL), -1.2758699655532837 (DESIRED)\n [0, 4]: -0.04446201026439667 (ACTUAL), 0.822155773639679 (DESIRED)\n [0, 8]: -0.6294764876365662 (ACTUAL), -0.5646204948425293 (DESIRED)\n [0, 12]: 1.2633240222930908 (ACTUAL), -1.055593490600586 (DESIRED)\n [0, 16]: 1.0045998096466064 (ACTUAL), -0.166311115026474 (DESIRED)\nMax absolute difference among violations: 4.3090878\nMax relative difference among violations: 2010.0155\n ACTUAL: array([[-0.74848 , -1.288862, -0.275934, ...,  2.143663,  0.970752,\n        -0.392054]], shape=(1, 2048), dtype=float32)\n DESIRED: array([[-1.27587 , -1.288862, -0.275934, ...,  2.143663,  0.970752,\n        -0.392054]], shape=(1, 2048), dtype=float32)",
+                        "timings_us": [],
+                        "median_us": Infinity,
+                        "reward": 0.0,
+                        "speedup": 0.0
+                      },
+                      "children": []
+                    },
+                    {
+                      "node_id": "gen5_37b26be31cd4",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen5",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 8;\n\nif (d_base < D) {\n    float w[4];\n    w[0] = (float)weights[token_idx * K];\n    w[1] = (float)weights[token_idx * K + 1];\n    w[2] = (float)weights[token_idx * K + 2];\n    w[3] = (float)weights[token_idx * K + 3];\n    \n    #pragma unroll\n    for (uint i = 0; i < 8; ++i) {\n        uint d_idx = d_base + i;\n        if (d_idx < D) {\n            uint base = token_idx * K * D + d_idx;\n            \n            float acc = w[0] * (float)expert_outputs[base];\n            acc += w[1] * (float)expert_outputs[base + D];\n            acc += w[2] * (float)expert_outputs[base + D * 2];\n            acc += w[3] * (float)expert_outputs[base + D * 3];\n            \n            out[token_idx * D + d_idx] = (T)acc;\n        }\n    }\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_399dd03e34d5",
+                        "generation": 5,
+                        "llm_reasoning": "Process 8 dimensions per thread with strided access pattern to maximize cache line utilization and enable better instruction scheduling through increased work per thread."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 1.2457048234518482,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          131.458,
+                          136.75,
+                          135.625,
+                          131.333,
+                          132.75,
+                          139.667,
+                          138.917,
+                          129.458,
+                          121.834,
+                          118.125,
+                          140.916,
+                          117.583,
+                          128.791,
+                          123.792,
+                          152.25,
+                          126.833,
+                          145.333,
+                          116.75,
+                          122.167,
+                          134.625
+                        ],
+                        "median_us": 131.458,
+                        "reward": 1.2457048234518482,
+                        "speedup": 1.2405787399777877
+                      },
+                      "children": []
+                    },
+                    {
+                      "node_id": "gen5_b93dac5dc333",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen5",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint base = token_idx * K * D + d_idx;\n    \n    // Phase 1: experts 0 and 1\n    float w0 = (float)weights[token_idx * K];\n    float e0 = (float)expert_outputs[base];\n    float w1 = (float)weights[token_idx * K + 1];\n    float e1 = (float)expert_outputs[base + D];\n    \n    float acc1 = w0 * e0;\n    acc1 += w1 * e1;\n    \n    // Phase 2: experts 2 and 3 (independent from phase 1)\n    float w2 = (float)weights[token_idx * K + 2];\n    float e2 = (float)expert_outputs[base + D * 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    float e3 = (float)expert_outputs[base + D * 3];\n    \n    float acc2 = w2 * e2;\n    acc2 += w3 * e3;\n    \n    // Combine phases\n    out[token_idx * D + d_idx] = (T)(acc1 + acc2);\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_399dd03e34d5",
+                        "generation": 5,
+                        "llm_reasoning": "Split K=4 into two K=2 phases with independent accumulation to maximize instruction-level parallelism, then combine results to hide latency between dependent operations."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 1.0028077001842883,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          152.208,
+                          142.917,
+                          141.958,
+                          254.75,
+                          124.5,
+                          123.541,
+                          122.541,
+                          125.416,
+                          128.125,
+                          137.042,
+                          127.708,
+                          129.375,
+                          584.75,
+                          575.917,
+                          153.0,
+                          141.542,
+                          139.209,
+                          145.958,
+                          145.25,
+                          144.208
+                        ],
+                        "median_us": 141.958,
+                        "reward": 1.0028077001842883,
+                        "speedup": 1.1488186646754674
+                      },
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "node_id": "gen3_05fcd49bcbd0",
+                  "candidate": {
+                    "spec": {
+                      "name": "kk_glm_moe_combine_gen3",
+                      "input_names": [
+                        "expert_outputs",
+                        "weights"
+                      ],
+                      "output_names": [
+                        "out"
+                      ],
+                      "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    float acc = 0.0f;\n    \n    float e0 = (float)expert_outputs[(token_idx * K + 0) * D + d_idx];\n    float e1 = (float)expert_outputs[(token_idx * K + 1) * D + d_idx];\n    float e2 = (float)expert_outputs[(token_idx * K + 2) * D + d_idx];\n    float e3 = (float)expert_outputs[(token_idx * K + 3) * D + d_idx];\n    \n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    float p0 = w0 * e0;\n    float p1 = w1 * e1;\n    float p2 = w2 * e2;\n    float p3 = w3 * e3;\n    \n    acc = (p0 + p1) + (p2 + p3);\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                      "header": "",
+                      "threadgroup": [
+                        256,
+                        1,
+                        1
+                      ],
+                      "template_params": [
+                        [
+                          "T",
+                          "float32"
+                        ]
+                      ]
+                    },
+                    "parent_id": "gen2_2b5f062331c9",
+                    "generation": 3,
+                    "llm_reasoning": "Use SIMD-level reduction with simd_sum to accumulate expert contributions, leveraging hardware parallelism within warps."
+                  },
+                  "visit_count": 5,
+                  "max_reward": 1.3202986071745129,
+                  "prior": 0.25,
+                  "eval_result": {
+                    "compiled": true,
+                    "correct": true,
+                    "compile_error": null,
+                    "correctness_error": null,
+                    "timings_us": [
+                      199.417,
+                      144.709,
+                      125.041,
+                      117.833,
+                      118.209,
+                      152.167,
+                      143.166,
+                      122.375,
+                      124.625,
+                      136.125,
+                      107.833,
+                      130.417,
+                      143.167,
+                      119.709,
+                      111.958,
+                      108.167,
+                      103.959,
+                      101.708,
+                      96.0,
+                      101.5
+                    ],
+                    "median_us": 122.375,
+                    "reward": 1.3202986071745129,
+                    "speedup": 1.3326578140960164
+                  },
+                  "children": [
+                    {
+                      "node_id": "gen7_0583a07d2b40",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen7",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    const uint base_expert = token_idx * K * D;\n    const uint base_weights = token_idx * K;\n    \n    float w0 = (float)weights[base_weights];\n    float e0 = (float)expert_outputs[base_expert + d_idx];\n    \n    float w1 = (float)weights[base_weights + 1];\n    float e1 = (float)expert_outputs[base_expert + D + d_idx];\n    \n    float w2 = (float)weights[base_weights + 2];\n    float e2 = (float)expert_outputs[base_expert + 2 * D + d_idx];\n    \n    float w3 = (float)weights[base_weights + 3];\n    float e3 = (float)expert_outputs[base_expert + 3 * D + d_idx];\n    \n    float result = fma(w0, e0, fma(w1, e1, fma(w2, e2, w3 * e3)));\n    \n    out[token_idx * D + d_idx] = (T)result;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_05fcd49bcbd0",
+                        "generation": 7,
+                        "llm_reasoning": "Use fused multiply-add (FMA) with explicit register allocation pattern, computing weighted contributions in a single expression per expert to maximize instruction-level parallelism and reduce accumulator dependency chains."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 0.8809293428041063,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          217.167,
+                          193.333,
+                          185.292,
+                          179.959,
+                          180.75,
+                          194.75,
+                          183.25,
+                          180.625,
+                          175.042,
+                          164.583,
+                          178.75,
+                          173.25,
+                          176.959,
+                          181.875,
+                          178.5,
+                          179.375,
+                          177.583,
+                          180.666,
+                          231.458,
+                          200.75
+                        ],
+                        "median_us": 180.666,
+                        "reward": 0.8809293428041063,
+                        "speedup": 0.9026822977206558
+                      },
+                      "children": []
+                    },
+                    {
+                      "node_id": "gen7_e6e162517515",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen7",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    const uint expert_base = token_idx * K * D;\n    const uint weight_base = token_idx * K;\n    const uint out_base = token_idx * D;\n    \n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    for (uint i = 0; i < 2; ++i) {\n        uint d = d_base + i;\n        \n        float e0 = (float)expert_outputs[expert_base + d];\n        float e1 = (float)expert_outputs[expert_base + D + d];\n        float e2 = (float)expert_outputs[expert_base + 2 * D + d];\n        float e3 = (float)expert_outputs[expert_base + 3 * D + d];\n        \n        float acc = w0 * e0 + w1 * e1 + w2 * e2 + w3 * e3;\n        \n        out[out_base + d] = (T)acc;\n    }\n} else if (d_base < D) {\n    const uint expert_base = token_idx * K * D;\n    const uint weight_base = token_idx * K;\n    \n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    float e0 = (float)expert_outputs[expert_base + d_base];\n    float e1 = (float)expert_outputs[expert_base + D + d_base];\n    float e2 = (float)expert_outputs[expert_base + 2 * D + d_base];\n    float e3 = (float)expert_outputs[expert_base + 3 * D + d_base];\n    \n    float acc = w0 * e0 + w1 * e1 + w2 * e2 + w3 * e3;\n    \n    out[token_idx * D + d_base] = (T)acc;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_05fcd49bcbd0",
+                        "generation": 7,
+                        "llm_reasoning": "Exploit spatial locality by processing 2 consecutive dimensions per thread with shared base offset computation, reducing address arithmetic overhead and improving cache line utilization through sequential access patterns."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 0.9727023924268746,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          171.25,
+                          185.416,
+                          173.0,
+                          171.292,
+                          150.0,
+                          158.375,
+                          156.584,
+                          163.125,
+                          164.666,
+                          159.0,
+                          292.125,
+                          164.791,
+                          158.541,
+                          157.375,
+                          161.75,
+                          161.541,
+                          156.125,
+                          158.75,
+                          158.917,
+                          166.708
+                        ],
+                        "median_us": 161.75,
+                        "reward": 0.9727023924268746,
+                        "speedup": 1.0082472952086554
+                      },
+                      "children": []
+                    },
+                    {
+                      "node_id": "gen7_0f40a4c7b3f9",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen7",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    const uint out_idx = token_idx * D + d_idx;\n    const uint expert_offset = token_idx * K * D + d_idx;\n    const uint weight_offset = token_idx * K;\n    \n    float sum = 0.0f;\n    \n    float w = (float)weights[weight_offset];\n    float e = (float)expert_outputs[expert_offset];\n    sum += w * e;\n    \n    w = (float)weights[weight_offset + 1];\n    e = (float)expert_outputs[expert_offset + D];\n    sum += w * e;\n    \n    w = (float)weights[weight_offset + 2];\n    e = (float)expert_outputs[expert_offset + 2 * D];\n    sum += w * e;\n    \n    w = (float)weights[weight_offset + 3];\n    e = (float)expert_outputs[expert_offset + 3 * D];\n    sum += w * e;\n    \n    out[out_idx] = (T)sum;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_05fcd49bcbd0",
+                        "generation": 7,
+                        "llm_reasoning": "Minimize register live ranges by computing and storing each expert contribution immediately after loading, creating a tight compute-store pipeline that reduces register pressure and enables better instruction scheduling by the compiler."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 1.0999628206147831,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          157.083,
+                          148.541,
+                          150.167,
+                          145.375,
+                          140.583,
+                          138.5,
+                          138.375,
+                          138.292,
+                          146.833,
+                          147.417,
+                          147.5,
+                          145.083,
+                          145.792,
+                          147.083,
+                          146.083,
+                          143.833,
+                          139.583,
+                          146.458,
+                          219.625,
+                          148.125
+                        ],
+                        "median_us": 146.458,
+                        "reward": 1.0999628206147831,
+                        "speedup": 1.1135205997623892
+                      },
+                      "children": []
+                    },
+                    {
+                      "node_id": "gen7_9571dacdd4bb",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen7",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    const device T* expert_ptr = expert_outputs + (token_idx * K * D + d_idx);\n    const device T* weight_ptr = weights + (token_idx * K);\n    \n    float w0 = (float)weight_ptr[0];\n    float w1 = (float)weight_ptr[1];\n    float w2 = (float)weight_ptr[2];\n    float w3 = (float)weight_ptr[3];\n    \n    float e0 = (float)expert_ptr[0];\n    float e1 = (float)expert_ptr[D];\n    float e2 = (float)expert_ptr[D * 2];\n    float e3 = (float)expert_ptr[D * 3];\n    \n    float p0 = w0 * e0;\n    float p1 = w1 * e1;\n    float p2 = w2 * e2;\n    float p3 = w3 * e3;\n    \n    float result = (p0 + p2) + (p1 + p3);\n    \n    out[token_idx * D + d_idx] = (T)result;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_05fcd49bcbd0",
+                        "generation": 7,
+                        "llm_reasoning": "Optimize memory access pattern by computing all expert offsets once and using pointer arithmetic, combined with strength reduction to replace multiplications with additions in the tight loop, reducing ALU overhead."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 0.0,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": false,
+                        "compile_error": null,
+                        "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:498:21: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\n    const device T* weight_ptr = weights + (token_idx * K);\n                    ^            ~~~~~~~~~~~~~~~~~~~~~~~~~\nmlx/backend/metal/kernels/utils.h:521:145: note: in instantiation of function template specialization 'custom_kernel_kk_glm_moe_combine_gen7__float<float>' requested here\ntemplate [[host_name(\"custom_kernel_kk_glm_moe_combine_gen7__float\")]] [[kernel]] decltype(custom_kernel_kk_glm_moe_combine_gen7__float<float>) custom_kernel_kk_glm_moe_combine_gen7__float<float>;\n                                                                                                                                                ^\n\n",
+                        "timings_us": [],
+                        "median_us": Infinity,
+                        "reward": 0.0,
+                        "speedup": 0.0
+                      },
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "node_id": "gen3_35374c7edcab",
+                  "candidate": {
+                    "spec": {
+                      "name": "kk_glm_moe_combine_gen3",
+                      "input_names": [
+                        "expert_outputs",
+                        "weights"
+                      ],
+                      "output_names": [
+                        "out"
+                      ],
+                      "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    float w0 = (float)weights[token_idx * K + 0];\n    float e0 = (float)expert_outputs[(token_idx * K + 0) * D + d_idx];\n    float acc = w0 * e0;\n    \n    float w1 = (float)weights[token_idx * K + 1];\n    float e1 = (float)expert_outputs[(token_idx * K + 1) * D + d_idx];\n    acc += w1 * e1;\n    \n    float w2 = (float)weights[token_idx * K + 2];\n    float e2 = (float)expert_outputs[(token_idx * K + 2) * D + d_idx];\n    acc += w2 * e2;\n    \n    float w3 = (float)weights[token_idx * K + 3];\n    float e3 = (float)expert_outputs[(token_idx * K + 3) * D + d_idx];\n    acc += w3 * e3;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                      "header": "",
+                      "threadgroup": [
+                        256,
+                        1,
+                        1
+                      ],
+                      "template_params": [
+                        [
+                          "T",
+                          "float32"
+                        ]
+                      ]
+                    },
+                    "parent_id": "gen2_2b5f062331c9",
+                    "generation": 3,
+                    "llm_reasoning": "Interleave weight loads with expert loads and multiplications to hide memory latency with computation and maximize pipeline throughput."
+                  },
+                  "visit_count": 13,
+                  "max_reward": 1.614281540079141,
+                  "prior": 0.25,
+                  "eval_result": {
+                    "compiled": true,
+                    "correct": true,
+                    "compile_error": null,
+                    "correctness_error": null,
+                    "timings_us": [
+                      107.875,
+                      97.25,
+                      104.792,
+                      97.292,
+                      99.416,
+                      101.125,
+                      92.958,
+                      103.833,
+                      107.917,
+                      97.125,
+                      99.292,
+                      110.083,
+                      101.5,
+                      97.292,
+                      99.292,
+                      97.791,
+                      107.875,
+                      107.5,
+                      98.459,
+                      94.209
+                    ],
+                    "median_us": 99.416,
+                    "reward": 1.614281540079141,
+                    "speedup": 1.6404200531101634
+                  },
+                  "children": [
+                    {
+                      "node_id": "gen4_179ea9a49f37",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen4",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    // Load all weights first\n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    // Load all expert values\n    uint base_offset = d_idx;\n    float e0 = (float)expert_outputs[(token_idx * K + 0) * D + base_offset];\n    float e1 = (float)expert_outputs[(token_idx * K + 1) * D + base_offset];\n    float e2 = (float)expert_outputs[(token_idx * K + 2) * D + base_offset];\n    float e3 = (float)expert_outputs[(token_idx * K + 3) * D + base_offset];\n    \n    // Perform all multiplications\n    float p0 = w0 * e0;\n    float p1 = w1 * e1;\n    float p2 = w2 * e2;\n    float p3 = w3 * e3;\n    \n    // Tree reduction for better parallelism\n    float sum01 = p0 + p1;\n    float sum23 = p2 + p3;\n    float acc = sum01 + sum23;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_35374c7edcab",
+                        "generation": 4,
+                        "llm_reasoning": "Reorder accumulation to group all multiplications together, then accumulate in a separate phase to maximize instruction-level parallelism and allow out-of-order execution."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 0.833341570208796,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          827.542,
+                          173.417,
+                          431.208,
+                          527.75,
+                          535.042,
+                          157.25,
+                          133.625,
+                          134.541,
+                          128.833,
+                          131.25,
+                          162.833,
+                          146.708,
+                          143.75,
+                          137.458,
+                          157.709,
+                          164.084,
+                          159.125,
+                          163.417,
+                          165.958,
+                          154.167
+                        ],
+                        "median_us": 159.125,
+                        "reward": 0.833341570208796,
+                        "speedup": 1.024879811468971
+                      },
+                      "children": []
+                    },
+                    {
+                      "node_id": "gen4_732650db372d",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen4",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    const device T* weight_ptr = weights + token_idx * K;\n    const device T* expert_base = expert_outputs + token_idx * K * D + d_idx;\n    \n    float w0 = (float)weight_ptr[0];\n    float e0 = (float)expert_base[0];\n    float acc = w0 * e0;\n    \n    float w1 = (float)weight_ptr[1];\n    float e1 = (float)expert_base[D];\n    acc += w1 * e1;\n    \n    float w2 = (float)weight_ptr[2];\n    float e2 = (float)expert_base[2 * D];\n    acc += w2 * e2;\n    \n    float w3 = (float)weight_ptr[3];\n    float e3 = (float)expert_base[3 * D];\n    acc += w3 * e3;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_35374c7edcab",
+                        "generation": 4,
+                        "llm_reasoning": "Use pointer arithmetic to reduce index calculation overhead and enable better compiler optimizations for address generation units."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 0.0,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": false,
+                        "compile_error": null,
+                        "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:497:21: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\n    const device T* weight_ptr = weights + token_idx * K;\n                    ^            ~~~~~~~~~~~~~~~~~~~~~~~\nmlx/backend/metal/kernels/utils.h:520:145: note: in instantiation of function template specialization 'custom_kernel_kk_glm_moe_combine_gen4__float<float>' requested here\ntemplate [[host_name(\"custom_kernel_kk_glm_moe_combine_gen4__float\")]] [[kernel]] decltype(custom_kernel_kk_glm_moe_combine_gen4__float<float>) custom_kernel_kk_glm_moe_combine_gen4__float<float>;\n                                                                                                                                                ^\n\n",
+                        "timings_us": [],
+                        "median_us": Infinity,
+                        "reward": 0.0,
+                        "speedup": 0.0
+                      },
+                      "children": []
+                    },
+                    {
+                      "node_id": "gen4_602bf446316b",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen4",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint weight_base = token_idx * K;\n    uint expert_stride = D;\n    uint expert_base = token_idx * K * D + d_idx;\n    \n    float acc = (float)weights[weight_base] * (float)expert_outputs[expert_base];\n    expert_base += expert_stride;\n    \n    acc += (float)weights[weight_base + 1] * (float)expert_outputs[expert_base];\n    expert_base += expert_stride;\n    \n    acc += (float)weights[weight_base + 2] * (float)expert_outputs[expert_base];\n    expert_base += expert_stride;\n    \n    acc += (float)weights[weight_base + 3] * (float)expert_outputs[expert_base];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_35374c7edcab",
+                        "generation": 4,
+                        "llm_reasoning": "Combine register pressure reduction with careful load ordering: load weight, immediately load expert, multiply, and accumulate to minimize live register count."
+                      },
+                      "visit_count": 9,
+                      "max_reward": 1.2328457464664704,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          170.666,
+                          134.042,
+                          142.458,
+                          139.417,
+                          134.25,
+                          145.333,
+                          136.375,
+                          137.792,
+                          131.959,
+                          134.042,
+                          131.875,
+                          131.375,
+                          133.959,
+                          133.167,
+                          133.5,
+                          121.167,
+                          118.042,
+                          115.291,
+                          112.917,
+                          118.917
+                        ],
+                        "median_us": 133.959,
+                        "reward": 1.2328457464664704,
+                        "speedup": 1.2174172694630447
+                      },
+                      "children": [
+                        {
+                          "node_id": "gen8_3e2089562416",
+                          "candidate": {
+                            "spec": {
+                              "name": "kk_glm_moe_combine_gen8",
+                              "input_names": [
+                                "expert_outputs",
+                                "weights"
+                              ],
+                              "output_names": [
+                                "out"
+                              ],
+                              "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    device const float4* expert_vec = (device const float4*)(expert_outputs + token_idx * K * D + d_idx);\n    device const float4* weight_vec = (device const float4*)(weights + token_idx * K);\n    \n    float4 exp_vals;\n    exp_vals.x = expert_vec[0 * (D/4)].x;\n    exp_vals.y = expert_vec[1 * (D/4)].x;\n    exp_vals.z = expert_vec[2 * (D/4)].x;\n    exp_vals.w = expert_vec[3 * (D/4)].x;\n    \n    float4 w = *weight_vec;\n    \n    float acc = w.x * exp_vals.x + w.y * exp_vals.y + w.z * exp_vals.z + w.w * exp_vals.w;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                              "header": "",
+                              "threadgroup": [
+                                256,
+                                1,
+                                1
+                              ],
+                              "template_params": [
+                                [
+                                  "T",
+                                  "float32"
+                                ]
+                              ]
+                            },
+                            "parent_id": "gen4_602bf446316b",
+                            "generation": 8,
+                            "llm_reasoning": "Use float4 vector loads to process all K=4 expert outputs in a single load, maximizing memory bandwidth and reducing load instructions from 4 to 1."
+                          },
+                          "visit_count": 1,
+                          "max_reward": 0.0,
+                          "prior": 0.25,
+                          "eval_result": {
+                            "compiled": true,
+                            "correct": false,
+                            "compile_error": null,
+                            "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:498:39: error: C-style cast from 'const constant float *' to 'const device float4 *' converts between mismatching address spaces\n    device const float4* weight_vec = (device const float4*)(weights + token_idx * K);\n                                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n",
+                            "timings_us": [],
+                            "median_us": Infinity,
+                            "reward": 0.0,
+                            "speedup": 0.0
+                          },
+                          "children": []
+                        },
+                        {
+                          "node_id": "gen8_78ff0a030073",
+                          "candidate": {
+                            "spec": {
+                              "name": "kk_glm_moe_combine_gen8",
+                              "input_names": [
+                                "expert_outputs",
+                                "weights"
+                              ],
+                              "output_names": [
+                                "out"
+                              ],
+                              "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_idx;\n    \n    float w0 = (float)weights[weight_base];\n    float e0 = (float)expert_outputs[expert_base];\n    float w1 = (float)weights[weight_base + 1];\n    float e1 = (float)expert_outputs[expert_base + D];\n    \n    float acc = w0 * e0;\n    \n    float w2 = (float)weights[weight_base + 2];\n    float e2 = (float)expert_outputs[expert_base + 2 * D];\n    acc += w1 * e1;\n    \n    float w3 = (float)weights[weight_base + 3];\n    float e3 = (float)expert_outputs[expert_base + 3 * D];\n    acc += w2 * e2;\n    \n    acc += w3 * e3;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                              "header": "",
+                              "threadgroup": [
+                                256,
+                                1,
+                                1
+                              ],
+                              "template_params": [
+                                [
+                                  "T",
+                                  "float32"
+                                ]
+                              ]
+                            },
+                            "parent_id": "gen4_602bf446316b",
+                            "generation": 8,
+                            "llm_reasoning": "Software pipeline with explicit prefetch: load expert[i+1] while computing expert[i] product to hide latency, unroll K=4 with careful scheduling."
+                          },
+                          "visit_count": 1,
+                          "max_reward": 1.0092232149663778,
+                          "prior": 0.25,
+                          "eval_result": {
+                            "compiled": true,
+                            "correct": true,
+                            "compile_error": null,
+                            "correctness_error": null,
+                            "timings_us": [
+                              190.666,
+                              163.542,
+                              164.834,
+                              161.458,
+                              148.417,
+                              138.042,
+                              158.25,
+                              156.416,
+                              149.542,
+                              148.834,
+                              157.333,
+                              160.375,
+                              161.917,
+                              166.458,
+                              289.375,
+                              160.291,
+                              153.917,
+                              140.916,
+                              148.584,
+                              154.791
+                            ],
+                            "median_us": 158.25,
+                            "reward": 1.0092232149663778,
+                            "speedup": 1.0305466034755135
+                          },
+                          "children": []
+                        },
+                        {
+                          "node_id": "gen8_63cceec54b33",
+                          "candidate": {
+                            "spec": {
+                              "name": "kk_glm_moe_combine_gen8",
+                              "input_names": [
+                                "expert_outputs",
+                                "weights"
+                              ],
+                              "output_names": [
+                                "out"
+                              ],
+                              "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    device const float* weight_ptr = weights + token_idx * 4;\n    device const float* expert_ptr = expert_outputs + token_idx * 8192 + d_idx;\n    \n    float w0 = weight_ptr[0];\n    float w1 = weight_ptr[1];\n    float w2 = weight_ptr[2];\n    float w3 = weight_ptr[3];\n    \n    float e0 = expert_ptr[0];\n    float e1 = expert_ptr[2048];\n    float e2 = expert_ptr[4096];\n    float e3 = expert_ptr[6144];\n    \n    float p0 = w0 * e0;\n    float p1 = w1 * e1;\n    float p2 = w2 * e2;\n    float p3 = w3 * e3;\n    \n    out[token_idx * D + d_idx] = (T)(p0 + p1 + p2 + p3);\n}",
+                              "header": "",
+                              "threadgroup": [
+                                256,
+                                1,
+                                1
+                              ],
+                              "template_params": [
+                                [
+                                  "T",
+                                  "float32"
+                                ]
+                              ]
+                            },
+                            "parent_id": "gen4_602bf446316b",
+                            "generation": 8,
+                            "llm_reasoning": "Compute address offsets as compile-time constants, avoiding runtime multiplies; use FMA pattern with explicit intermediate storage to maximize instruction throughput."
+                          },
+                          "visit_count": 1,
+                          "max_reward": 0.0,
+                          "prior": 0.25,
+                          "eval_result": {
+                            "compiled": true,
+                            "correct": false,
+                            "compile_error": null,
+                            "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:497:25: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\n    device const float* weight_ptr = weights + token_idx * 4;\n                        ^            ~~~~~~~~~~~~~~~~~~~~~~~\n\n",
+                            "timings_us": [],
+                            "median_us": Infinity,
+                            "reward": 0.0,
+                            "speedup": 0.0
+                          },
+                          "children": []
+                        },
+                        {
+                          "node_id": "gen8_57dc75b3cf54",
+                          "candidate": {
+                            "spec": {
+                              "name": "kk_glm_moe_combine_gen8",
+                              "input_names": [
+                                "expert_outputs",
+                                "weights"
+                              ],
+                              "output_names": [
+                                "out"
+                              ],
+                              "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_base;\n    \n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    float e0_0 = (float)expert_outputs[expert_base];\n    float e0_1 = (float)expert_outputs[expert_base + 1];\n    float e1_0 = (float)expert_outputs[expert_base + D];\n    float e1_1 = (float)expert_outputs[expert_base + D + 1];\n    float e2_0 = (float)expert_outputs[expert_base + 2 * D];\n    float e2_1 = (float)expert_outputs[expert_base + 2 * D + 1];\n    float e3_0 = (float)expert_outputs[expert_base + 3 * D];\n    float e3_1 = (float)expert_outputs[expert_base + 3 * D + 1];\n    \n    float acc0 = w0 * e0_0 + w1 * e1_0 + w2 * e2_0 + w3 * e3_0;\n    float acc1 = w0 * e0_1 + w1 * e1_1 + w2 * e2_1 + w3 * e3_1;\n    \n    out[token_idx * D + d_base] = (T)acc0;\n    out[token_idx * D + d_base + 1] = (T)acc1;\n}",
+                              "header": "",
+                              "threadgroup": [
+                                256,
+                                1,
+                                1
+                              ],
+                              "template_params": [
+                                [
+                                  "T",
+                                  "float32"
+                                ]
+                              ]
+                            },
+                            "parent_id": "gen4_602bf446316b",
+                            "generation": 8,
+                            "llm_reasoning": "Process 2 dimensions per thread with vectorized weight broadcast via SIMD, reducing total threads and launch overhead while maintaining coalesced access."
+                          },
+                          "visit_count": 5,
+                          "max_reward": 1.1745546164456353,
+                          "prior": 0.25,
+                          "eval_result": {
+                            "compiled": true,
+                            "correct": true,
+                            "compile_error": null,
+                            "correctness_error": null,
+                            "timings_us": [
+                              166.292,
+                              143.417,
+                              150.875,
+                              144.542,
+                              146.209,
+                              146.834,
+                              146.791,
+                              145.666,
+                              143.416,
+                              133.833,
+                              132.583,
+                              125.708,
+                              129.167,
+                              124.75,
+                              124.333,
+                              133.25,
+                              135.958,
+                              140.708,
+                              138.75,
+                              131.041
+                            ],
+                            "median_us": 140.708,
+                            "reward": 1.1745546164456353,
+                            "speedup": 1.1590243625095944
+                          },
+                          "children": [
+                            {
+                              "node_id": "gen9_2c8201fabd7e",
+                              "candidate": {
+                                "spec": {
+                                  "name": "kk_glm_moe_combine_gen9",
+                                  "input_names": [
+                                    "expert_outputs",
+                                    "weights"
+                                  ],
+                                  "output_names": [
+                                    "out"
+                                  ],
+                                  "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_base;\n    \n    // Load all weights once\n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    // Interleave loads and FMAs for dimension 0\n    float acc0 = 0.0f;\n    float e0 = (float)expert_outputs[expert_base];\n    acc0 += w0 * e0;\n    \n    float e1 = (float)expert_outputs[expert_base + D];\n    acc0 += w1 * e1;\n    \n    float e2 = (float)expert_outputs[expert_base + 2 * D];\n    acc0 += w2 * e2;\n    \n    float e3 = (float)expert_outputs[expert_base + 3 * D];\n    acc0 += w3 * e3;\n    \n    // Interleave loads and FMAs for dimension 1\n    float acc1 = 0.0f;\n    e0 = (float)expert_outputs[expert_base + 1];\n    acc1 += w0 * e0;\n    \n    e1 = (float)expert_outputs[expert_base + D + 1];\n    acc1 += w1 * e1;\n    \n    e2 = (float)expert_outputs[expert_base + 2 * D + 1];\n    acc1 += w2 * e2;\n    \n    e3 = (float)expert_outputs[expert_base + 3 * D + 1];\n    acc1 += w3 * e3;\n    \n    out[token_idx * D + d_base] = (T)acc0;\n    out[token_idx * D + d_base + 1] = (T)acc1;\n}",
+                                  "header": "",
+                                  "threadgroup": [
+                                    256,
+                                    1,
+                                    1
+                                  ],
+                                  "template_params": [
+                                    [
+                                      "T",
+                                      "float32"
+                                    ]
+                                  ]
+                                },
+                                "parent_id": "gen8_57dc75b3cf54",
+                                "generation": 9,
+                                "llm_reasoning": "Process 2 dimensions per thread with weight-major ordering: load all 4 weights once, then interleave expert loads across both dimensions to maximize memory bandwidth and reduce weight fetch overhead."
+                              },
+                              "visit_count": 1,
+                              "max_reward": 1.014981668199023,
+                              "prior": 0.25,
+                              "eval_result": {
+                                "compiled": true,
+                                "correct": true,
+                                "compile_error": null,
+                                "correctness_error": null,
+                                "timings_us": [
+                                  160.791,
+                                  158.334,
+                                  157.791,
+                                  152.625,
+                                  162.666,
+                                  190.833,
+                                  170.25,
+                                  164.625,
+                                  160.0,
+                                  157.791,
+                                  154.5,
+                                  155.5,
+                                  153.708,
+                                  155.834,
+                                  152.75,
+                                  159.75,
+                                  154.833,
+                                  173.291,
+                                  162.875,
+                                  159.166
+                                ],
+                                "median_us": 159.166,
+                                "reward": 1.014981668199023,
+                                "speedup": 1.0246158099091516
+                              },
+                              "children": []
+                            },
+                            {
+                              "node_id": "gen9_5440a99f494f",
+                              "candidate": {
+                                "spec": {
+                                  "name": "kk_glm_moe_combine_gen9",
+                                  "input_names": [
+                                    "expert_outputs",
+                                    "weights"
+                                  ],
+                                  "output_names": [
+                                    "out"
+                                  ],
+                                  "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 4;\n\nif (d_base + 3 < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_base;\n    \n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    // Pipeline: load expert[0], compute dim 0&1, load expert[0] again for dim 2&3\n    float acc0 = 0.0f, acc1 = 0.0f, acc2 = 0.0f, acc3 = 0.0f;\n    \n    // Expert 0: alternate pairs\n    float e0 = (float)expert_outputs[expert_base];\n    float e1 = (float)expert_outputs[expert_base + 1];\n    acc0 = w0 * e0;\n    acc1 = w0 * e1;\n    float e2 = (float)expert_outputs[expert_base + 2];\n    float e3 = (float)expert_outputs[expert_base + 3];\n    acc2 = w0 * e2;\n    acc3 = w0 * e3;\n    \n    // Expert 1\n    e0 = (float)expert_outputs[expert_base + D];\n    e1 = (float)expert_outputs[expert_base + D + 1];\n    acc0 += w1 * e0;\n    acc1 += w1 * e1;\n    e2 = (float)expert_outputs[expert_base + D + 2];\n    e3 = (float)expert_outputs[expert_base + D + 3];\n    acc2 += w1 * e2;\n    acc3 += w1 * e3;\n    \n    // Expert 2\n    e0 = (float)expert_outputs[expert_base + 2 * D];\n    e1 = (float)expert_outputs[expert_base + 2 * D + 1];\n    acc0 += w2 * e0;\n    acc1 += w2 * e1;\n    e2 = (float)expert_outputs[expert_base + 2 * D + 2];\n    e3 = (float)expert_outputs[expert_base + 2 * D + 3];\n    acc2 += w2 * e2;\n    acc3 += w2 * e3;\n    \n    // Expert 3\n    e0 = (float)expert_outputs[expert_base + 3 * D];\n    e1 = (float)expert_outputs[expert_base + 3 * D + 1];\n    acc0 += w3 * e0;\n    acc1 += w3 * e1;\n    e2 = (float)expert_outputs[expert_base + 3 * D + 2];\n    e3 = (float)expert_outputs[expert_base + 3 * D + 3];\n    acc2 += w3 * e2;\n    acc3 += w3 * e3;\n    \n    uint out_base = token_idx * D + d_base;\n    out[out_base] = (T)acc0;\n    out[out_base + 1] = (T)acc1;\n    out[out_base + 2] = (T)acc2;\n    out[out_base + 3] = (T)acc3;\n}",
+                                  "header": "",
+                                  "threadgroup": [
+                                    256,
+                                    1,
+                                    1
+                                  ],
+                                  "template_params": [
+                                    [
+                                      "T",
+                                      "float32"
+                                    ]
+                                  ]
+                                },
+                                "parent_id": "gen8_57dc75b3cf54",
+                                "generation": 9,
+                                "llm_reasoning": "Process 4 dimensions per thread with dual accumulator pipelining: alternate between two sets of accumulators (0,1 vs 2,3) while loading next expert values, enabling parallel FMA execution units."
+                              },
+                              "visit_count": 1,
+                              "max_reward": 1.1079748998418235,
+                              "prior": 0.25,
+                              "eval_result": {
+                                "compiled": true,
+                                "correct": true,
+                                "compile_error": null,
+                                "correctness_error": null,
+                                "timings_us": [
+                                  138.75,
+                                  135.666,
+                                  147.208,
+                                  144.25,
+                                  146.375,
+                                  156.041,
+                                  149.917,
+                                  149.459,
+                                  148.25,
+                                  148.417,
+                                  149.417,
+                                  148.791,
+                                  146.375,
+                                  148.083,
+                                  147.416,
+                                  146.458,
+                                  148.833,
+                                  148.0,
+                                  147.375,
+                                  149.875
+                                ],
+                                "median_us": 148.083,
+                                "reward": 1.1079748998418235,
+                                "speedup": 1.1013012972454637
+                              },
+                              "children": []
+                            },
+                            {
+                              "node_id": "gen9_d28a95446e6e",
+                              "candidate": {
+                                "spec": {
+                                  "name": "kk_glm_moe_combine_gen9",
+                                  "input_names": [
+                                    "expert_outputs",
+                                    "weights"
+                                  ],
+                                  "output_names": [
+                                    "out"
+                                  ],
+                                  "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_idx;\n    \n    // Load all 4 weights into registers\n    float w[4];\n    w[0] = (float)weights[weight_base];\n    w[1] = (float)weights[weight_base + 1];\n    w[2] = (float)weights[weight_base + 2];\n    w[3] = (float)weights[weight_base + 3];\n    \n    // Load all 4 expert values for this dimension\n    float e[4];\n    e[0] = (float)expert_outputs[expert_base];\n    e[1] = (float)expert_outputs[expert_base + D];\n    e[2] = (float)expert_outputs[expert_base + 2 * D];\n    e[3] = (float)expert_outputs[expert_base + 3 * D];\n    \n    // Compute weighted sum with explicit unroll\n    float acc = w[0] * e[0];\n    acc += w[1] * e[1];\n    acc += w[2] * e[2];\n    acc += w[3] * e[3];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                                  "header": "",
+                                  "threadgroup": [
+                                    256,
+                                    1,
+                                    1
+                                  ],
+                                  "template_params": [
+                                    [
+                                      "T",
+                                      "float32"
+                                    ]
+                                  ]
+                                },
+                                "parent_id": "gen8_57dc75b3cf54",
+                                "generation": 9,
+                                "llm_reasoning": "Exploit expert locality with transposed accumulation: load all 4 expert values for one dimension across K, then perform weighted sum using SIMD-style consecutive multiplies to maximize cache hits."
+                              },
+                              "visit_count": 1,
+                              "max_reward": 1.1147758300060882,
+                              "prior": 0.25,
+                              "eval_result": {
+                                "compiled": true,
+                                "correct": true,
+                                "compile_error": null,
+                                "correctness_error": null,
+                                "timings_us": [
+                                  179.375,
+                                  161.083,
+                                  268.709,
+                                  149.416,
+                                  149.709,
+                                  149.542,
+                                  149.541,
+                                  147.583,
+                                  149.125,
+                                  154.5,
+                                  133.625,
+                                  132.459,
+                                  125.25,
+                                  129.834,
+                                  130.833,
+                                  128.584,
+                                  132.916,
+                                  133.292,
+                                  132.958,
+                                  133.833
+                                ],
+                                "median_us": 147.583,
+                                "reward": 1.1147758300060882,
+                                "speedup": 1.1050324224334782
+                              },
+                              "children": []
+                            },
+                            {
+                              "node_id": "gen9_82f1d1dd2650",
+                              "candidate": {
+                                "spec": {
+                                  "name": "kk_glm_moe_combine_gen9",
+                                  "input_names": [
+                                    "expert_outputs",
+                                    "weights"
+                                  ],
+                                  "output_names": [
+                                    "out"
+                                  ],
+                                  "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_base;\n    \n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    // Batch 1: experts 0,1\n    float e00 = (float)expert_outputs[expert_base];\n    float e01 = (float)expert_outputs[expert_base + 1];\n    float e10 = (float)expert_outputs[expert_base + D];\n    float e11 = (float)expert_outputs[expert_base + D + 1];\n    \n    float acc0 = w0 * e00 + w1 * e10;\n    float acc1 = w0 * e01 + w1 * e11;\n    \n    // Batch 2: experts 2,3\n    float e20 = (float)expert_outputs[expert_base + 2 * D];\n    float e21 = (float)expert_outputs[expert_base + 2 * D + 1];\n    float e30 = (float)expert_outputs[expert_base + 3 * D];\n    float e31 = (float)expert_outputs[expert_base + 3 * D + 1];\n    \n    acc0 += w2 * e20 + w3 * e30;\n    acc1 += w2 * e21 + w3 * e31;\n    \n    out[token_idx * D + d_base] = (T)acc0;\n    out[token_idx * D + d_base + 1] = (T)acc1;\n}",
+                                  "header": "",
+                                  "threadgroup": [
+                                    256,
+                                    1,
+                                    1
+                                  ],
+                                  "template_params": [
+                                    [
+                                      "T",
+                                      "float32"
+                                    ]
+                                  ]
+                                },
+                                "parent_id": "gen8_57dc75b3cf54",
+                                "generation": 9,
+                                "llm_reasoning": "Process 2 dimensions with batched expert loads: fetch consecutive expert pairs (e0,e1), (e2,e3) to leverage spatial locality, then cross-multiply with weights to maximize memory coalescing and arithmetic intensity."
+                              },
+                              "visit_count": 1,
+                              "max_reward": 1.1027252240773409,
+                              "prior": 0.25,
+                              "eval_result": {
+                                "compiled": true,
+                                "correct": true,
+                                "compile_error": null,
+                                "correctness_error": null,
+                                "timings_us": [
+                                  147.375,
+                                  144.083,
+                                  147.25,
+                                  149.292,
+                                  148.541,
+                                  150.583,
+                                  151.834,
+                                  149.333,
+                                  146.167,
+                                  145.792,
+                                  146.958,
+                                  147.208,
+                                  146.375,
+                                  146.125,
+                                  145.166,
+                                  163.708,
+                                  146.541,
+                                  146.666,
+                                  141.5,
+                                  148.5
+                                ],
+                                "median_us": 147.208,
+                                "reward": 1.1027252240773409,
+                                "speedup": 1.107847399597848
+                              },
+                              "children": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "gen4_094eb206f5bf",
+                      "candidate": {
+                        "spec": {
+                          "name": "kk_glm_moe_combine_gen4",
+                          "input_names": [
+                            "expert_outputs",
+                            "weights"
+                          ],
+                          "output_names": [
+                            "out"
+                          ],
+                          "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint weight_idx = token_idx * K;\n    uint expert_idx = token_idx * K * D + d_idx;\n    \n    // Prefetch first weight\n    float w_curr = (float)weights[weight_idx];\n    float e0 = (float)expert_outputs[expert_idx];\n    \n    // Prefetch next weight while computing\n    float w_next = (float)weights[weight_idx + 1];\n    float acc = w_curr * e0;\n    \n    float e1 = (float)expert_outputs[expert_idx + D];\n    w_curr = w_next;\n    w_next = (float)weights[weight_idx + 2];\n    acc += w_curr * e1;\n    \n    float e2 = (float)expert_outputs[expert_idx + 2 * D];\n    w_curr = w_next;\n    w_next = (float)weights[weight_idx + 3];\n    acc += w_curr * e2;\n    \n    float e3 = (float)expert_outputs[expert_idx + 3 * D];\n    acc += w_next * e3;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+                          "header": "",
+                          "threadgroup": [
+                            256,
+                            1,
+                            1
+                          ],
+                          "template_params": [
+                            [
+                              "T",
+                              "float32"
+                            ]
+                          ]
+                        },
+                        "parent_id": "gen3_35374c7edcab",
+                        "generation": 4,
+                        "llm_reasoning": "Double-buffer the computation by loading next weight while computing current product to hide memory latency through better pipelining."
+                      },
+                      "visit_count": 1,
+                      "max_reward": 0.8413169804058604,
+                      "prior": 0.25,
+                      "eval_result": {
+                        "compiled": true,
+                        "correct": true,
+                        "compile_error": null,
+                        "correctness_error": null,
+                        "timings_us": [
+                          210.084,
+                          128.75,
+                          140.792,
+                          119.834,
+                          247.5,
+                          123.958,
+                          599.5,
+                          598.084,
+                          514.5,
+                          540.208,
+                          168.459,
+                          153.625,
+                          145.25,
+                          144.375,
+                          153.25,
+                          140.0,
+                          135.416,
+                          143.333,
+                          133.041,
+                          133.75
+                        ],
+                        "median_us": 145.25,
+                        "reward": 0.8413169804058604,
+                        "speedup": 1.1227814113597245
+                      },
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "node_id": "gen1_ab501efee4d2",
+          "candidate": {
+            "spec": {
+              "name": "kk_glm_moe_combine_gen1",
+              "input_names": [
+                "expert_outputs",
+                "weights"
+              ],
+              "output_names": [
+                "out"
+              ],
+              "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\ndevice const float* w_base = weights + token_idx * K;\ndevice const T* exp_base = expert_outputs + token_idx * K * D + d_idx;\n\nfloat w0 = (float)w_base[0];\nfloat w1 = (float)w_base[1];\nfloat w2 = (float)w_base[2];\nfloat w3 = (float)w_base[3];\n\nfloat v0 = (float)exp_base[0 * D];\nfloat v1 = (float)exp_base[1 * D];\nfloat v2 = (float)exp_base[2 * D];\nfloat v3 = (float)exp_base[3 * D];\n\nfloat acc = w0 * v0 + w1 * v1 + w2 * v2 + w3 * v3;\nout[token_idx * D + d_idx] = (T)acc;",
+              "header": "",
+              "threadgroup": [
+                256,
+                1,
+                1
+              ],
+              "template_params": [
+                [
+                  "T",
+                  "float32"
+                ]
+              ]
+            },
+            "parent_id": "root",
+            "generation": 1,
+            "llm_reasoning": "Manual loop unrolling for K=4 experts to eliminate loop overhead and enable instruction-level parallelism by interleaving independent FMA operations."
+          },
+          "visit_count": 1,
+          "max_reward": 0.0,
+          "prior": 0.25,
+          "eval_result": {
+            "compiled": true,
+            "correct": false,
+            "compile_error": null,
+            "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:496:21: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\ndevice const float* w_base = weights + token_idx * K;\n                    ^        ~~~~~~~~~~~~~~~~~~~~~~~\n\n",
+            "timings_us": [],
+            "median_us": Infinity,
+            "reward": 0.0,
+            "speedup": 0.0
+          },
+          "children": []
+        },
+        {
+          "node_id": "gen1_7fc925e78403",
+          "candidate": {
+            "spec": {
+              "name": "kk_glm_moe_combine_gen1",
+              "input_names": [
+                "expert_outputs",
+                "weights"
+              ],
+              "output_names": [
+                "out"
+              ],
+              "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 4;\n\ndevice const float* w_ptr = weights + token_idx * K;\nfloat w0 = (float)w_ptr[0];\nfloat w1 = (float)w_ptr[1];\nfloat w2 = (float)w_ptr[2];\nfloat w3 = (float)w_ptr[3];\n\nif (d_base + 3 < D) {\n    device const T* exp0 = expert_outputs + (token_idx * K + 0) * D + d_base;\n    device const T* exp1 = expert_outputs + (token_idx * K + 1) * D + d_base;\n    device const T* exp2 = expert_outputs + (token_idx * K + 2) * D + d_base;\n    device const T* exp3 = expert_outputs + (token_idx * K + 3) * D + d_base;\n    \n    float4 v0 = float4((float)exp0[0], (float)exp0[1], (float)exp0[2], (float)exp0[3]);\n    float4 v1 = float4((float)exp1[0], (float)exp1[1], (float)exp1[2], (float)exp1[3]);\n    float4 v2 = float4((float)exp2[0], (float)exp2[1], (float)exp2[2], (float)exp2[3]);\n    float4 v3 = float4((float)exp3[0], (float)exp3[1], (float)exp3[2], (float)exp3[3]);\n    \n    float4 acc = w0 * v0 + w1 * v1 + w2 * v2 + w3 * v3;\n    \n    device T* out_ptr = out + token_idx * D + d_base;\n    out_ptr[0] = (T)acc.x;\n    out_ptr[1] = (T)acc.y;\n    out_ptr[2] = (T)acc.z;\n    out_ptr[3] = (T)acc.w;\n} else {\n    for (uint d_off = 0; d_off < 4 && d_base + d_off < D; ++d_off) {\n        uint d_idx = d_base + d_off;\n        float v0 = (float)expert_outputs[(token_idx * K + 0) * D + d_idx];\n        float v1 = (float)expert_outputs[(token_idx * K + 1) * D + d_idx];\n        float v2 = (float)expert_outputs[(token_idx * K + 2) * D + d_idx];\n        float v3 = (float)expert_outputs[(token_idx * K + 3) * D + d_idx];\n        out[token_idx * D + d_idx] = (T)(w0 * v0 + w1 * v1 + w2 * v2 + w3 * v3);\n    }\n}",
+              "header": "",
+              "threadgroup": [
+                256,
+                1,
+                1
+              ],
+              "template_params": [
+                [
+                  "T",
+                  "float32"
+                ]
+              ]
+            },
+            "parent_id": "root",
+            "generation": 1,
+            "llm_reasoning": "Load all weights for a token into registers first, then vectorize the expert output reads with float4, combining both strategies for reduced memory latency."
+          },
+          "visit_count": 1,
+          "max_reward": 0.0,
+          "prior": 0.25,
+          "eval_result": {
+            "compiled": true,
+            "correct": false,
+            "compile_error": null,
+            "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:496:21: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\ndevice const float* w_ptr = weights + token_idx * K;\n                    ^       ~~~~~~~~~~~~~~~~~~~~~~~\n\n",
+            "timings_us": [],
+            "median_us": Infinity,
+            "reward": 0.0,
+            "speedup": 0.0
+          },
+          "children": []
+        },
+        {
+          "node_id": "gen1_f092ea37e4f7",
+          "candidate": {
+            "spec": {
+              "name": "kk_glm_moe_combine_gen1",
+              "input_names": [
+                "expert_outputs",
+                "weights"
+              ],
+              "output_names": [
+                "out"
+              ],
+              "source": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\ndevice const float* w_base = weights + token_idx * K;\ndevice const T* exp_base = expert_outputs + token_idx * K * D + d_idx;\n\nfloat w0 = (float)w_base[0];\nfloat w1 = (float)w_base[1];\nfloat v0 = (float)exp_base[0 * D];\nfloat v1 = (float)exp_base[1 * D];\nfloat w2 = (float)w_base[2];\nfloat w3 = (float)w_base[3];\nfloat v2 = (float)exp_base[2 * D];\nfloat v3 = (float)exp_base[3 * D];\n\nfloat acc0 = w0 * v0;\nfloat acc1 = w1 * v1;\nfloat acc2 = w2 * v2;\nfloat acc3 = w3 * v3;\n\nfloat acc = acc0 + acc1 + acc2 + acc3;\nout[token_idx * D + d_idx] = (T)acc;",
+              "header": "",
+              "threadgroup": [
+                256,
+                1,
+                1
+              ],
+              "template_params": [
+                [
+                  "T",
+                  "float32"
+                ]
+              ]
+            },
+            "parent_id": "root",
+            "generation": 1,
+            "llm_reasoning": "Reorder computation to maximize instruction-level parallelism by separating all loads from all computations, allowing better pipeline utilization and hiding memory latency."
+          },
+          "visit_count": 1,
+          "max_reward": 0.0,
+          "prior": 0.25,
+          "eval_result": {
+            "compiled": true,
+            "correct": false,
+            "compile_error": null,
+            "correctness_error": "[metal::Device] Unable to build metal library from source\nmlx/backend/metal/kernels/utils.h:496:21: error: cannot initialize a variable of type 'const device float *' with an rvalue of type 'const constant float *'\ndevice const float* w_base = weights + token_idx * K;\n                    ^        ~~~~~~~~~~~~~~~~~~~~~~~\n\n",
+            "timings_us": [],
+            "median_us": Infinity,
+            "reward": 0.0,
+            "speedup": 0.0
+          },
+          "children": []
+        }
+      ]
+    }
+  },
+  "eval_history": [],
+  "candidate_sources": {
+    "gen1_372998762342": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 4;\n\nif (d_base + 3 < D) {\n    float4 acc = float4(0.0f);\n    for (uint i = 0; i < K; ++i) {\n        float w = (float)weights[token_idx * K + i];\n        device const T* expert_base = expert_outputs + (token_idx * K + i) * D + d_base;\n        float4 v = float4((float)expert_base[0], (float)expert_base[1], (float)expert_base[2], (float)expert_base[3]);\n        acc += w * v;\n    }\n    device T* out_base = out + token_idx * D + d_base;\n    out_base[0] = (T)acc.x;\n    out_base[1] = (T)acc.y;\n    out_base[2] = (T)acc.z;\n    out_base[3] = (T)acc.w;\n} else {\n    for (uint d_off = 0; d_off < 4 && d_base + d_off < D; ++d_off) {\n        uint d_idx = d_base + d_off;\n        float acc = 0.0f;\n        for (uint i = 0; i < K; ++i) {\n            float w = (float)weights[token_idx * K + i];\n            float v = (float)expert_outputs[(token_idx * K + i) * D + d_idx];\n            acc += w * v;\n        }\n        out[token_idx * D + d_idx] = (T)acc;\n    }\n}",
+    "gen1_ab501efee4d2": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\ndevice const float* w_base = weights + token_idx * K;\ndevice const T* exp_base = expert_outputs + token_idx * K * D + d_idx;\n\nfloat w0 = (float)w_base[0];\nfloat w1 = (float)w_base[1];\nfloat w2 = (float)w_base[2];\nfloat w3 = (float)w_base[3];\n\nfloat v0 = (float)exp_base[0 * D];\nfloat v1 = (float)exp_base[1 * D];\nfloat v2 = (float)exp_base[2 * D];\nfloat v3 = (float)exp_base[3 * D];\n\nfloat acc = w0 * v0 + w1 * v1 + w2 * v2 + w3 * v3;\nout[token_idx * D + d_idx] = (T)acc;",
+    "gen1_7fc925e78403": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 4;\n\ndevice const float* w_ptr = weights + token_idx * K;\nfloat w0 = (float)w_ptr[0];\nfloat w1 = (float)w_ptr[1];\nfloat w2 = (float)w_ptr[2];\nfloat w3 = (float)w_ptr[3];\n\nif (d_base + 3 < D) {\n    device const T* exp0 = expert_outputs + (token_idx * K + 0) * D + d_base;\n    device const T* exp1 = expert_outputs + (token_idx * K + 1) * D + d_base;\n    device const T* exp2 = expert_outputs + (token_idx * K + 2) * D + d_base;\n    device const T* exp3 = expert_outputs + (token_idx * K + 3) * D + d_base;\n    \n    float4 v0 = float4((float)exp0[0], (float)exp0[1], (float)exp0[2], (float)exp0[3]);\n    float4 v1 = float4((float)exp1[0], (float)exp1[1], (float)exp1[2], (float)exp1[3]);\n    float4 v2 = float4((float)exp2[0], (float)exp2[1], (float)exp2[2], (float)exp2[3]);\n    float4 v3 = float4((float)exp3[0], (float)exp3[1], (float)exp3[2], (float)exp3[3]);\n    \n    float4 acc = w0 * v0 + w1 * v1 + w2 * v2 + w3 * v3;\n    \n    device T* out_ptr = out + token_idx * D + d_base;\n    out_ptr[0] = (T)acc.x;\n    out_ptr[1] = (T)acc.y;\n    out_ptr[2] = (T)acc.z;\n    out_ptr[3] = (T)acc.w;\n} else {\n    for (uint d_off = 0; d_off < 4 && d_base + d_off < D; ++d_off) {\n        uint d_idx = d_base + d_off;\n        float v0 = (float)expert_outputs[(token_idx * K + 0) * D + d_idx];\n        float v1 = (float)expert_outputs[(token_idx * K + 1) * D + d_idx];\n        float v2 = (float)expert_outputs[(token_idx * K + 2) * D + d_idx];\n        float v3 = (float)expert_outputs[(token_idx * K + 3) * D + d_idx];\n        out[token_idx * D + d_idx] = (T)(w0 * v0 + w1 * v1 + w2 * v2 + w3 * v3);\n    }\n}",
+    "gen1_f092ea37e4f7": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\ndevice const float* w_base = weights + token_idx * K;\ndevice const T* exp_base = expert_outputs + token_idx * K * D + d_idx;\n\nfloat w0 = (float)w_base[0];\nfloat w1 = (float)w_base[1];\nfloat v0 = (float)exp_base[0 * D];\nfloat v1 = (float)exp_base[1 * D];\nfloat w2 = (float)w_base[2];\nfloat w3 = (float)w_base[3];\nfloat v2 = (float)exp_base[2 * D];\nfloat v3 = (float)exp_base[3 * D];\n\nfloat acc0 = w0 * v0;\nfloat acc1 = w1 * v1;\nfloat acc2 = w2 * v2;\nfloat acc3 = w3 * v3;\n\nfloat acc = acc0 + acc1 + acc2 + acc3;\nout[token_idx * D + d_idx] = (T)acc;",
+    "gen2_403e1f9451db": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    float acc = 0.0f;\n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    float v0 = (float)expert_outputs[(token_idx * K + 0) * D + d_idx];\n    float v1 = (float)expert_outputs[(token_idx * K + 1) * D + d_idx];\n    acc += w0 * v0 + w1 * v1;\n    \n    float v2 = (float)expert_outputs[(token_idx * K + 2) * D + d_idx];\n    float v3 = (float)expert_outputs[(token_idx * K + 3) * D + d_idx];\n    acc += w2 * v2 + w3 * v3;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen2_425c5698773a": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    device const T* w_base = weights + token_idx * K;\n    device const T* e_base = expert_outputs + token_idx * K * D + d_idx;\n    \n    float acc = (float)w_base[0] * (float)e_base[0];\n    acc += (float)w_base[1] * (float)e_base[D];\n    acc += (float)w_base[2] * (float)e_base[2 * D];\n    acc += (float)w_base[3] * (float)e_base[3 * D];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen2_526f3dcb3caa": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    float acc0 = 0.0f, acc1 = 0.0f;\n    for (uint i = 0; i < K; ++i) {\n        float w = (float)weights[token_idx * K + i];\n        device const T* expert_base = expert_outputs + (token_idx * K + i) * D + d_base;\n        acc0 += w * (float)expert_base[0];\n        acc1 += w * (float)expert_base[1];\n    }\n    device T* out_base = out + token_idx * D + d_base;\n    out_base[0] = (T)acc0;\n    out_base[1] = (T)acc1;\n} else if (d_base < D) {\n    float acc = 0.0f;\n    for (uint i = 0; i < K; ++i) {\n        float w = (float)weights[token_idx * K + i];\n        acc += w * (float)expert_outputs[(token_idx * K + i) * D + d_base];\n    }\n    out[token_idx * D + d_base] = (T)acc;\n}",
+    "gen2_2b5f062331c9": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    float v[4];\n    v[0] = (float)expert_outputs[(token_idx * K + 0) * D + d_idx];\n    v[1] = (float)expert_outputs[(token_idx * K + 1) * D + d_idx];\n    v[2] = (float)expert_outputs[(token_idx * K + 2) * D + d_idx];\n    v[3] = (float)expert_outputs[(token_idx * K + 3) * D + d_idx];\n    \n    float acc = 0.0f;\n    for (uint i = 0; i < K; ++i) {\n        acc += (float)weights[token_idx * K + i] * v[i];\n    }\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen3_464c5c1f3e72": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x * 4;\n\nif (d_idx + 3 < D) {\n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    uint base0 = (token_idx * K + 0) * D + d_idx;\n    uint base1 = (token_idx * K + 1) * D + d_idx;\n    uint base2 = (token_idx * K + 2) * D + d_idx;\n    uint base3 = (token_idx * K + 3) * D + d_idx;\n    \n    float acc0 = w0 * (float)expert_outputs[base0] + w1 * (float)expert_outputs[base1] + w2 * (float)expert_outputs[base2] + w3 * (float)expert_outputs[base3];\n    float acc1 = w0 * (float)expert_outputs[base0+1] + w1 * (float)expert_outputs[base1+1] + w2 * (float)expert_outputs[base2+1] + w3 * (float)expert_outputs[base3+1];\n    float acc2 = w0 * (float)expert_outputs[base0+2] + w1 * (float)expert_outputs[base1+2] + w2 * (float)expert_outputs[base2+2] + w3 * (float)expert_outputs[base3+2];\n    float acc3 = w0 * (float)expert_outputs[base0+3] + w1 * (float)expert_outputs[base1+3] + w2 * (float)expert_outputs[base2+3] + w3 * (float)expert_outputs[base3+3];\n    \n    out[token_idx * D + d_idx] = (T)acc0;\n    out[token_idx * D + d_idx + 1] = (T)acc1;\n    out[token_idx * D + d_idx + 2] = (T)acc2;\n    out[token_idx * D + d_idx + 3] = (T)acc3;\n}",
+    "gen3_399dd03e34d5": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint base = token_idx * K * D + d_idx;\n    float w[4];\n    w[0] = (float)weights[token_idx * K];\n    w[1] = (float)weights[token_idx * K + 1];\n    w[2] = (float)weights[token_idx * K + 2];\n    w[3] = (float)weights[token_idx * K + 3];\n    \n    float acc = w[0] * (float)expert_outputs[base];\n    acc += w[1] * (float)expert_outputs[base + D];\n    acc += w[2] * (float)expert_outputs[base + D * 2];\n    acc += w[3] * (float)expert_outputs[base + D * 3];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen3_05fcd49bcbd0": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    float acc = 0.0f;\n    \n    float e0 = (float)expert_outputs[(token_idx * K + 0) * D + d_idx];\n    float e1 = (float)expert_outputs[(token_idx * K + 1) * D + d_idx];\n    float e2 = (float)expert_outputs[(token_idx * K + 2) * D + d_idx];\n    float e3 = (float)expert_outputs[(token_idx * K + 3) * D + d_idx];\n    \n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    float p0 = w0 * e0;\n    float p1 = w1 * e1;\n    float p2 = w2 * e2;\n    float p3 = w3 * e3;\n    \n    acc = (p0 + p1) + (p2 + p3);\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen3_35374c7edcab": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    float w0 = (float)weights[token_idx * K + 0];\n    float e0 = (float)expert_outputs[(token_idx * K + 0) * D + d_idx];\n    float acc = w0 * e0;\n    \n    float w1 = (float)weights[token_idx * K + 1];\n    float e1 = (float)expert_outputs[(token_idx * K + 1) * D + d_idx];\n    acc += w1 * e1;\n    \n    float w2 = (float)weights[token_idx * K + 2];\n    float e2 = (float)expert_outputs[(token_idx * K + 2) * D + d_idx];\n    acc += w2 * e2;\n    \n    float w3 = (float)weights[token_idx * K + 3];\n    float e3 = (float)expert_outputs[(token_idx * K + 3) * D + d_idx];\n    acc += w3 * e3;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen4_179ea9a49f37": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    // Load all weights first\n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    // Load all expert values\n    uint base_offset = d_idx;\n    float e0 = (float)expert_outputs[(token_idx * K + 0) * D + base_offset];\n    float e1 = (float)expert_outputs[(token_idx * K + 1) * D + base_offset];\n    float e2 = (float)expert_outputs[(token_idx * K + 2) * D + base_offset];\n    float e3 = (float)expert_outputs[(token_idx * K + 3) * D + base_offset];\n    \n    // Perform all multiplications\n    float p0 = w0 * e0;\n    float p1 = w1 * e1;\n    float p2 = w2 * e2;\n    float p3 = w3 * e3;\n    \n    // Tree reduction for better parallelism\n    float sum01 = p0 + p1;\n    float sum23 = p2 + p3;\n    float acc = sum01 + sum23;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen4_732650db372d": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    const device T* weight_ptr = weights + token_idx * K;\n    const device T* expert_base = expert_outputs + token_idx * K * D + d_idx;\n    \n    float w0 = (float)weight_ptr[0];\n    float e0 = (float)expert_base[0];\n    float acc = w0 * e0;\n    \n    float w1 = (float)weight_ptr[1];\n    float e1 = (float)expert_base[D];\n    acc += w1 * e1;\n    \n    float w2 = (float)weight_ptr[2];\n    float e2 = (float)expert_base[2 * D];\n    acc += w2 * e2;\n    \n    float w3 = (float)weight_ptr[3];\n    float e3 = (float)expert_base[3 * D];\n    acc += w3 * e3;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen4_602bf446316b": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint weight_base = token_idx * K;\n    uint expert_stride = D;\n    uint expert_base = token_idx * K * D + d_idx;\n    \n    float acc = (float)weights[weight_base] * (float)expert_outputs[expert_base];\n    expert_base += expert_stride;\n    \n    acc += (float)weights[weight_base + 1] * (float)expert_outputs[expert_base];\n    expert_base += expert_stride;\n    \n    acc += (float)weights[weight_base + 2] * (float)expert_outputs[expert_base];\n    expert_base += expert_stride;\n    \n    acc += (float)weights[weight_base + 3] * (float)expert_outputs[expert_base];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen4_094eb206f5bf": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint weight_idx = token_idx * K;\n    uint expert_idx = token_idx * K * D + d_idx;\n    \n    // Prefetch first weight\n    float w_curr = (float)weights[weight_idx];\n    float e0 = (float)expert_outputs[expert_idx];\n    \n    // Prefetch next weight while computing\n    float w_next = (float)weights[weight_idx + 1];\n    float acc = w_curr * e0;\n    \n    float e1 = (float)expert_outputs[expert_idx + D];\n    w_curr = w_next;\n    w_next = (float)weights[weight_idx + 2];\n    acc += w_curr * e1;\n    \n    float e2 = (float)expert_outputs[expert_idx + 2 * D];\n    w_curr = w_next;\n    w_next = (float)weights[weight_idx + 3];\n    acc += w_curr * e2;\n    \n    float e3 = (float)expert_outputs[expert_idx + 3 * D];\n    acc += w_next * e3;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen5_f9f187584986": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\nuint local_id = thread_position_in_threadgroup.x;\n\nthreadgroup float shared_experts[256 * 4];\n\nif (d_idx < D) {\n    // Load expert outputs into threadgroup memory\n    uint base = token_idx * K * D + d_idx;\n    shared_experts[local_id * 4] = (float)expert_outputs[base];\n    shared_experts[local_id * 4 + 1] = (float)expert_outputs[base + D];\n    shared_experts[local_id * 4 + 2] = (float)expert_outputs[base + D * 2];\n    shared_experts[local_id * 4 + 3] = (float)expert_outputs[base + D * 3];\n    \n    threadgroup_barrier(mem_flags::mem_threadgroup);\n    \n    // Load weights once and broadcast via shared memory\n    float w0 = (float)weights[token_idx * K];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    float acc = w0 * shared_experts[local_id * 4];\n    acc += w1 * shared_experts[local_id * 4 + 1];\n    acc += w2 * shared_experts[local_id * 4 + 2];\n    acc += w3 * shared_experts[local_id * 4 + 3];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen5_619925b1d696": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\nuint lane_id = thread_position_in_threadgroup.x % 32;\n\nif (d_idx < D) {\n    uint base = token_idx * K * D + d_idx;\n    \n    // Each set of 4 SIMD lanes handles one expert\n    uint expert_idx = lane_id & 3;\n    float w = (float)weights[token_idx * K + expert_idx];\n    float expert_val = (float)expert_outputs[base + expert_idx * D];\n    float partial = w * expert_val;\n    \n    // Reduction across 4 lanes using SIMD shuffle\n    partial += simd_shuffle_xor(partial, 1);\n    partial += simd_shuffle_xor(partial, 2);\n    \n    // Only lane 0, 4, 8, etc. have the final result\n    if ((lane_id & 3) == 0) {\n        out[token_idx * D + d_idx] = (T)partial;\n    }\n}",
+    "gen5_37b26be31cd4": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 8;\n\nif (d_base < D) {\n    float w[4];\n    w[0] = (float)weights[token_idx * K];\n    w[1] = (float)weights[token_idx * K + 1];\n    w[2] = (float)weights[token_idx * K + 2];\n    w[3] = (float)weights[token_idx * K + 3];\n    \n    #pragma unroll\n    for (uint i = 0; i < 8; ++i) {\n        uint d_idx = d_base + i;\n        if (d_idx < D) {\n            uint base = token_idx * K * D + d_idx;\n            \n            float acc = w[0] * (float)expert_outputs[base];\n            acc += w[1] * (float)expert_outputs[base + D];\n            acc += w[2] * (float)expert_outputs[base + D * 2];\n            acc += w[3] * (float)expert_outputs[base + D * 3];\n            \n            out[token_idx * D + d_idx] = (T)acc;\n        }\n    }\n}",
+    "gen5_b93dac5dc333": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint base = token_idx * K * D + d_idx;\n    \n    // Phase 1: experts 0 and 1\n    float w0 = (float)weights[token_idx * K];\n    float e0 = (float)expert_outputs[base];\n    float w1 = (float)weights[token_idx * K + 1];\n    float e1 = (float)expert_outputs[base + D];\n    \n    float acc1 = w0 * e0;\n    acc1 += w1 * e1;\n    \n    // Phase 2: experts 2 and 3 (independent from phase 1)\n    float w2 = (float)weights[token_idx * K + 2];\n    float e2 = (float)expert_outputs[base + D * 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    float e3 = (float)expert_outputs[base + D * 3];\n    \n    float acc2 = w2 * e2;\n    acc2 += w3 * e3;\n    \n    // Combine phases\n    out[token_idx * D + d_idx] = (T)(acc1 + acc2);\n}",
+    "gen6_e6434c7e8353": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x * 4;\n\nif (d_idx + 3 < D) {\n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    uint base = token_idx * K * D + d_idx;\n    \n    float e00 = (float)expert_outputs[base];\n    float e01 = (float)expert_outputs[base + 1];\n    float e02 = (float)expert_outputs[base + 2];\n    float e03 = (float)expert_outputs[base + 3];\n    \n    float acc0 = w0 * e00;\n    float acc1 = w0 * e01;\n    float acc2 = w0 * e02;\n    float acc3 = w0 * e03;\n    \n    base += D;\n    float e10 = (float)expert_outputs[base];\n    float e11 = (float)expert_outputs[base + 1];\n    float e12 = (float)expert_outputs[base + 2];\n    float e13 = (float)expert_outputs[base + 3];\n    \n    acc0 += w1 * e10;\n    acc1 += w1 * e11;\n    acc2 += w1 * e12;\n    acc3 += w1 * e13;\n    \n    base += D;\n    float e20 = (float)expert_outputs[base];\n    float e21 = (float)expert_outputs[base + 1];\n    float e22 = (float)expert_outputs[base + 2];\n    float e23 = (float)expert_outputs[base + 3];\n    \n    acc0 += w2 * e20;\n    acc1 += w2 * e21;\n    acc2 += w2 * e22;\n    acc3 += w2 * e23;\n    \n    base += D;\n    float e30 = (float)expert_outputs[base];\n    float e31 = (float)expert_outputs[base + 1];\n    float e32 = (float)expert_outputs[base + 2];\n    float e33 = (float)expert_outputs[base + 3];\n    \n    acc0 += w3 * e30;\n    acc1 += w3 * e31;\n    acc2 += w3 * e32;\n    acc3 += w3 * e33;\n    \n    uint out_base = token_idx * D + d_idx;\n    out[out_base] = (T)acc0;\n    out[out_base + 1] = (T)acc1;\n    out[out_base + 2] = (T)acc2;\n    out[out_base + 3] = (T)acc3;\n}",
+    "gen6_e8be791c99ac": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x * 8;\n\nif (d_idx + 7 < D) {\n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    uint b0 = (token_idx * K + 0) * D + d_idx;\n    uint b1 = (token_idx * K + 1) * D + d_idx;\n    uint b2 = (token_idx * K + 2) * D + d_idx;\n    uint b3 = (token_idx * K + 3) * D + d_idx;\n    \n    float a0 = w0 * (float)expert_outputs[b0] + w1 * (float)expert_outputs[b1] + w2 * (float)expert_outputs[b2] + w3 * (float)expert_outputs[b3];\n    float a1 = w0 * (float)expert_outputs[b0+1] + w1 * (float)expert_outputs[b1+1] + w2 * (float)expert_outputs[b2+1] + w3 * (float)expert_outputs[b3+1];\n    float a2 = w0 * (float)expert_outputs[b0+2] + w1 * (float)expert_outputs[b1+2] + w2 * (float)expert_outputs[b2+2] + w3 * (float)expert_outputs[b3+2];\n    float a3 = w0 * (float)expert_outputs[b0+3] + w1 * (float)expert_outputs[b1+3] + w2 * (float)expert_outputs[b2+3] + w3 * (float)expert_outputs[b3+3];\n    float a4 = w0 * (float)expert_outputs[b0+4] + w1 * (float)expert_outputs[b1+4] + w2 * (float)expert_outputs[b2+4] + w3 * (float)expert_outputs[b3+4];\n    float a5 = w0 * (float)expert_outputs[b0+5] + w1 * (float)expert_outputs[b1+5] + w2 * (float)expert_outputs[b2+5] + w3 * (float)expert_outputs[b3+5];\n    float a6 = w0 * (float)expert_outputs[b0+6] + w1 * (float)expert_outputs[b1+6] + w2 * (float)expert_outputs[b2+6] + w3 * (float)expert_outputs[b3+6];\n    float a7 = w0 * (float)expert_outputs[b0+7] + w1 * (float)expert_outputs[b1+7] + w2 * (float)expert_outputs[b2+7] + w3 * (float)expert_outputs[b3+7];\n    \n    uint out_base = token_idx * D + d_idx;\n    out[out_base] = (T)a0;\n    out[out_base+1] = (T)a1;\n    out[out_base+2] = (T)a2;\n    out[out_base+3] = (T)a3;\n    out[out_base+4] = (T)a4;\n    out[out_base+5] = (T)a5;\n    out[out_base+6] = (T)a6;\n    out[out_base+7] = (T)a7;\n}",
+    "gen6_149aa295c200": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x * 4;\n\nif (d_idx + 3 < D) {\n    uint base0 = (token_idx * K + 0) * D + d_idx;\n    uint base1 = (token_idx * K + 1) * D + d_idx;\n    uint base2 = (token_idx * K + 2) * D + d_idx;\n    uint base3 = (token_idx * K + 3) * D + d_idx;\n    \n    float e00 = (float)expert_outputs[base0];\n    float e01 = (float)expert_outputs[base0+1];\n    float e02 = (float)expert_outputs[base0+2];\n    float e03 = (float)expert_outputs[base0+3];\n    \n    float e10 = (float)expert_outputs[base1];\n    float e11 = (float)expert_outputs[base1+1];\n    float e12 = (float)expert_outputs[base1+2];\n    float e13 = (float)expert_outputs[base1+3];\n    \n    float e20 = (float)expert_outputs[base2];\n    float e21 = (float)expert_outputs[base2+1];\n    float e22 = (float)expert_outputs[base2+2];\n    float e23 = (float)expert_outputs[base2+3];\n    \n    float e30 = (float)expert_outputs[base3];\n    float e31 = (float)expert_outputs[base3+1];\n    float e32 = (float)expert_outputs[base3+2];\n    float e33 = (float)expert_outputs[base3+3];\n    \n    float w0 = (float)weights[token_idx * K + 0];\n    float w1 = (float)weights[token_idx * K + 1];\n    float w2 = (float)weights[token_idx * K + 2];\n    float w3 = (float)weights[token_idx * K + 3];\n    \n    float p00 = w0 * e00;\n    float p01 = w0 * e01;\n    float p02 = w0 * e02;\n    float p03 = w0 * e03;\n    \n    float p10 = w1 * e10;\n    float p11 = w1 * e11;\n    float p12 = w1 * e12;\n    float p13 = w1 * e13;\n    \n    float p20 = w2 * e20;\n    float p21 = w2 * e21;\n    float p22 = w2 * e22;\n    float p23 = w2 * e23;\n    \n    float p30 = w3 * e30;\n    float p31 = w3 * e31;\n    float p32 = w3 * e32;\n    float p33 = w3 * e33;\n    \n    float acc0 = p00 + p10 + p20 + p30;\n    float acc1 = p01 + p11 + p21 + p31;\n    float acc2 = p02 + p12 + p22 + p32;\n    float acc3 = p03 + p13 + p23 + p33;\n    \n    uint out_base = token_idx * D + d_idx;\n    out[out_base] = (T)acc0;\n    out[out_base+1] = (T)acc1;\n    out[out_base+2] = (T)acc2;\n    out[out_base+3] = (T)acc3;\n}",
+    "gen6_6c9d2dff632e": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x * 4;\n\nif (d_idx + 3 < D) {\n    device const T* exp_base = expert_outputs + token_idx * K * D + d_idx;\n    device const T* w_ptr = weights + token_idx * K;\n    \n    float w0 = (float)w_ptr[0];\n    float v00 = (float)exp_base[0];\n    float v01 = (float)exp_base[1];\n    float v02 = (float)exp_base[2];\n    float v03 = (float)exp_base[3];\n    \n    float acc0 = w0 * v00;\n    float acc1 = w0 * v01;\n    float acc2 = w0 * v02;\n    float acc3 = w0 * v03;\n    \n    float w1 = (float)w_ptr[1];\n    exp_base += D;\n    float v10 = (float)exp_base[0];\n    float v11 = (float)exp_base[1];\n    float v12 = (float)exp_base[2];\n    float v13 = (float)exp_base[3];\n    \n    acc0 += w1 * v10;\n    acc1 += w1 * v11;\n    acc2 += w1 * v12;\n    acc3 += w1 * v13;\n    \n    float w2 = (float)w_ptr[2];\n    exp_base += D;\n    float v20 = (float)exp_base[0];\n    float v21 = (float)exp_base[1];\n    float v22 = (float)exp_base[2];\n    float v23 = (float)exp_base[3];\n    \n    acc0 += w2 * v20;\n    acc1 += w2 * v21;\n    acc2 += w2 * v22;\n    acc3 += w2 * v23;\n    \n    float w3 = (float)w_ptr[3];\n    exp_base += D;\n    float v30 = (float)exp_base[0];\n    float v31 = (float)exp_base[1];\n    float v32 = (float)exp_base[2];\n    float v33 = (float)exp_base[3];\n    \n    acc0 += w3 * v30;\n    acc1 += w3 * v31;\n    acc2 += w3 * v32;\n    acc3 += w3 * v33;\n    \n    device T* out_ptr = out + token_idx * D + d_idx;\n    out_ptr[0] = (T)acc0;\n    out_ptr[1] = (T)acc1;\n    out_ptr[2] = (T)acc2;\n    out_ptr[3] = (T)acc3;\n}",
+    "gen7_0583a07d2b40": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    const uint base_expert = token_idx * K * D;\n    const uint base_weights = token_idx * K;\n    \n    float w0 = (float)weights[base_weights];\n    float e0 = (float)expert_outputs[base_expert + d_idx];\n    \n    float w1 = (float)weights[base_weights + 1];\n    float e1 = (float)expert_outputs[base_expert + D + d_idx];\n    \n    float w2 = (float)weights[base_weights + 2];\n    float e2 = (float)expert_outputs[base_expert + 2 * D + d_idx];\n    \n    float w3 = (float)weights[base_weights + 3];\n    float e3 = (float)expert_outputs[base_expert + 3 * D + d_idx];\n    \n    float result = fma(w0, e0, fma(w1, e1, fma(w2, e2, w3 * e3)));\n    \n    out[token_idx * D + d_idx] = (T)result;\n}",
+    "gen7_e6e162517515": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    const uint expert_base = token_idx * K * D;\n    const uint weight_base = token_idx * K;\n    const uint out_base = token_idx * D;\n    \n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    for (uint i = 0; i < 2; ++i) {\n        uint d = d_base + i;\n        \n        float e0 = (float)expert_outputs[expert_base + d];\n        float e1 = (float)expert_outputs[expert_base + D + d];\n        float e2 = (float)expert_outputs[expert_base + 2 * D + d];\n        float e3 = (float)expert_outputs[expert_base + 3 * D + d];\n        \n        float acc = w0 * e0 + w1 * e1 + w2 * e2 + w3 * e3;\n        \n        out[out_base + d] = (T)acc;\n    }\n} else if (d_base < D) {\n    const uint expert_base = token_idx * K * D;\n    const uint weight_base = token_idx * K;\n    \n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    float e0 = (float)expert_outputs[expert_base + d_base];\n    float e1 = (float)expert_outputs[expert_base + D + d_base];\n    float e2 = (float)expert_outputs[expert_base + 2 * D + d_base];\n    float e3 = (float)expert_outputs[expert_base + 3 * D + d_base];\n    \n    float acc = w0 * e0 + w1 * e1 + w2 * e2 + w3 * e3;\n    \n    out[token_idx * D + d_base] = (T)acc;\n}",
+    "gen7_0f40a4c7b3f9": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    const uint out_idx = token_idx * D + d_idx;\n    const uint expert_offset = token_idx * K * D + d_idx;\n    const uint weight_offset = token_idx * K;\n    \n    float sum = 0.0f;\n    \n    float w = (float)weights[weight_offset];\n    float e = (float)expert_outputs[expert_offset];\n    sum += w * e;\n    \n    w = (float)weights[weight_offset + 1];\n    e = (float)expert_outputs[expert_offset + D];\n    sum += w * e;\n    \n    w = (float)weights[weight_offset + 2];\n    e = (float)expert_outputs[expert_offset + 2 * D];\n    sum += w * e;\n    \n    w = (float)weights[weight_offset + 3];\n    e = (float)expert_outputs[expert_offset + 3 * D];\n    sum += w * e;\n    \n    out[out_idx] = (T)sum;\n}",
+    "gen7_9571dacdd4bb": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    const device T* expert_ptr = expert_outputs + (token_idx * K * D + d_idx);\n    const device T* weight_ptr = weights + (token_idx * K);\n    \n    float w0 = (float)weight_ptr[0];\n    float w1 = (float)weight_ptr[1];\n    float w2 = (float)weight_ptr[2];\n    float w3 = (float)weight_ptr[3];\n    \n    float e0 = (float)expert_ptr[0];\n    float e1 = (float)expert_ptr[D];\n    float e2 = (float)expert_ptr[D * 2];\n    float e3 = (float)expert_ptr[D * 3];\n    \n    float p0 = w0 * e0;\n    float p1 = w1 * e1;\n    float p2 = w2 * e2;\n    float p3 = w3 * e3;\n    \n    float result = (p0 + p2) + (p1 + p3);\n    \n    out[token_idx * D + d_idx] = (T)result;\n}",
+    "gen8_3e2089562416": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    device const float4* expert_vec = (device const float4*)(expert_outputs + token_idx * K * D + d_idx);\n    device const float4* weight_vec = (device const float4*)(weights + token_idx * K);\n    \n    float4 exp_vals;\n    exp_vals.x = expert_vec[0 * (D/4)].x;\n    exp_vals.y = expert_vec[1 * (D/4)].x;\n    exp_vals.z = expert_vec[2 * (D/4)].x;\n    exp_vals.w = expert_vec[3 * (D/4)].x;\n    \n    float4 w = *weight_vec;\n    \n    float acc = w.x * exp_vals.x + w.y * exp_vals.y + w.z * exp_vals.z + w.w * exp_vals.w;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen8_78ff0a030073": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_idx;\n    \n    float w0 = (float)weights[weight_base];\n    float e0 = (float)expert_outputs[expert_base];\n    float w1 = (float)weights[weight_base + 1];\n    float e1 = (float)expert_outputs[expert_base + D];\n    \n    float acc = w0 * e0;\n    \n    float w2 = (float)weights[weight_base + 2];\n    float e2 = (float)expert_outputs[expert_base + 2 * D];\n    acc += w1 * e1;\n    \n    float w3 = (float)weights[weight_base + 3];\n    float e3 = (float)expert_outputs[expert_base + 3 * D];\n    acc += w2 * e2;\n    \n    acc += w3 * e3;\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen8_63cceec54b33": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    device const float* weight_ptr = weights + token_idx * 4;\n    device const float* expert_ptr = expert_outputs + token_idx * 8192 + d_idx;\n    \n    float w0 = weight_ptr[0];\n    float w1 = weight_ptr[1];\n    float w2 = weight_ptr[2];\n    float w3 = weight_ptr[3];\n    \n    float e0 = expert_ptr[0];\n    float e1 = expert_ptr[2048];\n    float e2 = expert_ptr[4096];\n    float e3 = expert_ptr[6144];\n    \n    float p0 = w0 * e0;\n    float p1 = w1 * e1;\n    float p2 = w2 * e2;\n    float p3 = w3 * e3;\n    \n    out[token_idx * D + d_idx] = (T)(p0 + p1 + p2 + p3);\n}",
+    "gen8_57dc75b3cf54": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_base;\n    \n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    float e0_0 = (float)expert_outputs[expert_base];\n    float e0_1 = (float)expert_outputs[expert_base + 1];\n    float e1_0 = (float)expert_outputs[expert_base + D];\n    float e1_1 = (float)expert_outputs[expert_base + D + 1];\n    float e2_0 = (float)expert_outputs[expert_base + 2 * D];\n    float e2_1 = (float)expert_outputs[expert_base + 2 * D + 1];\n    float e3_0 = (float)expert_outputs[expert_base + 3 * D];\n    float e3_1 = (float)expert_outputs[expert_base + 3 * D + 1];\n    \n    float acc0 = w0 * e0_0 + w1 * e1_0 + w2 * e2_0 + w3 * e3_0;\n    float acc1 = w0 * e0_1 + w1 * e1_1 + w2 * e2_1 + w3 * e3_1;\n    \n    out[token_idx * D + d_base] = (T)acc0;\n    out[token_idx * D + d_base + 1] = (T)acc1;\n}",
+    "gen9_2c8201fabd7e": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_base;\n    \n    // Load all weights once\n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    // Interleave loads and FMAs for dimension 0\n    float acc0 = 0.0f;\n    float e0 = (float)expert_outputs[expert_base];\n    acc0 += w0 * e0;\n    \n    float e1 = (float)expert_outputs[expert_base + D];\n    acc0 += w1 * e1;\n    \n    float e2 = (float)expert_outputs[expert_base + 2 * D];\n    acc0 += w2 * e2;\n    \n    float e3 = (float)expert_outputs[expert_base + 3 * D];\n    acc0 += w3 * e3;\n    \n    // Interleave loads and FMAs for dimension 1\n    float acc1 = 0.0f;\n    e0 = (float)expert_outputs[expert_base + 1];\n    acc1 += w0 * e0;\n    \n    e1 = (float)expert_outputs[expert_base + D + 1];\n    acc1 += w1 * e1;\n    \n    e2 = (float)expert_outputs[expert_base + 2 * D + 1];\n    acc1 += w2 * e2;\n    \n    e3 = (float)expert_outputs[expert_base + 3 * D + 1];\n    acc1 += w3 * e3;\n    \n    out[token_idx * D + d_base] = (T)acc0;\n    out[token_idx * D + d_base + 1] = (T)acc1;\n}",
+    "gen9_5440a99f494f": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 4;\n\nif (d_base + 3 < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_base;\n    \n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    // Pipeline: load expert[0], compute dim 0&1, load expert[0] again for dim 2&3\n    float acc0 = 0.0f, acc1 = 0.0f, acc2 = 0.0f, acc3 = 0.0f;\n    \n    // Expert 0: alternate pairs\n    float e0 = (float)expert_outputs[expert_base];\n    float e1 = (float)expert_outputs[expert_base + 1];\n    acc0 = w0 * e0;\n    acc1 = w0 * e1;\n    float e2 = (float)expert_outputs[expert_base + 2];\n    float e3 = (float)expert_outputs[expert_base + 3];\n    acc2 = w0 * e2;\n    acc3 = w0 * e3;\n    \n    // Expert 1\n    e0 = (float)expert_outputs[expert_base + D];\n    e1 = (float)expert_outputs[expert_base + D + 1];\n    acc0 += w1 * e0;\n    acc1 += w1 * e1;\n    e2 = (float)expert_outputs[expert_base + D + 2];\n    e3 = (float)expert_outputs[expert_base + D + 3];\n    acc2 += w1 * e2;\n    acc3 += w1 * e3;\n    \n    // Expert 2\n    e0 = (float)expert_outputs[expert_base + 2 * D];\n    e1 = (float)expert_outputs[expert_base + 2 * D + 1];\n    acc0 += w2 * e0;\n    acc1 += w2 * e1;\n    e2 = (float)expert_outputs[expert_base + 2 * D + 2];\n    e3 = (float)expert_outputs[expert_base + 2 * D + 3];\n    acc2 += w2 * e2;\n    acc3 += w2 * e3;\n    \n    // Expert 3\n    e0 = (float)expert_outputs[expert_base + 3 * D];\n    e1 = (float)expert_outputs[expert_base + 3 * D + 1];\n    acc0 += w3 * e0;\n    acc1 += w3 * e1;\n    e2 = (float)expert_outputs[expert_base + 3 * D + 2];\n    e3 = (float)expert_outputs[expert_base + 3 * D + 3];\n    acc2 += w3 * e2;\n    acc3 += w3 * e3;\n    \n    uint out_base = token_idx * D + d_base;\n    out[out_base] = (T)acc0;\n    out[out_base + 1] = (T)acc1;\n    out[out_base + 2] = (T)acc2;\n    out[out_base + 3] = (T)acc3;\n}",
+    "gen9_d28a95446e6e": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_idx;\n    \n    // Load all 4 weights into registers\n    float w[4];\n    w[0] = (float)weights[weight_base];\n    w[1] = (float)weights[weight_base + 1];\n    w[2] = (float)weights[weight_base + 2];\n    w[3] = (float)weights[weight_base + 3];\n    \n    // Load all 4 expert values for this dimension\n    float e[4];\n    e[0] = (float)expert_outputs[expert_base];\n    e[1] = (float)expert_outputs[expert_base + D];\n    e[2] = (float)expert_outputs[expert_base + 2 * D];\n    e[3] = (float)expert_outputs[expert_base + 3 * D];\n    \n    // Compute weighted sum with explicit unroll\n    float acc = w[0] * e[0];\n    acc += w[1] * e[1];\n    acc += w[2] * e[2];\n    acc += w[3] * e[3];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen9_82f1d1dd2650": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    uint weight_base = token_idx * K;\n    uint expert_base = token_idx * K * D + d_base;\n    \n    float w0 = (float)weights[weight_base];\n    float w1 = (float)weights[weight_base + 1];\n    float w2 = (float)weights[weight_base + 2];\n    float w3 = (float)weights[weight_base + 3];\n    \n    // Batch 1: experts 0,1\n    float e00 = (float)expert_outputs[expert_base];\n    float e01 = (float)expert_outputs[expert_base + 1];\n    float e10 = (float)expert_outputs[expert_base + D];\n    float e11 = (float)expert_outputs[expert_base + D + 1];\n    \n    float acc0 = w0 * e00 + w1 * e10;\n    float acc1 = w0 * e01 + w1 * e11;\n    \n    // Batch 2: experts 2,3\n    float e20 = (float)expert_outputs[expert_base + 2 * D];\n    float e21 = (float)expert_outputs[expert_base + 2 * D + 1];\n    float e30 = (float)expert_outputs[expert_base + 3 * D];\n    float e31 = (float)expert_outputs[expert_base + 3 * D + 1];\n    \n    acc0 += w2 * e20 + w3 * e30;\n    acc1 += w2 * e21 + w3 * e31;\n    \n    out[token_idx * D + d_base] = (T)acc0;\n    out[token_idx * D + d_base + 1] = (T)acc1;\n}",
+    "gen10_fdf9fe509447": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 4;\n\nif (d_base + 3 < D) {\n    float4 acc = float4(0.0f);\n    device const T* weights_base = weights + token_idx * K;\n    device const T* expert_base = expert_outputs + token_idx * K * D + d_base;\n    \n    for (uint i = 0; i < K; ++i) {\n        float w = (float)weights_base[i];\n        // Load 4 consecutive dims from expert i\n        device const T* src = expert_base + i * D;\n        float4 vals = float4((float)src[0], (float)src[1], (float)src[2], (float)src[3]);\n        acc += w * vals;\n    }\n    \n    device T* out_base = out + token_idx * D + d_base;\n    out_base[0] = (T)acc.x;\n    out_base[1] = (T)acc.y;\n    out_base[2] = (T)acc.z;\n    out_base[3] = (T)acc.w;\n} else {\n    // Handle remainder\n    for (uint d = d_base; d < min(d_base + 4, D); ++d) {\n        float acc = 0.0f;\n        for (uint i = 0; i < K; ++i) {\n            float w = (float)weights[token_idx * K + i];\n            acc += w * (float)expert_outputs[(token_idx * K + i) * D + d];\n        }\n        out[token_idx * D + d] = (T)acc;\n    }\n}",
+    "gen10_a36e1e53d4cd": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    uint lane_id = thread_position_in_threadgroup.x % 32;\n    \n    // Load all 4 expert values for this dimension into SIMD lanes\n    float vals[K];\n    device const T* expert_base = expert_outputs + token_idx * K * D + d_idx;\n    for (uint i = 0; i < K; ++i) {\n        vals[i] = (float)expert_base[i * D];\n    }\n    \n    // Load weights\n    device const T* weights_base = weights + token_idx * K;\n    float w0 = (float)weights_base[0];\n    float w1 = (float)weights_base[1];\n    float w2 = (float)weights_base[2];\n    float w3 = (float)weights_base[3];\n    \n    // Compute using FMA chain\n    float acc = w0 * vals[0];\n    acc += w1 * vals[1];\n    acc += w2 * vals[2];\n    acc += w3 * vals[3];\n    \n    out[token_idx * D + d_idx] = (T)acc;\n}",
+    "gen10_86e44a557a7b": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 3;\n\nif (d_base + 2 < D) {\n    device const T* weights_base = weights + token_idx * K;\n    float w0 = (float)weights_base[0];\n    float w1 = (float)weights_base[1];\n    float w2 = (float)weights_base[2];\n    float w3 = (float)weights_base[3];\n    \n    float acc0 = 0.0f, acc1 = 0.0f, acc2 = 0.0f;\n    device const T* expert_base = expert_outputs + token_idx * K * D + d_base;\n    \n    // Expert 0\n    device const T* e0 = expert_base;\n    acc0 += w0 * (float)e0[0];\n    acc1 += w0 * (float)e0[1];\n    acc2 += w0 * (float)e0[2];\n    \n    // Expert 1\n    device const T* e1 = expert_base + D;\n    acc0 += w1 * (float)e1[0];\n    acc1 += w1 * (float)e1[1];\n    acc2 += w1 * (float)e1[2];\n    \n    // Expert 2\n    device const T* e2 = expert_base + 2 * D;\n    acc0 += w2 * (float)e2[0];\n    acc1 += w2 * (float)e2[1];\n    acc2 += w2 * (float)e2[2];\n    \n    // Expert 3\n    device const T* e3 = expert_base + 3 * D;\n    acc0 += w3 * (float)e3[0];\n    acc1 += w3 * (float)e3[1];\n    acc2 += w3 * (float)e3[2];\n    \n    device T* out_base = out + token_idx * D + d_base;\n    out_base[0] = (T)acc0;\n    out_base[1] = (T)acc1;\n    out_base[2] = (T)acc2;\n} else {\n    // Handle remainder\n    for (uint d = d_base; d < min(d_base + 3, D); ++d) {\n        float acc = 0.0f;\n        for (uint i = 0; i < K; ++i) {\n            float w = (float)weights[token_idx * K + i];\n            acc += w * (float)expert_outputs[(token_idx * K + i) * D + d];\n        }\n        out[token_idx * D + d] = (T)acc;\n    }\n}",
+    "gen10_262b4cdb1aba": "constexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_base = thread_position_in_grid.x * 2;\n\nif (d_base + 1 < D) {\n    device const T* weights_base = weights + token_idx * K;\n    device const T* expert_base = expert_outputs + token_idx * K * D + d_base;\n    \n    // Process expert pairs with independent accumulation chains\n    // Pair 0: experts 0+1\n    float w01_0 = (float)weights_base[0];\n    float w01_1 = (float)weights_base[1];\n    device const T* e0 = expert_base;\n    device const T* e1 = expert_base + D;\n    \n    float acc0_pair01 = w01_0 * (float)e0[0] + w01_1 * (float)e1[0];\n    float acc1_pair01 = w01_0 * (float)e0[1] + w01_1 * (float)e1[1];\n    \n    // Pair 1: experts 2+3\n    float w23_0 = (float)weights_base[2];\n    float w23_1 = (float)weights_base[3];\n    device const T* e2 = expert_base + 2 * D;\n    device const T* e3 = expert_base + 3 * D;\n    \n    float acc0_pair23 = w23_0 * (float)e2[0] + w23_1 * (float)e3[0];\n    float acc1_pair23 = w23_0 * (float)e2[1] + w23_1 * (float)e3[1];\n    \n    // Combine pairs\n    device T* out_base = out + token_idx * D + d_base;\n    out_base[0] = (T)(acc0_pair01 + acc0_pair23);\n    out_base[1] = (T)(acc1_pair01 + acc1_pair23);\n} else if (d_base < D) {\n    float acc = 0.0f;\n    for (uint i = 0; i < K; ++i) {\n        float w = (float)weights[token_idx * K + i];\n        acc += w * (float)expert_outputs[(token_idx * K + i) * D + d_base];\n    }\n    out[token_idx * D + d_base] = (T)acc;\n}"
+  }
+}

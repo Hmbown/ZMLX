@@ -16,13 +16,13 @@ shape `(Nr,)`, routing is:
 Current fused kernel support:
 - `Nr` (routed experts): **256** or **384**
 - `K` (top-k): **8**
-- No group selection (`n_group == 1`)
+- Group selection when `n_group` divides `Nr` and `topk_group <= n_group`
 - Normalized top-k weights (`norm_topk_prob == True`)
 
 Kernel entrypoint: `zmlx.kernels.moe.deepseek_router_topk_sigmoid`.
 
 Patch pattern (opt-in): `deepseek_router` (patches MLX-LM `MoEGate` for
-`deepseek_v3` / `deepseek_v32` only).
+`deepseek_v3`, `deepseek_v32`, and `kimi_k25` module paths).
 
 ## Quick correctness check
 
@@ -45,13 +45,13 @@ python -m zmlx.validate <HF_MODEL_ID> \
 Notes:
 - `deepseek_router` is **not** part of default presets; you must pass it in
   `--patterns` (or `patch(..., patterns=[...])`) to enable.
-- If the model uses group routing (`n_group > 1`) or a different `top_k`, this
-  pattern currently no-ops (falls back to the model’s original routing).
+- If the model uses an unsupported routed expert count or top-k configuration,
+  the pattern no-ops (falls back to the model’s original routing).
 
 ## Next steps
 
-- Extend the fused router kernel to support DeepSeek group selection
-  (`n_group > 1`, `topk_group < n_group`) while preserving exact MLX-LM semantics.
+- Broaden fused-router coverage for additional `(Nr, K)` combinations used by
+  future DeepSeek/Kimi variants.
 - Add a benchmark runner that writes a repro capsule under
   `benchmarks/repro_capsules/` for DeepSeek/Kimi models (so any perf claims are
   fully reproducible).

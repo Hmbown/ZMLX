@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "session_id": "17748d2d413e48cb",
+    "target_name": "ttt_linear_decode",
+    "llm_backend": "mock",
+    "device_chip": "Apple M4",
+    "device_memory_gb": 36,
+    "os_version": "Darwin 25.1.0",
+    "started_at": "2026-02-07T17:24:11-0600",
+    "updated_at": "2026-02-07T17:24:11-0600",
+    "total_steps": 1,
+    "total_candidates": 1,
+    "total_evaluated": 1,
+    "best_reward": 1.6453143515344248,
+    "best_speedup": 1.716883642495784,
+    "best_source": "\n        constexpr uint F = 64;\n        constexpr uint TG = 64;\n        constexpr float EPS = 1e-6f;\n\n        uint bh = threadgroup_position_in_grid.x;\n        uint tid = thread_position_in_threadgroup.x;\n\n        uint vec_off = bh * F;\n        uint w_base = bh * F * F;\n\n        threadgroup float s_W1[F * F];\n        threadgroup float s_xk[F];\n        threadgroup float s_xq[F];\n        threadgroup float s_xv[F];\n        threadgroup float s_b1[F];\n        threadgroup float s_b1_grad[F];\n        threadgroup float s_scaled[F];\n        threadgroup float s_buf[TG];\n\n        for (uint j = tid; j < F; j += TG) {\n            s_xk[j] = (float)xk[vec_off + j];\n            s_xq[j] = (float)xq[vec_off + j];\n            s_xv[j] = (float)xv[vec_off + j];\n            s_b1[j] = (float)b1[vec_off + j];\n            s_b1_grad[j] = (float)b1_grad[vec_off + j];\n        }\n        for (uint i = tid; i < F * F; i += TG) {\n            s_W1[i] = (float)W1[w_base + i];\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float lr = (float)ttt_lr[bh];\n        float tok_idx = (float)token_idx[0];\n\n        float ln_w_r[1];\n        float ln_b_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            ln_w_r[idx] = (float)ln_weight[vec_off + j];\n            ln_b_r[idx] = (float)ln_bias[vec_off + j];\n        }\n\n        // STEP 1: Z1 = XK @ W1 + b1\n        float Z1_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float acc = s_b1[j];\n            for (uint k = 0; k < F; k++) {\n                acc += s_xk[k] * s_W1[k * F + j];\n            }\n            Z1_r[idx] = acc;\n        }\n\n        // STEP 2: l2_target = XV - XK\n        float l2t_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            l2t_r[idx] = s_xv[j] - s_xk[j];\n        }\n\n        // STEPS 3-4: LayerNorm forward\n        float local_sum = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            local_sum += Z1_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_sum, tid, TG);\n        float mu = s_buf[0] / float(F);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float local_var = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float d = Z1_r[idx] - mu;\n            local_var += d * d;\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_var, tid, TG);\n        float inv_std = metal::rsqrt(s_buf[0] / float(F) + EPS);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float Z1_hat_r[1];\n        float LN_out_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            Z1_hat_r[idx] = (Z1_r[idx] - mu) * inv_std;\n            LN_out_r[idx] = ln_w_r[idx] * Z1_hat_r[idx] + ln_b_r[idx];\n        }\n\n        // STEP 5: dl_dLN = LN_out - l2_target\n        float dl_dLN_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dLN_r[idx] = LN_out_r[idx] - l2t_r[idx];\n        }\n\n        // STEP 6: LayerNorm backward\n        float dl_dx_hat_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dx_hat_r[idx] = dl_dLN_r[idx] * ln_w_r[idx];\n        }\n\n        float s1 = 0.0f, s2 = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            s1 += dl_dx_hat_r[idx];\n            s2 += dl_dx_hat_r[idx] * Z1_hat_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, s1, tid, TG);\n        float sum_dx_hat = s_buf[0];\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n        KK_SIMD_REDUCE_SUM(s_buf, s2, tid, TG);\n        float sum_dx_hat_z = s_buf[0];\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float dl_dZ1_r[1];\n        float inv_std_F = inv_std / float(F);\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dZ1_r[idx] = (float(F) * dl_dx_hat_r[idx] - sum_dx_hat\n                             - Z1_hat_r[idx] * sum_dx_hat_z) * inv_std_F;\n        }\n\n        // STEP 7: Scale by learning rate\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            s_scaled[j] = lr * dl_dZ1_r[idx];\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEPS 8+9: Grad accumulation + weight update\n        for (uint i = tid; i < F * F; i += TG) {\n            uint row = i / F;\n            uint col = i % F;\n            float g_new = (float)W1_grad[w_base + i] + s_xk[row] * s_scaled[col];\n            W1_grad_out[w_base + i] = (T)g_new;\n            s_W1[i] -= tok_idx * g_new;\n        }\n        for (uint j = tid; j < F; j += TG) {\n            float g_new = s_b1_grad[j] + s_scaled[j];\n            b1_grad_out[vec_off + j] = (T)g_new;\n            s_b1[j] -= tok_idx * g_new;\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEP 10: Z1_bar = XQ @ W1_bar + b1_bar\n        float Z1_bar_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float acc = s_b1[j];\n            for (uint k = 0; k < F; k++) {\n                acc += s_xq[k] * s_W1[k * F + j];\n            }\n            Z1_bar_r[idx] = acc;\n        }\n\n        // STEP 11: LayerNorm on Z1_bar\n        local_sum = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            local_sum += Z1_bar_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_sum, tid, TG);\n        float mu2 = s_buf[0] / float(F);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        local_var = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float d = Z1_bar_r[idx] - mu2;\n            local_var += d * d;\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_var, tid, TG);\n        float inv_std2 = metal::rsqrt(s_buf[0] / float(F) + EPS);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEP 12: output = XQ + LN(Z1_bar)\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float z_hat = (Z1_bar_r[idx] - mu2) * inv_std2;\n            float ln_val = ln_w_r[idx] * z_hat + ln_b_r[idx];\n            out[vec_off + j] = (T)(s_xq[j] + ln_val);\n        }\n\n        // Write back W1/b1 state\n        if (last_in_mb[0] > 0) {\n            for (uint i = tid; i < F * F; i += TG) {\n                W1_out[w_base + i] = (T)s_W1[i];\n                W1_grad_out[w_base + i] = T(0);\n            }\n            for (uint j = tid; j < F; j += TG) {\n                b1_out[vec_off + j] = (T)s_b1[j];\n                b1_grad_out[vec_off + j] = T(0);\n            }\n        } else {\n            for (uint i = tid; i < F * F; i += TG) {\n                W1_out[w_base + i] = W1[w_base + i];\n            }\n            for (uint j = tid; j < F; j += TG) {\n                b1_out[vec_off + j] = b1[vec_off + j];\n            }\n        }\n    ",
+    "baseline_us": 381.792
+  },
+  "tree_data": {
+    "c_puct": 1.0,
+    "root": {
+      "node_id": "root",
+      "candidate": {
+        "spec": {
+          "name": "ttt_linear_decode_F64_TG64",
+          "input_names": [
+            "xq",
+            "xk",
+            "xv",
+            "ttt_lr",
+            "token_idx",
+            "last_in_mb",
+            "W1",
+            "b1",
+            "W1_grad",
+            "b1_grad",
+            "ln_weight",
+            "ln_bias"
+          ],
+          "output_names": [
+            "out",
+            "W1_out",
+            "b1_out",
+            "W1_grad_out",
+            "b1_grad_out"
+          ],
+          "source": "\n        constexpr uint F = 64;\n        constexpr uint TG = 64;\n        constexpr float EPS = 1e-6f;\n\n        uint bh = threadgroup_position_in_grid.x;\n        uint tid = thread_position_in_threadgroup.x;\n\n        uint vec_off = bh * F;\n        uint w_base = bh * F * F;\n\n        threadgroup float s_W1[F * F];\n        threadgroup float s_xk[F];\n        threadgroup float s_xq[F];\n        threadgroup float s_xv[F];\n        threadgroup float s_b1[F];\n        threadgroup float s_b1_grad[F];\n        threadgroup float s_scaled[F];\n        threadgroup float s_buf[TG];\n\n        for (uint j = tid; j < F; j += TG) {\n            s_xk[j] = (float)xk[vec_off + j];\n            s_xq[j] = (float)xq[vec_off + j];\n            s_xv[j] = (float)xv[vec_off + j];\n            s_b1[j] = (float)b1[vec_off + j];\n            s_b1_grad[j] = (float)b1_grad[vec_off + j];\n        }\n        for (uint i = tid; i < F * F; i += TG) {\n            s_W1[i] = (float)W1[w_base + i];\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float lr = (float)ttt_lr[bh];\n        float tok_idx = (float)token_idx[0];\n\n        float ln_w_r[1];\n        float ln_b_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            ln_w_r[idx] = (float)ln_weight[vec_off + j];\n            ln_b_r[idx] = (float)ln_bias[vec_off + j];\n        }\n\n        // STEP 1: Z1 = XK @ W1 + b1\n        float Z1_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float acc = s_b1[j];\n            for (uint k = 0; k < F; k++) {\n                acc += s_xk[k] * s_W1[k * F + j];\n            }\n            Z1_r[idx] = acc;\n        }\n\n        // STEP 2: l2_target = XV - XK\n        float l2t_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            l2t_r[idx] = s_xv[j] - s_xk[j];\n        }\n\n        // STEPS 3-4: LayerNorm forward\n        float local_sum = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            local_sum += Z1_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_sum, tid, TG);\n        float mu = s_buf[0] / float(F);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float local_var = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float d = Z1_r[idx] - mu;\n            local_var += d * d;\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_var, tid, TG);\n        float inv_std = metal::rsqrt(s_buf[0] / float(F) + EPS);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float Z1_hat_r[1];\n        float LN_out_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            Z1_hat_r[idx] = (Z1_r[idx] - mu) * inv_std;\n            LN_out_r[idx] = ln_w_r[idx] * Z1_hat_r[idx] + ln_b_r[idx];\n        }\n\n        // STEP 5: dl_dLN = LN_out - l2_target\n        float dl_dLN_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dLN_r[idx] = LN_out_r[idx] - l2t_r[idx];\n        }\n\n        // STEP 6: LayerNorm backward\n        float dl_dx_hat_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dx_hat_r[idx] = dl_dLN_r[idx] * ln_w_r[idx];\n        }\n\n        float s1 = 0.0f, s2 = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            s1 += dl_dx_hat_r[idx];\n            s2 += dl_dx_hat_r[idx] * Z1_hat_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, s1, tid, TG);\n        float sum_dx_hat = s_buf[0];\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n        KK_SIMD_REDUCE_SUM(s_buf, s2, tid, TG);\n        float sum_dx_hat_z = s_buf[0];\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float dl_dZ1_r[1];\n        float inv_std_F = inv_std / float(F);\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dZ1_r[idx] = (float(F) * dl_dx_hat_r[idx] - sum_dx_hat\n                             - Z1_hat_r[idx] * sum_dx_hat_z) * inv_std_F;\n        }\n\n        // STEP 7: Scale by learning rate\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            s_scaled[j] = lr * dl_dZ1_r[idx];\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEPS 8+9: Grad accumulation + weight update\n        for (uint i = tid; i < F * F; i += TG) {\n            uint row = i / F;\n            uint col = i % F;\n            float g_new = (float)W1_grad[w_base + i] + s_xk[row] * s_scaled[col];\n            W1_grad_out[w_base + i] = (T)g_new;\n            s_W1[i] -= tok_idx * g_new;\n        }\n        for (uint j = tid; j < F; j += TG) {\n            float g_new = s_b1_grad[j] + s_scaled[j];\n            b1_grad_out[vec_off + j] = (T)g_new;\n            s_b1[j] -= tok_idx * g_new;\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEP 10: Z1_bar = XQ @ W1_bar + b1_bar\n        float Z1_bar_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float acc = s_b1[j];\n            for (uint k = 0; k < F; k++) {\n                acc += s_xq[k] * s_W1[k * F + j];\n            }\n            Z1_bar_r[idx] = acc;\n        }\n\n        // STEP 11: LayerNorm on Z1_bar\n        local_sum = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            local_sum += Z1_bar_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_sum, tid, TG);\n        float mu2 = s_buf[0] / float(F);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        local_var = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float d = Z1_bar_r[idx] - mu2;\n            local_var += d * d;\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_var, tid, TG);\n        float inv_std2 = metal::rsqrt(s_buf[0] / float(F) + EPS);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEP 12: output = XQ + LN(Z1_bar)\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float z_hat = (Z1_bar_r[idx] - mu2) * inv_std2;\n            float ln_val = ln_w_r[idx] * z_hat + ln_b_r[idx];\n            out[vec_off + j] = (T)(s_xq[j] + ln_val);\n        }\n\n        // Write back W1/b1 state\n        if (last_in_mb[0] > 0) {\n            for (uint i = tid; i < F * F; i += TG) {\n                W1_out[w_base + i] = (T)s_W1[i];\n                W1_grad_out[w_base + i] = T(0);\n            }\n            for (uint j = tid; j < F; j += TG) {\n                b1_out[vec_off + j] = (T)s_b1[j];\n                b1_grad_out[vec_off + j] = T(0);\n            }\n        } else {\n            for (uint i = tid; i < F * F; i += TG) {\n                W1_out[w_base + i] = W1[w_base + i];\n            }\n            for (uint j = tid; j < F; j += TG) {\n                b1_out[vec_off + j] = b1[vec_off + j];\n            }\n        }\n    ",
+          "header": "",
+          "threadgroup": [
+            64,
+            1,
+            1
+          ],
+          "template_params": [
+            [
+              "T",
+              "float32"
+            ]
+          ]
+        },
+        "parent_id": null,
+        "generation": 0,
+        "llm_reasoning": "baseline fused 12-step"
+      },
+      "visit_count": 2,
+      "max_reward": 1.6453143515344248,
+      "prior": 1.0,
+      "eval_result": {
+        "compiled": true,
+        "correct": true,
+        "compile_error": null,
+        "correctness_error": null,
+        "timings_us": [
+          287.75,
+          265.583,
+          257.667,
+          237.167,
+          213.875,
+          217.917,
+          224.291,
+          219.667,
+          217.125,
+          222.375,
+          228.042,
+          249.042,
+          398.709,
+          232.917,
+          209.791,
+          204.875,
+          202.084,
+          209.291,
+          203.417,
+          202.916
+        ],
+        "median_us": 222.375,
+        "reward": 1.6453143515344248,
+        "speedup": 1.716883642495784
+      },
+      "children": [
+        {
+          "node_id": "gen1_854cecf0ca54",
+          "candidate": {
+            "spec": {
+              "name": "kk_ttt_linear_decode_gen1",
+              "input_names": [
+                "xq",
+                "xk",
+                "xv",
+                "ttt_lr",
+                "token_idx",
+                "last_in_mb",
+                "W1",
+                "b1",
+                "W1_grad",
+                "b1_grad",
+                "ln_weight",
+                "ln_bias"
+              ],
+              "output_names": [
+                "out",
+                "W1_out",
+                "b1_out",
+                "W1_grad_out",
+                "b1_grad_out"
+              ],
+              "source": "// Mock variant 1_0\nconstexpr uint F = 64;\n        constexpr uint TG = 64;\n        constexpr float EPS = 1e-6f;\n\n        uint bh = threadgroup_position_in_grid.x;\n        uint tid = thread_position_in_threadgroup.x;\n\n        uint vec_off = bh * F;\n        uint w_base = bh * F * F;\n\n        threadgroup float s_W1[F * F];\n        threadgroup float s_xk[F];\n        threadgroup float s_xq[F];\n        threadgroup float s_xv[F];\n        threadgroup float s_b1[F];\n        threadgroup float s_b1_grad[F];\n        threadgroup float s_scaled[F];\n        threadgroup float s_buf[TG];\n\n        for (uint j = tid; j < F; j += TG) {\n            s_xk[j] = (float)xk[vec_off + j];\n            s_xq[j] = (float)xq[vec_off + j];\n            s_xv[j] = (float)xv[vec_off + j];\n            s_b1[j] = (float)b1[vec_off + j];\n            s_b1_grad[j] = (float)b1_grad[vec_off + j];\n        }\n        for (uint i = tid; i < F * F; i += TG) {\n            s_W1[i] = (float)W1[w_base + i];\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float lr = (float)ttt_lr[bh];\n        float tok_idx = (float)token_idx[0];\n\n        float ln_w_r[1];\n        float ln_b_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            ln_w_r[idx] = (float)ln_weight[vec_off + j];\n            ln_b_r[idx] = (float)ln_bias[vec_off + j];\n        }\n\n        // STEP 1: Z1 = XK @ W1 + b1\n        float Z1_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float acc = s_b1[j];\n            for (uint k = 0; k < F; k++) {\n                acc += s_xk[k] * s_W1[k * F + j];\n            }\n            Z1_r[idx] = acc;\n        }\n\n        // STEP 2: l2_target = XV - XK\n        float l2t_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            l2t_r[idx] = s_xv[j] - s_xk[j];\n        }\n\n        // STEPS 3-4: LayerNorm forward\n        float local_sum = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            local_sum += Z1_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_sum, tid, TG);\n        float mu = s_buf[0] / float(F);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float local_var = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float d = Z1_r[idx] - mu;\n            local_var += d * d;\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_var, tid, TG);\n        float inv_std = metal::rsqrt(s_buf[0] / float(F) + EPS);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float Z1_hat_r[1];\n        float LN_out_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            Z1_hat_r[idx] = (Z1_r[idx] - mu) * inv_std;\n            LN_out_r[idx] = ln_w_r[idx] * Z1_hat_r[idx] + ln_b_r[idx];\n        }\n\n        // STEP 5: dl_dLN = LN_out - l2_target\n        float dl_dLN_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dLN_r[idx] = LN_out_r[idx] - l2t_r[idx];\n        }\n\n        // STEP 6: LayerNorm backward\n        float dl_dx_hat_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dx_hat_r[idx] = dl_dLN_r[idx] * ln_w_r[idx];\n        }\n\n        float s1 = 0.0f, s2 = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            s1 += dl_dx_hat_r[idx];\n            s2 += dl_dx_hat_r[idx] * Z1_hat_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, s1, tid, TG);\n        float sum_dx_hat = s_buf[0];\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n        KK_SIMD_REDUCE_SUM(s_buf, s2, tid, TG);\n        float sum_dx_hat_z = s_buf[0];\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float dl_dZ1_r[1];\n        float inv_std_F = inv_std / float(F);\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dZ1_r[idx] = (float(F) * dl_dx_hat_r[idx] - sum_dx_hat\n                             - Z1_hat_r[idx] * sum_dx_hat_z) * inv_std_F;\n        }\n\n        // STEP 7: Scale by learning rate\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            s_scaled[j] = lr * dl_dZ1_r[idx];\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEPS 8+9: Grad accumulation + weight update\n        for (uint i = tid; i < F * F; i += TG) {\n            uint row = i / F;\n            uint col = i % F;\n            float g_new = (float)W1_grad[w_base + i] + s_xk[row] * s_scaled[col];\n            W1_grad_out[w_base + i] = (T)g_new;\n            s_W1[i] -= tok_idx * g_new;\n        }\n        for (uint j = tid; j < F; j += TG) {\n            float g_new = s_b1_grad[j] + s_scaled[j];\n            b1_grad_out[vec_off + j] = (T)g_new;\n            s_b1[j] -= tok_idx * g_new;\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEP 10: Z1_bar = XQ @ W1_bar + b1_bar\n        float Z1_bar_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float acc = s_b1[j];\n            for (uint k = 0; k < F; k++) {\n                acc += s_xq[k] * s_W1[k * F + j];\n            }\n            Z1_bar_r[idx] = acc;\n        }\n\n        // STEP 11: LayerNorm on Z1_bar\n        local_sum = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            local_sum += Z1_bar_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_sum, tid, TG);\n        float mu2 = s_buf[0] / float(F);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        local_var = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float d = Z1_bar_r[idx] - mu2;\n            local_var += d * d;\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_var, tid, TG);\n        float inv_std2 = metal::rsqrt(s_buf[0] / float(F) + EPS);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEP 12: output = XQ + LN(Z1_bar)\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float z_hat = (Z1_bar_r[idx] - mu2) * inv_std2;\n            float ln_val = ln_w_r[idx] * z_hat + ln_b_r[idx];\n            out[vec_off + j] = (T)(s_xq[j] + ln_val);\n        }\n\n        // Write back W1/b1 state\n        if (last_in_mb[0] > 0) {\n            for (uint i = tid; i < F * F; i += TG) {\n                W1_out[w_base + i] = (T)s_W1[i];\n                W1_grad_out[w_base + i] = T(0);\n            }\n            for (uint j = tid; j < F; j += TG) {\n                b1_out[vec_off + j] = (T)s_b1[j];\n                b1_grad_out[vec_off + j] = T(0);\n            }\n        } else {\n            for (uint i = tid; i < F * F; i += TG) {\n                W1_out[w_base + i] = W1[w_base + i];\n            }\n            for (uint j = tid; j < F; j += TG) {\n                b1_out[vec_off + j] = b1[vec_off + j];\n            }\n        }",
+              "header": "",
+              "threadgroup": [
+                256,
+                1,
+                1
+              ],
+              "template_params": [
+                [
+                  "T",
+                  "float32"
+                ]
+              ]
+            },
+            "parent_id": "root",
+            "generation": 1,
+            "llm_reasoning": "Mock variant 0: trivial mutation for testing"
+          },
+          "visit_count": 1,
+          "max_reward": 1.554092616276784,
+          "prior": 1.0,
+          "eval_result": {
+            "compiled": true,
+            "correct": true,
+            "compile_error": null,
+            "correctness_error": null,
+            "timings_us": [
+              226.75,
+              224.958,
+              240.334,
+              254.875,
+              240.417,
+              242.583,
+              224.75,
+              222.625,
+              233.708,
+              234.041,
+              487.875,
+              295.334,
+              257.958,
+              229.875,
+              244.542,
+              226.917,
+              230.917,
+              227.292,
+              234.542,
+              220.292
+            ],
+            "median_us": 234.041,
+            "reward": 1.554092616276784,
+            "speedup": 1.6313039168350845
+          },
+          "children": []
+        }
+      ]
+    }
+  },
+  "eval_history": [],
+  "candidate_sources": {
+    "gen1_854cecf0ca54": "// Mock variant 1_0\nconstexpr uint F = 64;\n        constexpr uint TG = 64;\n        constexpr float EPS = 1e-6f;\n\n        uint bh = threadgroup_position_in_grid.x;\n        uint tid = thread_position_in_threadgroup.x;\n\n        uint vec_off = bh * F;\n        uint w_base = bh * F * F;\n\n        threadgroup float s_W1[F * F];\n        threadgroup float s_xk[F];\n        threadgroup float s_xq[F];\n        threadgroup float s_xv[F];\n        threadgroup float s_b1[F];\n        threadgroup float s_b1_grad[F];\n        threadgroup float s_scaled[F];\n        threadgroup float s_buf[TG];\n\n        for (uint j = tid; j < F; j += TG) {\n            s_xk[j] = (float)xk[vec_off + j];\n            s_xq[j] = (float)xq[vec_off + j];\n            s_xv[j] = (float)xv[vec_off + j];\n            s_b1[j] = (float)b1[vec_off + j];\n            s_b1_grad[j] = (float)b1_grad[vec_off + j];\n        }\n        for (uint i = tid; i < F * F; i += TG) {\n            s_W1[i] = (float)W1[w_base + i];\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float lr = (float)ttt_lr[bh];\n        float tok_idx = (float)token_idx[0];\n\n        float ln_w_r[1];\n        float ln_b_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            ln_w_r[idx] = (float)ln_weight[vec_off + j];\n            ln_b_r[idx] = (float)ln_bias[vec_off + j];\n        }\n\n        // STEP 1: Z1 = XK @ W1 + b1\n        float Z1_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float acc = s_b1[j];\n            for (uint k = 0; k < F; k++) {\n                acc += s_xk[k] * s_W1[k * F + j];\n            }\n            Z1_r[idx] = acc;\n        }\n\n        // STEP 2: l2_target = XV - XK\n        float l2t_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            l2t_r[idx] = s_xv[j] - s_xk[j];\n        }\n\n        // STEPS 3-4: LayerNorm forward\n        float local_sum = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            local_sum += Z1_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_sum, tid, TG);\n        float mu = s_buf[0] / float(F);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float local_var = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float d = Z1_r[idx] - mu;\n            local_var += d * d;\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_var, tid, TG);\n        float inv_std = metal::rsqrt(s_buf[0] / float(F) + EPS);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float Z1_hat_r[1];\n        float LN_out_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            Z1_hat_r[idx] = (Z1_r[idx] - mu) * inv_std;\n            LN_out_r[idx] = ln_w_r[idx] * Z1_hat_r[idx] + ln_b_r[idx];\n        }\n\n        // STEP 5: dl_dLN = LN_out - l2_target\n        float dl_dLN_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dLN_r[idx] = LN_out_r[idx] - l2t_r[idx];\n        }\n\n        // STEP 6: LayerNorm backward\n        float dl_dx_hat_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dx_hat_r[idx] = dl_dLN_r[idx] * ln_w_r[idx];\n        }\n\n        float s1 = 0.0f, s2 = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            s1 += dl_dx_hat_r[idx];\n            s2 += dl_dx_hat_r[idx] * Z1_hat_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, s1, tid, TG);\n        float sum_dx_hat = s_buf[0];\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n        KK_SIMD_REDUCE_SUM(s_buf, s2, tid, TG);\n        float sum_dx_hat_z = s_buf[0];\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        float dl_dZ1_r[1];\n        float inv_std_F = inv_std / float(F);\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            dl_dZ1_r[idx] = (float(F) * dl_dx_hat_r[idx] - sum_dx_hat\n                             - Z1_hat_r[idx] * sum_dx_hat_z) * inv_std_F;\n        }\n\n        // STEP 7: Scale by learning rate\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            s_scaled[j] = lr * dl_dZ1_r[idx];\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEPS 8+9: Grad accumulation + weight update\n        for (uint i = tid; i < F * F; i += TG) {\n            uint row = i / F;\n            uint col = i % F;\n            float g_new = (float)W1_grad[w_base + i] + s_xk[row] * s_scaled[col];\n            W1_grad_out[w_base + i] = (T)g_new;\n            s_W1[i] -= tok_idx * g_new;\n        }\n        for (uint j = tid; j < F; j += TG) {\n            float g_new = s_b1_grad[j] + s_scaled[j];\n            b1_grad_out[vec_off + j] = (T)g_new;\n            s_b1[j] -= tok_idx * g_new;\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEP 10: Z1_bar = XQ @ W1_bar + b1_bar\n        float Z1_bar_r[1];\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float acc = s_b1[j];\n            for (uint k = 0; k < F; k++) {\n                acc += s_xq[k] * s_W1[k * F + j];\n            }\n            Z1_bar_r[idx] = acc;\n        }\n\n        // STEP 11: LayerNorm on Z1_bar\n        local_sum = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            local_sum += Z1_bar_r[idx];\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_sum, tid, TG);\n        float mu2 = s_buf[0] / float(F);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        local_var = 0.0f;\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float d = Z1_bar_r[idx] - mu2;\n            local_var += d * d;\n        }\n        KK_SIMD_REDUCE_SUM(s_buf, local_var, tid, TG);\n        float inv_std2 = metal::rsqrt(s_buf[0] / float(F) + EPS);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        // STEP 12: output = XQ + LN(Z1_bar)\n        for (uint j = tid, idx = 0; j < F; j += TG, idx++) {\n            float z_hat = (Z1_bar_r[idx] - mu2) * inv_std2;\n            float ln_val = ln_w_r[idx] * z_hat + ln_b_r[idx];\n            out[vec_off + j] = (T)(s_xq[j] + ln_val);\n        }\n\n        // Write back W1/b1 state\n        if (last_in_mb[0] > 0) {\n            for (uint i = tid; i < F * F; i += TG) {\n                W1_out[w_base + i] = (T)s_W1[i];\n                W1_grad_out[w_base + i] = T(0);\n            }\n            for (uint j = tid; j < F; j += TG) {\n                b1_out[vec_off + j] = (T)s_b1[j];\n                b1_grad_out[vec_off + j] = T(0);\n            }\n        } else {\n            for (uint i = tid; i < F * F; i += TG) {\n                W1_out[w_base + i] = W1[w_base + i];\n            }\n            for (uint j = tid; j < F; j += TG) {\n                b1_out[vec_off + j] = b1[vec_off + j];\n            }\n        }"
+  }
+}

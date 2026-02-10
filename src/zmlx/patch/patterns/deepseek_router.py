@@ -37,7 +37,11 @@ def _is_deepseek_gate_module(module: Any) -> bool:
     mod_path = (getattr(cls, "__module__", "") or "").lower()
     if name != "MoEGate":
         return False
-    return "mlx_lm.models.deepseek_v3" in mod_path or "mlx_lm.models.deepseek_v32" in mod_path
+    return (
+        "mlx_lm.models.deepseek_v3" in mod_path
+        or "mlx_lm.models.deepseek_v32" in mod_path
+        or "mlx_lm.models.kimi_k25" in mod_path
+    )
 
 
 class _DeepSeekRouterPattern:

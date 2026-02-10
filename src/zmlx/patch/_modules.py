@@ -10,6 +10,12 @@ import mlx.nn as nn
 
 from ..kernels import norms, transformer
 
+# Discovered GLM RMSNorm kernel (1.18x micro-bench on D=2048)
+try:
+    from ..kernels.discovered.glm_rmsnorm import glm_rmsnorm as _disc_rmsnorm
+except Exception:
+    _disc_rmsnorm = None
+
 _TG_CANDIDATES = (32, 64, 128, 256, 512, 1024)
 
 
@@ -60,6 +66,11 @@ class ZMLXRMSNorm(nn.Module):
         return self._resolved_tg or 256
 
     def __call__(self, x: Any) -> Any:
+        # Try discovered GLM-optimized kernel for D=2048
+        if _disc_rmsnorm is not None:
+            result = _disc_rmsnorm(x, self.weight, eps=self.eps)
+            if result is not None:
+                return result
         if self._auto and self._resolved_tg is None:
             self._resolved_tg = _autotune_threadgroup(
                 lambda x, tg: norms.rmsnorm(x, self.weight, eps=self.eps, threadgroup=tg),

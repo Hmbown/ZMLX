@@ -11,3 +11,4 @@ mlx-community/Qwen3-30B-A3B-4bit
 # mlx-community/Qwen3-1.7B-4bit
 # mlx-community/Mixtral-8x7B-Instruct-v0.1-4bit
 # mlx-community/DeepSeek-V3-4bit
+# mlx-community/Kimi-K2.5

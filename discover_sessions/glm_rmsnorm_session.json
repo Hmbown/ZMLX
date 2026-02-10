@@ -1,0 +1,455 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "session_id": "5030a0bec3164042",
+    "target_name": "glm_rmsnorm",
+    "llm_backend": "claude-code",
+    "device_chip": "Apple M4",
+    "device_memory_gb": 36,
+    "os_version": "Darwin 25.1.0",
+    "started_at": "2026-02-07T20:41:11-0600",
+    "updated_at": "2026-02-07T20:42:06-0600",
+    "total_steps": 3,
+    "total_candidates": 6,
+    "total_evaluated": 6,
+    "best_reward": 1.087727283715745,
+    "best_speedup": 1.0851605839416059,
+    "best_source": "constexpr uint D = 2048;\nconstexpr uint TG = 256;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float buf[TG];\n\n// Sum-of-squares with float4 vectorization\nfloat sumsq = 0.0f;\nfor (uint j = tid * 4; j < D; j += TG * 4) {\n    float4 v = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    sumsq += v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w;\n}\nKK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\nfloat inv = metal::rsqrt(buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Fused weight scaling: precompute inv * weight, then apply to input\nfor (uint j = tid * 4; j < D; j += TG * 4) {\n    float4 w = float4(weight[j], weight[j + 1], weight[j + 2], weight[j + 3]);\n    float4 scaled_w = w * inv;\n    float4 v = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 result = v * scaled_w;\n    out[base + j] = (T)result.x;\n    out[base + j + 1] = (T)result.y;\n    out[base + j + 2] = (T)result.z;\n    out[base + j + 3] = (T)result.w;\n}",
+    "baseline_us": 148.667
+  },
+  "tree_data": {
+    "c_puct": 1.0,
+    "root": {
+      "node_id": "root",
+      "candidate": {
+        "spec": {
+          "name": "kk_rmsnorm_D2048",
+          "input_names": [
+            "inp",
+            "weight"
+          ],
+          "output_names": [
+            "out"
+          ],
+          "source": "\n        constexpr uint D = 2048;\n        constexpr uint TG = 256;\n        constexpr float EPS = 1e-6f;\n\n        uint gid = thread_position_in_grid.x;\n        uint tid = thread_position_in_threadgroup.x;\n        uint row = gid / TG;\n        uint base = row * D;\n\n        threadgroup float buf[TG];\n\n        float sumsq = 0.0f;\n        for (uint j = tid; j < D; j += TG) {\n            float v = (float)inp[base + j];\n            sumsq += v * v;\n        }\n        KK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\n        float inv = metal::rsqrt(buf[0] / (float)D + EPS);\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n\n        for (uint j = tid; j < D; j += TG) {\n            float v = (float)inp[base + j];\n            float w = (float)weight[j];\n            out[base + j] = (T)(v * inv * w);\n        }\n    ",
+          "header": "",
+          "threadgroup": [
+            256,
+            1,
+            1
+          ],
+          "template_params": [
+            [
+              "T",
+              "float32"
+            ]
+          ]
+        },
+        "parent_id": null,
+        "generation": 0,
+        "llm_reasoning": "baseline"
+      },
+      "visit_count": 7,
+      "max_reward": 1.087727283715745,
+      "prior": 1.0,
+      "eval_result": {
+        "compiled": true,
+        "correct": true,
+        "compile_error": null,
+        "correctness_error": null,
+        "timings_us": [
+          213.0,
+          188.917,
+          168.333,
+          166.75,
+          165.666,
+          161.375,
+          172.458,
+          182.667,
+          209.208,
+          169.25,
+          167.5,
+          173.083,
+          156.208,
+          166.459,
+          159.583,
+          153.916,
+          157.041,
+          160.917,
+          156.375,
+          165.042
+        ],
+        "median_us": 166.75,
+        "reward": 0.8744760915674316,
+        "speedup": 0.8915562218890555
+      },
+      "children": [
+        {
+          "node_id": "gen1_2f85684f29b9",
+          "candidate": {
+            "spec": {
+              "name": "kk_glm_rmsnorm_gen1",
+              "input_names": [
+                "inp",
+                "weight"
+              ],
+              "output_names": [
+                "out"
+              ],
+              "source": "constexpr uint D = 2048;\nconstexpr uint TG = 256;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float buf[TG];\n\n// Sum-of-squares with float4 vectorization\nfloat sumsq = 0.0f;\nfor (uint j = tid * 4; j < D; j += TG * 4) {\n    float4 v = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    sumsq += v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w;\n}\nKK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\nfloat inv = metal::rsqrt(buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Vectorized output with float4\nfor (uint j = tid * 4; j < D; j += TG * 4) {\n    float4 v = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 w = float4(weight[j], weight[j + 1], weight[j + 2], weight[j + 3]);\n    float4 result = v * inv * w;\n    out[base + j] = (T)result.x;\n    out[base + j + 1] = (T)result.y;\n    out[base + j + 2] = (T)result.z;\n    out[base + j + 3] = (T)result.w;\n}",
+              "header": "",
+              "threadgroup": [
+                256,
+                1,
+                1
+              ],
+              "template_params": [
+                [
+                  "T",
+                  "float32"
+                ]
+              ]
+            },
+            "parent_id": "root",
+            "generation": 1,
+            "llm_reasoning": "Vectorize loads/stores using float4 to reduce memory transactions. Process 4 elements per iteration, unroll reduction loop for better ILP."
+          },
+          "visit_count": 5,
+          "max_reward": 1.087727283715745,
+          "prior": 0.5,
+          "eval_result": {
+            "compiled": true,
+            "correct": true,
+            "compile_error": null,
+            "correctness_error": null,
+            "timings_us": [
+              159.833,
+              146.792,
+              138.75,
+              171.375,
+              172.208,
+              159.5,
+              150.625,
+              153.167,
+              147.083,
+              146.542,
+              148.541,
+              146.667,
+              145.0,
+              141.167,
+              145.166,
+              145.833,
+              142.208,
+              146.083,
+              145.541,
+              146.0
+            ],
+            "median_us": 146.667,
+            "reward": 0.993399507657677,
+            "speedup": 1.0136363326446984
+          },
+          "children": [
+            {
+              "node_id": "gen2_7a523f065672",
+              "candidate": {
+                "spec": {
+                  "name": "kk_glm_rmsnorm_gen2",
+                  "input_names": [
+                    "inp",
+                    "weight"
+                  ],
+                  "output_names": [
+                    "out"
+                  ],
+                  "source": "constexpr uint D = 2048;\nconstexpr uint TG = 256;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float buf[TG];\n\n// Sum-of-squares with float4 vectorization, processing 8 elements per iteration\nfloat sumsq = 0.0f;\nfor (uint j = tid * 8; j < D; j += TG * 8) {\n    float4 v0 = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 v1 = float4(inp[base + j + 4], inp[base + j + 5], inp[base + j + 6], inp[base + j + 7]);\n    sumsq += v0.x * v0.x + v0.y * v0.y + v0.z * v0.z + v0.w * v0.w;\n    sumsq += v1.x * v1.x + v1.y * v1.y + v1.z * v1.z + v1.w * v1.w;\n}\nKK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\nfloat inv = metal::rsqrt(buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Vectorized output with 8-element processing\nfor (uint j = tid * 8; j < D; j += TG * 8) {\n    float4 v0 = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 v1 = float4(inp[base + j + 4], inp[base + j + 5], inp[base + j + 6], inp[base + j + 7]);\n    float4 w0 = float4(weight[j], weight[j + 1], weight[j + 2], weight[j + 3]);\n    float4 w1 = float4(weight[j + 4], weight[j + 5], weight[j + 6], weight[j + 7]);\n    float4 r0 = v0 * inv * w0;\n    float4 r1 = v1 * inv * w1;\n    out[base + j] = (T)r0.x;\n    out[base + j + 1] = (T)r0.y;\n    out[base + j + 2] = (T)r0.z;\n    out[base + j + 3] = (T)r0.w;\n    out[base + j + 4] = (T)r1.x;\n    out[base + j + 5] = (T)r1.y;\n    out[base + j + 6] = (T)r1.z;\n    out[base + j + 7] = (T)r1.w;\n}",
+                  "header": "",
+                  "threadgroup": [
+                    256,
+                    1,
+                    1
+                  ],
+                  "template_params": [
+                    [
+                      "T",
+                      "float32"
+                    ]
+                  ]
+                },
+                "parent_id": "gen1_2f85684f29b9",
+                "generation": 2,
+                "llm_reasoning": "Use float8 (two float4 loads) with loop unrolling to increase memory-level parallelism and reduce loop overhead. Prefetch next iteration while computing current."
+              },
+              "visit_count": 1,
+              "max_reward": 1.0875710192228631,
+              "prior": 0.5,
+              "eval_result": {
+                "compiled": true,
+                "correct": true,
+                "compile_error": null,
+                "correctness_error": null,
+                "timings_us": [
+                  220.958,
+                  145.917,
+                  138.0,
+                  137.625,
+                  130.375,
+                  127.625,
+                  132.625,
+                  128.042,
+                  128.583,
+                  139.5,
+                  136.666,
+                  130.5,
+                  128.625,
+                  131.0,
+                  136.708,
+                  152.666,
+                  116.833,
+                  137.583,
+                  129.875,
+                  127.709
+                ],
+                "median_us": 132.625,
+                "reward": 1.0875710192228631,
+                "speedup": 1.120957587181904
+              },
+              "children": []
+            },
+            {
+              "node_id": "gen2_ac9c70ee0ba5",
+              "candidate": {
+                "spec": {
+                  "name": "kk_glm_rmsnorm_gen2",
+                  "input_names": [
+                    "inp",
+                    "weight"
+                  ],
+                  "output_names": [
+                    "out"
+                  ],
+                  "source": "constexpr uint D = 2048;\nconstexpr uint TG = 256;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float buf[TG];\n\n// Sum-of-squares with float4 vectorization\nfloat sumsq = 0.0f;\nfor (uint j = tid * 4; j < D; j += TG * 4) {\n    float4 v = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    sumsq += v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w;\n}\nKK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\nfloat inv = metal::rsqrt(buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Fused weight scaling: precompute inv * weight, then apply to input\nfor (uint j = tid * 4; j < D; j += TG * 4) {\n    float4 w = float4(weight[j], weight[j + 1], weight[j + 2], weight[j + 3]);\n    float4 scaled_w = w * inv;\n    float4 v = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 result = v * scaled_w;\n    out[base + j] = (T)result.x;\n    out[base + j + 1] = (T)result.y;\n    out[base + j + 2] = (T)result.z;\n    out[base + j + 3] = (T)result.w;\n}",
+                  "header": "",
+                  "threadgroup": [
+                    256,
+                    1,
+                    1
+                  ],
+                  "template_params": [
+                    [
+                      "T",
+                      "float32"
+                    ]
+                  ]
+                },
+                "parent_id": "gen1_2f85684f29b9",
+                "generation": 2,
+                "llm_reasoning": "Fuse weight loading with computation by computing inv*weight once per thread, then streaming through input. Reduces total memory traffic and register pressure."
+              },
+              "visit_count": 3,
+              "max_reward": 1.087727283715745,
+              "prior": 0.5,
+              "eval_result": {
+                "compiled": true,
+                "correct": true,
+                "compile_error": null,
+                "correctness_error": null,
+                "timings_us": [
+                  142.667,
+                  132.291,
+                  135.833,
+                  130.625,
+                  134.0,
+                  139.958,
+                  138.0,
+                  139.0,
+                  138.542,
+                  140.042,
+                  143.959,
+                  137.0,
+                  127.917,
+                  134.5,
+                  130.417,
+                  153.667,
+                  136.458,
+                  131.583,
+                  139.791,
+                  129.708
+                ],
+                "median_us": 137.0,
+                "reward": 1.087727283715745,
+                "speedup": 1.0851605839416059
+              },
+              "children": [
+                {
+                  "node_id": "gen3_e461c68a28d6",
+                  "candidate": {
+                    "spec": {
+                      "name": "kk_glm_rmsnorm_gen3",
+                      "input_names": [
+                        "inp",
+                        "weight"
+                      ],
+                      "output_names": [
+                        "out"
+                      ],
+                      "source": "constexpr uint D = 2048;\nconstexpr uint TG = 256;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float buf[TG];\n\n// Sum-of-squares with explicit loop unrolling for ILP\nfloat sumsq = 0.0f;\nfor (uint j = tid * 8; j < D; j += TG * 8) {\n    float4 v0 = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 v1 = float4(inp[base + j + 4], inp[base + j + 5], inp[base + j + 6], inp[base + j + 7]);\n    float s0 = v0.x * v0.x + v0.y * v0.y + v0.z * v0.z + v0.w * v0.w;\n    float s1 = v1.x * v1.x + v1.y * v1.y + v1.z * v1.z + v1.w * v1.w;\n    sumsq += s0 + s1;\n}\nKK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\nfloat inv = metal::rsqrt(buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Interleaved memory ops: load input, load weight, compute, store in tight sequence\nfor (uint j = tid * 8; j < D; j += TG * 8) {\n    float4 v0 = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 w0 = float4(weight[j], weight[j + 1], weight[j + 2], weight[j + 3]);\n    float4 v1 = float4(inp[base + j + 4], inp[base + j + 5], inp[base + j + 6], inp[base + j + 7]);\n    float4 w1 = float4(weight[j + 4], weight[j + 5], weight[j + 6], weight[j + 7]);\n    \n    float4 r0 = v0 * w0 * inv;\n    float4 r1 = v1 * w1 * inv;\n    \n    out[base + j] = (T)r0.x;\n    out[base + j + 1] = (T)r0.y;\n    out[base + j + 2] = (T)r0.z;\n    out[base + j + 3] = (T)r0.w;\n    out[base + j + 4] = (T)r1.x;\n    out[base + j + 5] = (T)r1.y;\n    out[base + j + 6] = (T)r1.z;\n    out[base + j + 7] = (T)r1.w;\n}",
+                      "header": "",
+                      "threadgroup": [
+                        256,
+                        1,
+                        1
+                      ],
+                      "template_params": [
+                        [
+                          "T",
+                          "float32"
+                        ]
+                      ]
+                    },
+                    "parent_id": "gen2_ac9c70ee0ba5",
+                    "generation": 3,
+                    "llm_reasoning": "Use dual-path processing with interleaved sum-of-squares and output computation to hide memory latency through instruction-level parallelism. Separate threads handle reduction and output in overlapping phases."
+                  },
+                  "visit_count": 1,
+                  "max_reward": 0.9653938286084996,
+                  "prior": 0.5,
+                  "eval_result": {
+                    "compiled": true,
+                    "correct": true,
+                    "compile_error": null,
+                    "correctness_error": null,
+                    "timings_us": [
+                      193.167,
+                      157.833,
+                      173.584,
+                      154.709,
+                      153.625,
+                      155.458,
+                      145.125,
+                      143.958,
+                      145.625,
+                      140.791,
+                      141.542,
+                      146.791,
+                      143.792,
+                      145.875,
+                      142.916,
+                      149.791,
+                      150.833,
+                      152.125,
+                      182.25,
+                      172.167
+                    ],
+                    "median_us": 150.833,
+                    "reward": 0.9653938286084996,
+                    "speedup": 0.9856397472701597
+                  },
+                  "children": []
+                },
+                {
+                  "node_id": "gen3_21dac2867bab",
+                  "candidate": {
+                    "spec": {
+                      "name": "kk_glm_rmsnorm_gen3",
+                      "input_names": [
+                        "inp",
+                        "weight"
+                      ],
+                      "output_names": [
+                        "out"
+                      ],
+                      "source": "constexpr uint D = 2048;\nconstexpr uint TG = 256;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\n// SIMD-level reduction for sum-of-squares\nfloat sumsq = 0.0f;\nfor (uint j = tid; j < D; j += TG) {\n    float v = (float)inp[base + j];\n    sumsq += v * v;\n}\n\n// Two-level reduction: SIMD then threadgroup\nsumsq = simd_sum(sumsq);\nuint simd_lane = tid % 32;\nuint simd_id = tid / 32;\n\nthreadgroup float simd_sums[8];\nif (simd_lane == 0) {\n    simd_sums[simd_id] = sumsq;\n}\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\nfloat total = 0.0f;\nif (tid < 8) {\n    total = simd_sums[tid];\n}\ntotal = simd_sum(total);\n\nfloat inv = metal::rsqrt(total / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Maximally coalesced writes: each thread handles stride-1 chunk\nuint chunk_size = D / TG;\nuint start = tid * chunk_size;\nfor (uint j = start; j < start + chunk_size; j++) {\n    float v = (float)inp[base + j];\n    float w = (float)weight[j];\n    out[base + j] = (T)(v * w * inv);\n}",
+                      "header": "",
+                      "threadgroup": [
+                        256,
+                        1,
+                        1
+                      ],
+                      "template_params": [
+                        [
+                          "T",
+                          "float32"
+                        ]
+                      ]
+                    },
+                    "parent_id": "gen2_ac9c70ee0ba5",
+                    "generation": 3,
+                    "llm_reasoning": "Use SIMD-level parallelism with simd_sum for faster reduction, and restructure memory access pattern to maximize coalescing by having each thread process contiguous elements in the output phase."
+                  },
+                  "visit_count": 1,
+                  "max_reward": 0.0,
+                  "prior": 0.5,
+                  "eval_result": {
+                    "compiled": true,
+                    "correct": false,
+                    "compile_error": null,
+                    "correctness_error": "\nNot equal to tolerance rtol=0.0001, atol=0.0001\nOutput 0 mismatch\nMismatched elements: 1792 / 2048 (87.5%)\nFirst 5 mismatches are at indices:\n [0, 256]: 1667.071533203125 (ACTUAL), 1.6604154109954834 (DESIRED)\n [0, 257]: 14.44826889038086 (ACTUAL), 0.014390580356121063 (DESIRED)\n [0, 258]: 252.62680053710938 (ACTUAL), 0.2516181468963623 (DESIRED)\n [0, 259]: -85.63361358642578 (ACTUAL), -0.08529170602560043 (DESIRED)\n [0, 260]: -924.8377685546875 (ACTUAL), -0.9211451411247253 (DESIRED)\nMax absolute difference among violations: 8176.4014\nMax relative difference among violations: 1003.0089\n ACTUAL: array([[-2.821695e+00, -1.000046e-02, -5.239809e-01, ..., -2.786683e+03,\n        -4.381265e+02,  7.333153e+02]], shape=(1, 2048), dtype=float32)\n DESIRED: array([[-2.821695, -0.01    , -0.523981, ..., -2.775556, -0.436377,\n         0.730387]], shape=(1, 2048), dtype=float32)",
+                    "timings_us": [],
+                    "median_us": Infinity,
+                    "reward": 0.0,
+                    "speedup": 0.0
+                  },
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "node_id": "gen1_78a9cf175b41",
+          "candidate": {
+            "spec": {
+              "name": "kk_glm_rmsnorm_gen1",
+              "input_names": [
+                "inp",
+                "weight"
+              ],
+              "output_names": [
+                "out"
+              ],
+              "source": "constexpr uint D = 2048;\nconstexpr uint TG = 512;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float buf[TG];\n\n// Manually unrolled reduction (4 iterations)\nfloat sumsq = 0.0f;\nuint j = tid;\nif (j < D) {\n    float v0 = (float)inp[base + j];\n    sumsq += v0 * v0;\n}\nj += TG;\nif (j < D) {\n    float v1 = (float)inp[base + j];\n    sumsq += v1 * v1;\n}\nj += TG;\nif (j < D) {\n    float v2 = (float)inp[base + j];\n    sumsq += v2 * v2;\n}\nj += TG;\nif (j < D) {\n    float v3 = (float)inp[base + j];\n    sumsq += v3 * v3;\n}\n\nKK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\nfloat inv = metal::rsqrt(buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Unrolled output writes\nj = tid;\nif (j < D) {\n    float v = (float)inp[base + j];\n    float w = (float)weight[j];\n    out[base + j] = (T)(v * inv * w);\n}\nj += TG;\nif (j < D) {\n    float v = (float)inp[base + j];\n    float w = (float)weight[j];\n    out[base + j] = (T)(v * inv * w);\n}\nj += TG;\nif (j < D) {\n    float v = (float)inp[base + j];\n    float w = (float)weight[j];\n    out[base + j] = (T)(v * inv * w);\n}\nj += TG;\nif (j < D) {\n    float v = (float)inp[base + j];\n    float w = (float)weight[j];\n    out[base + j] = (T)(v * inv * w);\n}",
+              "header": "",
+              "threadgroup": [
+                512,
+                1,
+                1
+              ],
+              "template_params": [
+                [
+                  "T",
+                  "float32"
+                ]
+              ]
+            },
+            "parent_id": "root",
+            "generation": 1,
+            "llm_reasoning": "Increase threadgroup size to 512 for higher occupancy and fewer iterations. Use manual loop unrolling (4x) in reduction phase for better instruction-level parallelism."
+          },
+          "visit_count": 1,
+          "max_reward": 0.0,
+          "prior": 0.5,
+          "eval_result": {
+            "compiled": true,
+            "correct": false,
+            "compile_error": null,
+            "correctness_error": "\nNot equal to tolerance rtol=0.0001, atol=0.0001\nOutput 0 mismatch\nMismatched elements: 1024 / 2048 (50%)\nFirst 5 mismatches are at indices:\n [0, 0]: -4.050687789916992 (ACTUAL), -2.82169508934021 (DESIRED)\n [0, 1]: -0.014356168918311596 (ACTUAL), -0.010000457055866718 (DESIRED)\n [0, 2]: -0.752201497554779 (ACTUAL), -0.523980975151062 (DESIRED)\n [0, 3]: -0.03235669806599617 (ACTUAL), -0.022539563477039337 (DESIRED)\n [0, 4]: -2.093770980834961 (ACTUAL), -1.4585134983062744 (DESIRED)\nMax absolute difference among violations: 2.3471065\nMax relative difference among violations: 0.43555143\n ACTUAL: array([[-4.050688, -0.014356, -0.752201, ..., -2.775556, -0.436377,\n         0.730387]], shape=(1, 2048), dtype=float32)\n DESIRED: array([[-2.821695, -0.01    , -0.523981, ..., -2.775556, -0.436377,\n         0.730387]], shape=(1, 2048), dtype=float32)",
+            "timings_us": [],
+            "median_us": Infinity,
+            "reward": 0.0,
+            "speedup": 0.0
+          },
+          "children": []
+        }
+      ]
+    }
+  },
+  "eval_history": [],
+  "candidate_sources": {
+    "gen1_2f85684f29b9": "constexpr uint D = 2048;\nconstexpr uint TG = 256;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float buf[TG];\n\n// Sum-of-squares with float4 vectorization\nfloat sumsq = 0.0f;\nfor (uint j = tid * 4; j < D; j += TG * 4) {\n    float4 v = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    sumsq += v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w;\n}\nKK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\nfloat inv = metal::rsqrt(buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Vectorized output with float4\nfor (uint j = tid * 4; j < D; j += TG * 4) {\n    float4 v = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 w = float4(weight[j], weight[j + 1], weight[j + 2], weight[j + 3]);\n    float4 result = v * inv * w;\n    out[base + j] = (T)result.x;\n    out[base + j + 1] = (T)result.y;\n    out[base + j + 2] = (T)result.z;\n    out[base + j + 3] = (T)result.w;\n}",
+    "gen1_78a9cf175b41": "constexpr uint D = 2048;\nconstexpr uint TG = 512;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float buf[TG];\n\n// Manually unrolled reduction (4 iterations)\nfloat sumsq = 0.0f;\nuint j = tid;\nif (j < D) {\n    float v0 = (float)inp[base + j];\n    sumsq += v0 * v0;\n}\nj += TG;\nif (j < D) {\n    float v1 = (float)inp[base + j];\n    sumsq += v1 * v1;\n}\nj += TG;\nif (j < D) {\n    float v2 = (float)inp[base + j];\n    sumsq += v2 * v2;\n}\nj += TG;\nif (j < D) {\n    float v3 = (float)inp[base + j];\n    sumsq += v3 * v3;\n}\n\nKK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\nfloat inv = metal::rsqrt(buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Unrolled output writes\nj = tid;\nif (j < D) {\n    float v = (float)inp[base + j];\n    float w = (float)weight[j];\n    out[base + j] = (T)(v * inv * w);\n}\nj += TG;\nif (j < D) {\n    float v = (float)inp[base + j];\n    float w = (float)weight[j];\n    out[base + j] = (T)(v * inv * w);\n}\nj += TG;\nif (j < D) {\n    float v = (float)inp[base + j];\n    float w = (float)weight[j];\n    out[base + j] = (T)(v * inv * w);\n}\nj += TG;\nif (j < D) {\n    float v = (float)inp[base + j];\n    float w = (float)weight[j];\n    out[base + j] = (T)(v * inv * w);\n}",
+    "gen2_7a523f065672": "constexpr uint D = 2048;\nconstexpr uint TG = 256;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float buf[TG];\n\n// Sum-of-squares with float4 vectorization, processing 8 elements per iteration\nfloat sumsq = 0.0f;\nfor (uint j = tid * 8; j < D; j += TG * 8) {\n    float4 v0 = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 v1 = float4(inp[base + j + 4], inp[base + j + 5], inp[base + j + 6], inp[base + j + 7]);\n    sumsq += v0.x * v0.x + v0.y * v0.y + v0.z * v0.z + v0.w * v0.w;\n    sumsq += v1.x * v1.x + v1.y * v1.y + v1.z * v1.z + v1.w * v1.w;\n}\nKK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\nfloat inv = metal::rsqrt(buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Vectorized output with 8-element processing\nfor (uint j = tid * 8; j < D; j += TG * 8) {\n    float4 v0 = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 v1 = float4(inp[base + j + 4], inp[base + j + 5], inp[base + j + 6], inp[base + j + 7]);\n    float4 w0 = float4(weight[j], weight[j + 1], weight[j + 2], weight[j + 3]);\n    float4 w1 = float4(weight[j + 4], weight[j + 5], weight[j + 6], weight[j + 7]);\n    float4 r0 = v0 * inv * w0;\n    float4 r1 = v1 * inv * w1;\n    out[base + j] = (T)r0.x;\n    out[base + j + 1] = (T)r0.y;\n    out[base + j + 2] = (T)r0.z;\n    out[base + j + 3] = (T)r0.w;\n    out[base + j + 4] = (T)r1.x;\n    out[base + j + 5] = (T)r1.y;\n    out[base + j + 6] = (T)r1.z;\n    out[base + j + 7] = (T)r1.w;\n}",
+    "gen2_ac9c70ee0ba5": "constexpr uint D = 2048;\nconstexpr uint TG = 256;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float buf[TG];\n\n// Sum-of-squares with float4 vectorization\nfloat sumsq = 0.0f;\nfor (uint j = tid * 4; j < D; j += TG * 4) {\n    float4 v = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    sumsq += v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w;\n}\nKK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\nfloat inv = metal::rsqrt(buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Fused weight scaling: precompute inv * weight, then apply to input\nfor (uint j = tid * 4; j < D; j += TG * 4) {\n    float4 w = float4(weight[j], weight[j + 1], weight[j + 2], weight[j + 3]);\n    float4 scaled_w = w * inv;\n    float4 v = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 result = v * scaled_w;\n    out[base + j] = (T)result.x;\n    out[base + j + 1] = (T)result.y;\n    out[base + j + 2] = (T)result.z;\n    out[base + j + 3] = (T)result.w;\n}",
+    "gen3_e461c68a28d6": "constexpr uint D = 2048;\nconstexpr uint TG = 256;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float buf[TG];\n\n// Sum-of-squares with explicit loop unrolling for ILP\nfloat sumsq = 0.0f;\nfor (uint j = tid * 8; j < D; j += TG * 8) {\n    float4 v0 = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 v1 = float4(inp[base + j + 4], inp[base + j + 5], inp[base + j + 6], inp[base + j + 7]);\n    float s0 = v0.x * v0.x + v0.y * v0.y + v0.z * v0.z + v0.w * v0.w;\n    float s1 = v1.x * v1.x + v1.y * v1.y + v1.z * v1.z + v1.w * v1.w;\n    sumsq += s0 + s1;\n}\nKK_SIMD_REDUCE_SUM(buf, sumsq, tid, TG);\n\nfloat inv = metal::rsqrt(buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Interleaved memory ops: load input, load weight, compute, store in tight sequence\nfor (uint j = tid * 8; j < D; j += TG * 8) {\n    float4 v0 = float4(inp[base + j], inp[base + j + 1], inp[base + j + 2], inp[base + j + 3]);\n    float4 w0 = float4(weight[j], weight[j + 1], weight[j + 2], weight[j + 3]);\n    float4 v1 = float4(inp[base + j + 4], inp[base + j + 5], inp[base + j + 6], inp[base + j + 7]);\n    float4 w1 = float4(weight[j + 4], weight[j + 5], weight[j + 6], weight[j + 7]);\n    \n    float4 r0 = v0 * w0 * inv;\n    float4 r1 = v1 * w1 * inv;\n    \n    out[base + j] = (T)r0.x;\n    out[base + j + 1] = (T)r0.y;\n    out[base + j + 2] = (T)r0.z;\n    out[base + j + 3] = (T)r0.w;\n    out[base + j + 4] = (T)r1.x;\n    out[base + j + 5] = (T)r1.y;\n    out[base + j + 6] = (T)r1.z;\n    out[base + j + 7] = (T)r1.w;\n}",
+    "gen3_21dac2867bab": "constexpr uint D = 2048;\nconstexpr uint TG = 256;\nconstexpr float EPS = 1e-6f;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\n// SIMD-level reduction for sum-of-squares\nfloat sumsq = 0.0f;\nfor (uint j = tid; j < D; j += TG) {\n    float v = (float)inp[base + j];\n    sumsq += v * v;\n}\n\n// Two-level reduction: SIMD then threadgroup\nsumsq = simd_sum(sumsq);\nuint simd_lane = tid % 32;\nuint simd_id = tid / 32;\n\nthreadgroup float simd_sums[8];\nif (simd_lane == 0) {\n    simd_sums[simd_id] = sumsq;\n}\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\nfloat total = 0.0f;\nif (tid < 8) {\n    total = simd_sums[tid];\n}\ntotal = simd_sum(total);\n\nfloat inv = metal::rsqrt(total / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\n// Maximally coalesced writes: each thread handles stride-1 chunk\nuint chunk_size = D / TG;\nuint start = tid * chunk_size;\nfor (uint j = start; j < start + chunk_size; j++) {\n    float v = (float)inp[base + j];\n    float w = (float)weight[j];\n    out[base + j] = (T)(v * w * inv);\n}"
+  }
+}

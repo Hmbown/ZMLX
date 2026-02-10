@@ -49,6 +49,25 @@ def _topk_gating_simd_grid(
     return (B * 32, 1, 1), (32, 1, 1)
 
 
+def _hcsa_active_row_grid(
+    inputs: Sequence[Any],
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """Grid for hcsa_active_row: one thread per feature dim."""
+    values = inputs[1]
+    D = int(values.shape[-1])
+    return (D, 1, 1), (min(D, 256), 1, 1)
+
+
+def _hcsa_permute_window_grid(
+    inputs: Sequence[Any],
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """Grid for hcsa_permute_window: one thread per (token, feature)."""
+    inp = inputs[0]
+    T = int(inp.shape[0])
+    D = int(inp.shape[1])
+    return (D, T, 1), (min(D, 256), 1, 1)
+
+
 # ---------------------------------------------------------------------------
 # Target definitions
 # ---------------------------------------------------------------------------
@@ -391,6 +410,174 @@ def reference(*inputs):
         output_names=("weights", "indices"),
         grid_fn=f"grid=(B * 32, 1, 1), threadgroup=(32, 1, 1) where D={D}",
         compute_grid=_topk_gating_simd_grid,
+        template_params=(("T", "float32"),),
+    )
+
+
+def hcsa_active_row_target(D: int = 128, W: int = 65) -> SearchSpace:
+    """HCSA active-row microkernel: softmax(scores) @ values for one query row."""
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint W = {W};
+        uint d_idx = thread_position_in_grid.x;
+        if (d_idx >= D) return;
+
+        float max_s = -INFINITY;
+        for (uint j = 0; j < W; ++j) {{
+            float s = (float)scores[j];
+            max_s = (s > max_s) ? s : max_s;
+        }}
+
+        float denom = 0.0f;
+        float acc = 0.0f;
+        for (uint j = 0; j < W; ++j) {{
+            float w = metal::exp((float)scores[j] - max_s);
+            denom += w;
+            acc += w * (float)values[j * D + d_idx];
+        }}
+        out[d_idx] = (T)(acc / denom);
+    """
+
+    ref_python = """
+import mlx.core as mx
+def reference(*inputs):
+    scores, values = inputs
+    w = mx.softmax(scores, axis=-1)
+    return mx.sum(w[:, None] * values, axis=0)
+"""
+
+    seed_spec = KernelSpec(
+        name=f"kk_hcsa_active_row_D{D}_W{W}",
+        input_names=("scores", "values"),
+        output_names=("out",),
+        source=source,
+        threadgroup=(min(D, 256), 1, 1),
+        template_params=(("T", "float32"),),
+    )
+    seed = KernelCandidate(spec=seed_spec, generation=0, llm_reasoning="baseline")
+
+    return SearchSpace(
+        name="hcsa_active_row",
+        description=(
+            f"HCSA active-row primitive: softmax(scores[W={W}]) @ values[W, D={D}] -> out[D]."
+        ),
+        reference_source=source,
+        reference_python=ref_python,
+        input_specs=(
+            InputSpec(
+                name="scores",
+                shape_expr="(W,)",
+                dtype="float32",
+                concrete_shapes=[(W,)],
+            ),
+            InputSpec(
+                name="values",
+                shape_expr="(W, D)",
+                dtype="float32",
+                concrete_shapes=[(W, D)],
+            ),
+        ),
+        output_specs=(
+            OutputSpec(
+                name="out",
+                shape_expr="(D,)",
+                dtype="float32",
+                concrete_shapes=[(D,)],
+            ),
+        ),
+        constraints=(
+            "Simple scalar baseline intended for correctness-first search bootstrapping.",
+            f"W={W}, D={D}.",
+        ),
+        seed_candidates=(seed,),
+        input_names=("scores", "values"),
+        output_names=("out",),
+        grid_fn="grid=(D, 1, 1), threadgroup=(min(D, 256), 1, 1)",
+        compute_grid=_hcsa_active_row_grid,
+        template_params=(("T", "float32"),),
+    )
+
+
+def hcsa_permute_window_target(T: int = 256, D: int = 128, W: int = 65) -> SearchSpace:
+    """HCSA permute-window microkernel: gather+mean over per-token neighbor windows."""
+    source = f"""
+        constexpr uint SEQ = {T};
+        constexpr uint D = {D};
+        constexpr uint W = {W};
+
+        uint t_idx = thread_position_in_grid.y;
+        uint d_idx = thread_position_in_grid.x;
+        if (t_idx >= SEQ || d_idx >= D) return;
+
+        float acc = 0.0f;
+        for (uint j = 0; j < W; ++j) {{
+            uint src = (uint)neighbor_idx[t_idx * W + j];
+            if (src >= SEQ) src = 0;
+            acc += (float)inp[src * D + d_idx];
+        }}
+        out[t_idx * D + d_idx] = (T)(acc / (float)W);
+    """
+
+    ref_python = f"""
+import mlx.core as mx
+def reference(*inputs):
+    inp, neighbor_idx = inputs
+    T = {T}
+    safe_idx = mx.where(neighbor_idx < T, neighbor_idx, mx.zeros_like(neighbor_idx))
+    gathered = inp[safe_idx.astype(mx.int32)]
+    return mx.mean(gathered, axis=1)
+"""
+
+    seed_spec = KernelSpec(
+        name=f"kk_hcsa_permute_window_T{T}_D{D}_W{W}",
+        input_names=("inp", "neighbor_idx"),
+        output_names=("out",),
+        source=source,
+        threadgroup=(min(D, 256), 1, 1),
+        template_params=(("T", "float32"),),
+    )
+    seed = KernelCandidate(spec=seed_spec, generation=0, llm_reasoning="baseline")
+
+    return SearchSpace(
+        name="hcsa_permute_window",
+        description=(
+            f"HCSA permute-window primitive: mean over gathered neighbors, "
+            f"inp[T={T}, D={D}], neighbor_idx[T, W={W}] -> out[T, D]."
+        ),
+        reference_source=source,
+        reference_python=ref_python,
+        input_specs=(
+            InputSpec(
+                name="inp",
+                shape_expr="(T, D)",
+                dtype="float32",
+                concrete_shapes=[(T, D)],
+            ),
+            InputSpec(
+                name="neighbor_idx",
+                shape_expr="(T, W)",
+                dtype="uint32",
+                concrete_shapes=[(T, W)],
+            ),
+        ),
+        output_specs=(
+            OutputSpec(
+                name="out",
+                shape_expr="(T, D)",
+                dtype="float32",
+                concrete_shapes=[(T, D)],
+            ),
+        ),
+        constraints=(
+            "Neighbor indices are clamped to valid range [0, T).",
+            "Baseline computes simple mean over window elements.",
+            f"T={T}, W={W}, D={D}.",
+        ),
+        seed_candidates=(seed,),
+        input_names=("inp", "neighbor_idx"),
+        output_names=("out",),
+        grid_fn="grid=(D, T, 1), threadgroup=(min(D, 256), 1, 1)",
+        compute_grid=_hcsa_permute_window_grid,
         template_params=(("T", "float32"),),
     )
 
@@ -805,6 +992,8 @@ TARGETS: dict[str, Callable[..., SearchSpace]] = {
     "fused_swiglu": fused_swiglu_target,
     "rmsnorm": rmsnorm_target,
     "topk_gating": topk_gating_target,
+    "hcsa_active_row": hcsa_active_row_target,
+    "hcsa_permute_window": hcsa_permute_window_target,
     "ttt_linear_decode": ttt_linear_decode_target,
     "glm_moe_combine": glm_moe_combine_target,
     "glm_fused_swiglu": glm_fused_swiglu_target,

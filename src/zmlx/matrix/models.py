@@ -112,7 +112,7 @@ def _infer_quant(model_id: str) -> str:
         return "bf16"
     if "fp16" in name_lower:
         return "fp16"
-    m = re.search(r"(\d)bit", name_lower)
+    m = re.search(r"(\d+(?:\.\d+)?)bit", name_lower)
     if m:
         return f"{m.group(1)}bit"
     # Kimi-K2.5 / Kimi-K2-Thinking without explicit quant suffix
