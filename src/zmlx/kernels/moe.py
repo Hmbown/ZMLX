@@ -1066,6 +1066,176 @@ def moe_combine_fp32(expert_outputs: Any, weights: Any) -> Any:
     return out.reshape((*original_shape, D))
 
 
+@cache
+def _moe_combine_kernel_fp32_no_fma(d: int, k: int) -> Any:
+    """FP32 combine kernel with FMA contraction disabled."""
+    D = int(d)
+    K = int(k)
+    source = f"""
+        #pragma clang fp contract(off)
+        constexpr uint D = {D};
+        constexpr uint K = {K};
+        uint token_idx = thread_position_in_grid.y;
+        uint d_idx = thread_position_in_grid.x;
+        uint tid = thread_position_in_threadgroup.x;
+
+        threadgroup float wbuf[K];
+        for (uint i = tid; i < K; i += threads_per_threadgroup.x) {{
+            wbuf[i] = weights[token_idx * K + i];
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        float acc = 0.0f;
+        for (uint i = 0; i < K; ++i) {{
+            float w = wbuf[i];
+            float v = (float)expert_outputs[(token_idx * K + i) * D + d_idx];
+            float prod = w * v;
+            acc = acc + prod;
+        }}
+        out[token_idx * D + d_idx] = acc;
+    """
+    return metal_kernel(
+        name=f"kk_moe_combine_fp32_no_fma_D{D}_K{K}",
+        input_names=["expert_outputs", "weights"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def moe_combine_fp32_no_fma(expert_outputs: Any, weights: Any) -> Any:
+    """Like ``moe_combine_fp32`` but disables FMA contraction in accumulation."""
+    original_shape = weights.shape[:-1]
+    K = weights.shape[-1]
+    D = expert_outputs.shape[-1]
+
+    expert_outputs_flat = expert_outputs.reshape(-1, K, D)
+    weights_flat = weights.reshape(-1, K).astype(mx.float32)
+    B = weights_flat.shape[0]
+
+    k = _moe_combine_kernel_fp32_no_fma(D, K)
+    out = k(
+        expert_outputs_flat,
+        weights_flat,
+        grid=(D, B, 1),
+        threadgroup=(min(D, 256), 1, 1),
+        output_shapes=[(B, D)],
+        output_dtypes=[mx.float32],
+    )[0]
+    return out.reshape((*original_shape, D))
+
+
+def _combine_projected_experts(
+    projected: Any,
+    gate: Any,
+    *,
+    no_fma: bool,
+    output_dtype: Any | None,
+) -> Any:
+    """Combine pre-projected expert outputs with gating weights."""
+    out_dtype = projected.dtype if output_dtype is None else output_dtype
+
+    if out_dtype == mx.float32:
+        gate_fp32 = gate.astype(mx.float32) if gate.dtype != mx.float32 else gate
+        return (
+            moe_combine_fp32_no_fma(projected, gate_fp32)
+            if no_fma
+            else moe_combine_fp32(projected, gate_fp32)
+        )
+
+    gate_cast = gate.astype(projected.dtype) if gate.dtype != projected.dtype else gate
+    out = moe_combine_no_fma(projected, gate_cast) if no_fma else moe_combine(projected, gate_cast)
+    if out.dtype != out_dtype:
+        out = out.astype(out_dtype)
+    return out
+
+
+def gather_mmk_combine(
+    act: Any,
+    weights: Any,
+    gate: Any,
+    indices: Any,
+    *,
+    no_fma: bool = False,
+    output_dtype: Any | None = None,
+) -> Any:
+    """Vectorized dense gather-matmul-combine using ``mx.gather_mm``.
+
+    This path computes all ``K`` expert projections in one ``gather_mm`` call,
+    then combines via ZMLX MoE combine kernels.
+    """
+    if act.ndim != 3:
+        raise ValueError("gather_mmk_combine: act must have shape (B, K, D_in)")
+    if weights.ndim != 3:
+        raise ValueError("gather_mmk_combine: weights must have shape (E, D_in, D_out)")
+
+    B, K, D_in = act.shape
+    if weights.shape[1] != D_in:
+        raise ValueError(
+            "gather_mmk_combine: weights second dimension must match act last dimension"
+        )
+
+    rhs_indices = indices.astype(mx.uint32) if indices.dtype != mx.uint32 else indices
+    lhs_indices = mx.arange(B * K, dtype=mx.uint32).reshape(B, K)
+
+    proj = mx.gather_mm(
+        act.reshape(B * K, 1, D_in),
+        weights,
+        lhs_indices=lhs_indices,
+        rhs_indices=rhs_indices,
+    ).squeeze(axis=-2)
+
+    return _combine_projected_experts(
+        proj,
+        gate,
+        no_fma=no_fma,
+        output_dtype=output_dtype,
+    )
+
+
+def gather_qmmk_combine_quantized(
+    act: Any,
+    weights: Any,
+    scales: Any,
+    biases: Any,
+    gate: Any,
+    indices: Any,
+    *,
+    group_size: int = 64,
+    bits: int = 4,
+    no_fma: bool = False,
+    output_dtype: Any | None = None,
+) -> Any:
+    """Vectorized quantized gather-QMM-combine using ``mx.gather_qmm``."""
+    if act.ndim != 3:
+        raise ValueError("gather_qmmk_combine_quantized: act must have shape (B, K, D_in)")
+
+    B, K, D_in = act.shape
+    rhs_indices = indices.astype(mx.uint32) if indices.dtype != mx.uint32 else indices
+    lhs_indices = mx.arange(B * K, dtype=mx.uint32).reshape(B, K)
+
+    proj = mx.gather_qmm(
+        act.reshape(B * K, 1, D_in),
+        weights,
+        scales,
+        biases,
+        lhs_indices=lhs_indices,
+        rhs_indices=rhs_indices,
+        transpose=True,
+        group_size=group_size,
+        bits=bits,
+    ).squeeze(axis=-2)
+
+    return _combine_projected_experts(
+        proj,
+        gate,
+        no_fma=no_fma,
+        output_dtype=output_dtype,
+    )
+
+
 def topk_gating_softmax(
     x: Any,
     k: int = 2,
@@ -1224,6 +1394,100 @@ def topk_gating_softmax(
         scores = scores / (mx.sum(scores, axis=-1, keepdims=True) + 1e-20)
 
     return scores, inds.astype(mx.uint32)
+
+
+@cache
+def _router_argpartition_logits_topk_kernel(d: int, k: int) -> Any:
+    D = int(d)
+    K = int(k)
+    if D <= 0:
+        raise ValueError("router_argpartition_logits_topk: last dimension must be > 0")
+    if K <= 0:
+        raise ValueError("router_argpartition_logits_topk: k must be > 0")
+    if K > D:
+        raise ValueError(f"router_argpartition_logits_topk: k={K} exceeds D={D}")
+
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint K = {K};
+
+        uint row = thread_position_in_grid.x;
+        uint logits_base = row * D;
+        uint idx_base = row * K;
+
+        float vals[K];
+        float m = -INFINITY;
+        for (uint i = 0; i < K; ++i) {{
+            uint idx = (uint)indices[idx_base + i];
+            float v = (float)logits[logits_base + idx];
+            vals[i] = v;
+            if (v > m) m = v;
+        }}
+
+        float sum = 0.0f;
+        for (uint i = 0; i < K; ++i) {{
+            sum += metal::exp(vals[i] - m);
+        }}
+        float inv = 1.0f / sum;
+
+        for (uint i = 0; i < K; ++i) {{
+            weights[idx_base + i] = (T)(metal::exp(vals[i] - m) * inv);
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_router_argpartition_logits_topk_D{D}_K{K}",
+        input_names=["logits", "indices"],
+        output_names=["weights"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+def router_argpartition_logits_topk(
+    logits: Any,
+    *,
+    k: int,
+    compute_dtype: Any | None = None,
+) -> tuple[Any, Any]:
+    """Qwen-style argpartition(logits) + top-k softmax without index reordering.
+
+    This preserves argpartition index ordering semantics, then computes softmax
+    over the selected logits only.
+    """
+    if logits.ndim < 1:
+        raise ValueError("router_argpartition_logits_topk: logits must have rank >= 1")
+    cd = compute_dtype or mx.float32
+    x = logits.astype(cd) if logits.dtype != cd else logits
+    D = int(x.shape[-1])
+    K = int(k)
+    if K <= 0:
+        raise ValueError("router_argpartition_logits_topk: k must be > 0")
+    if K > D:
+        raise ValueError(f"router_argpartition_logits_topk: k={K} exceeds D={D}")
+
+    inds = mx.argpartition(x, kth=-K, axis=-1)[..., -K:]
+    inds_u32 = inds.astype(mx.uint32) if inds.dtype != mx.uint32 else inds
+
+    # Keep a pure-MLX fallback for large K to avoid expensive kernel variants.
+    if K > 16:
+        topk_logits = mx.take_along_axis(x, inds_u32, axis=-1)
+        scores = mx.softmax(topk_logits, axis=-1, precise=True)  # type: ignore[call-arg]
+        return scores, inds_u32
+
+    rows = x.size // D
+    kernel = _router_argpartition_logits_topk_kernel(D, K)
+    scores = kernel(
+        x,
+        inds_u32,
+        template=[("T", cd)],
+        grid=(rows, 1, 1),
+        threadgroup=(1, 1, 1),
+        output_shapes=[x.shape[:-1] + (K,)],
+        output_dtypes=[cd],
+    )[0]
+    return scores, inds_u32
 
 
 # ---------------------------------------------------------------------------
@@ -1607,6 +1871,56 @@ def _weighted_accumulate_kernel_no_fma(d_out: int) -> Any:
     )
 
 
+@cache
+def _weighted_accumulate_kernel_fp32(d_out: int) -> Any:
+    """Like `_weighted_accumulate_kernel` but accumulates/outputs float32."""
+    D_out = int(d_out)
+    source = f"""
+        uint col = thread_position_in_grid.x;
+        uint row = thread_position_in_grid.y;
+        constexpr uint D = {D_out};
+        uint elem = row * D + col;
+        float w = (float)gate[row];
+        float v = (float)proj[elem];
+        out[elem] = (float)acc[elem] + w * v;
+    """
+    return metal_kernel(
+        name=f"kk_weighted_accumulate_fp32_D{D_out}",
+        input_names=["acc", "proj", "gate"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+@cache
+def _weighted_accumulate_kernel_fp32_no_fma(d_out: int) -> Any:
+    """FP32 accumulate/output variant with FMA contraction disabled."""
+    D_out = int(d_out)
+    source = f"""
+        #pragma clang fp contract(off)
+        uint col = thread_position_in_grid.x;
+        uint row = thread_position_in_grid.y;
+        constexpr uint D = {D_out};
+        uint elem = row * D + col;
+        float w = (float)gate[row];
+        float v = (float)proj[elem];
+        float prod = w * v;
+        out[elem] = (float)acc[elem] + prod;
+    """
+    return metal_kernel(
+        name=f"kk_weighted_accumulate_fp32_no_fma_D{D_out}",
+        input_names=["acc", "proj", "gate"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
 def _should_use_streaming(batch_size: int, streaming: bool | None) -> bool:
     """Decide whether to use streaming accumulation.
 
@@ -1626,6 +1940,8 @@ def gather_qmm_combine(
     *,
     streaming: bool | None = None,
     no_fma: bool = False,
+    output_dtype: Any | None = None,
+    vectorized_k: bool = False,
 ) -> Any:
     """Fused gather-matmul-combine for MoE down-projection (dense weights).
 
@@ -1639,6 +1955,10 @@ def gather_qmm_combine(
         gate: Gating weights, shape ``(B, K)``.
         indices: Expert indices, shape ``(B, K)`` with dtype uint32.
         streaming: Force streaming mode on/off. Default: auto (ON for B <= 16).
+        output_dtype: Optional output dtype. When set to ``mx.float32``, combine
+            accumulates and returns float32 to match promotion-sensitive paths.
+        vectorized_k: When True, use ``mx.gather_mm`` across all ``K`` experts
+            in one call, then combine with ZMLX MoE combine kernels.
 
     Returns:
         Combined output, shape ``(B, D_out)``.
@@ -1649,6 +1969,17 @@ def gather_qmm_combine(
     if weights.ndim != 3:
         raise ValueError("gather_qmm_combine: weights must have shape (E, D_in, D_out)")
     D_out = int(weights.shape[2])
+    out_dtype = act.dtype if output_dtype is None else output_dtype
+
+    if vectorized_k:
+        return gather_mmk_combine(
+            act,
+            weights,
+            gate,
+            indices,
+            no_fma=no_fma,
+            output_dtype=out_dtype,
+        )
 
     if not _should_use_streaming(B, streaming):
         # Non-streaming: batch matmul then combine
@@ -1664,31 +1995,46 @@ def gather_qmm_combine(
             proj_all.append(proj_k)
         # Stack: (B, K, D_out), then weighted sum
         proj_stacked = mx.stack(proj_all, axis=1)
-        return mx.sum(proj_stacked * mx.expand_dims(gate, axis=-1), axis=1)
+        out = mx.sum(proj_stacked * mx.expand_dims(gate, axis=-1), axis=1)
+        if out.dtype != out_dtype:
+            out = out.astype(out_dtype)
+        return out
 
     # Streaming: accumulate without (B, K, D_out) intermediate
-    k_acc = (
-        _weighted_accumulate_kernel_no_fma(D_out)
-        if no_fma
-        else _weighted_accumulate_kernel(D_out)
-    )
+    if out_dtype == mx.float32:
+        k_acc = (
+            _weighted_accumulate_kernel_fp32_no_fma(D_out)
+            if no_fma
+            else _weighted_accumulate_kernel_fp32(D_out)
+        )
+        k_acc_template = None
+    else:
+        k_acc = (
+            _weighted_accumulate_kernel_no_fma(D_out)
+            if no_fma
+            else _weighted_accumulate_kernel(D_out)
+        )
+        k_acc_template = [("T", out_dtype)]
 
-    output = mx.zeros((B, D_out), dtype=act.dtype)
+    output = mx.zeros((B, D_out), dtype=out_dtype)
     for k_idx in range(K):
         a_k = act[:, k_idx, :]
         w_k = weights[indices[:, k_idx]]
         proj_k = mx.matmul(mx.expand_dims(a_k, axis=1), w_k).squeeze(axis=1)
         gate_k = gate[:, k_idx]
 
+        kernel_kwargs: dict[str, Any] = {}
+        if k_acc_template is not None:
+            kernel_kwargs["template"] = k_acc_template
         output = k_acc(
             output,
             proj_k,
             gate_k,
-            template=[("T", act.dtype)],
             grid=(D_out, B, 1),
             threadgroup=(min(D_out, 256), 1, 1),
             output_shapes=[(B, D_out)],
-            output_dtypes=[act.dtype],
+            output_dtypes=[out_dtype],
+            **kernel_kwargs,
         )[0]
 
     return output
@@ -1706,6 +2052,8 @@ def gather_qmm_combine_quantized(
     bits: int = 4,
     streaming: bool | None = None,
     no_fma: bool = False,
+    output_dtype: Any | None = None,
+    vectorized_k: bool = False,
 ) -> Any:
     """Fused gather-qmm-combine for MoE down-projection (quantized weights).
 
@@ -1722,6 +2070,10 @@ def gather_qmm_combine_quantized(
         group_size: Quantization group size.
         bits: Number of bits per weight.
         streaming: Force streaming mode on/off. Default: auto (ON for B <= 16).
+        output_dtype: Optional output dtype. When set to ``mx.float32``, combine
+            accumulates and returns float32 to match promotion-sensitive paths.
+        vectorized_k: When True, use one ``mx.gather_qmm`` over all ``K``
+            experts via batch-level gather indices.
 
     Returns:
         Combined output, shape ``(B, D_out)``.
@@ -1732,57 +2084,91 @@ def gather_qmm_combine_quantized(
         )
     B, K, _ = act.shape
     D_out = int(weights.shape[1])
+    out_dtype = act.dtype if output_dtype is None else output_dtype
+
+    if vectorized_k:
+        return gather_qmmk_combine_quantized(
+            act,
+            weights,
+            scales,
+            biases,
+            gate,
+            indices,
+            group_size=group_size,
+            bits=bits,
+            no_fma=no_fma,
+            output_dtype=out_dtype,
+        )
 
     if not _should_use_streaming(B, streaming):
         # Non-streaming: gather_qmm per expert then combine
         proj_all = []
+        lhs_indices = mx.arange(B, dtype=mx.uint32)
         for k_idx in range(K):
             a_k = act[:, k_idx, :]
             proj_k = mx.gather_qmm(
-                a_k,
+                mx.expand_dims(a_k, axis=1),
                 weights,
                 scales,
                 biases,
+                lhs_indices=lhs_indices,
                 rhs_indices=indices[:, k_idx],
                 transpose=True,
                 group_size=group_size,
                 bits=bits,
-            )
+            ).squeeze(axis=1)
             proj_all.append(proj_k)
         proj_stacked = mx.stack(proj_all, axis=1)
-        return mx.sum(proj_stacked * mx.expand_dims(gate, axis=-1), axis=1)
+        out = mx.sum(proj_stacked * mx.expand_dims(gate, axis=-1), axis=1)
+        if out.dtype != out_dtype:
+            out = out.astype(out_dtype)
+        return out
 
     # Streaming: accumulate without (B, K, D_out) intermediate
-    k_acc = (
-        _weighted_accumulate_kernel_no_fma(D_out)
-        if no_fma
-        else _weighted_accumulate_kernel(D_out)
-    )
+    if out_dtype == mx.float32:
+        k_acc = (
+            _weighted_accumulate_kernel_fp32_no_fma(D_out)
+            if no_fma
+            else _weighted_accumulate_kernel_fp32(D_out)
+        )
+        k_acc_template = None
+    else:
+        k_acc = (
+            _weighted_accumulate_kernel_no_fma(D_out)
+            if no_fma
+            else _weighted_accumulate_kernel(D_out)
+        )
+        k_acc_template = [("T", out_dtype)]
 
-    output = mx.zeros((B, D_out), dtype=act.dtype)
+    output = mx.zeros((B, D_out), dtype=out_dtype)
+    lhs_indices = mx.arange(B, dtype=mx.uint32)
     for k_idx in range(K):
         a_k = act[:, k_idx, :]
         proj_k = mx.gather_qmm(
-            a_k,
+            mx.expand_dims(a_k, axis=1),
             weights,
             scales,
             biases,
+            lhs_indices=lhs_indices,
             rhs_indices=indices[:, k_idx],
             transpose=True,
             group_size=group_size,
             bits=bits,
-        )
+        ).squeeze(axis=1)
         gate_k = gate[:, k_idx]
 
+        kernel_kwargs: dict[str, Any] = {}
+        if k_acc_template is not None:
+            kernel_kwargs["template"] = k_acc_template
         output = k_acc(
             output,
             proj_k,
             gate_k,
-            template=[("T", act.dtype)],
             grid=(D_out, B, 1),
             threadgroup=(min(D_out, 256), 1, 1),
             output_shapes=[(B, D_out)],
-            output_dtypes=[act.dtype],
+            output_dtypes=[out_dtype],
+            **kernel_kwargs,
         )[0]
 
     return output
@@ -1791,12 +2177,16 @@ def gather_qmm_combine_quantized(
 __all__ = [
     "top2_gating_softmax",
     "topk_gating_softmax",
+    "router_argpartition_logits_topk",
     "deepseek_router_topk_sigmoid",
     "moe_dispatch",
     "moe_combine",
     "moe_combine_no_fma",
     "moe_combine_exact",
     "moe_combine_fp32",
+    "moe_combine_fp32_no_fma",
+    "gather_mmk_combine",
+    "gather_qmmk_combine_quantized",
     "gather_qmm_combine",
     "gather_qmm_combine_quantized",
 ]

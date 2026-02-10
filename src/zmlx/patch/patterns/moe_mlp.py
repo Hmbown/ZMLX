@@ -104,7 +104,99 @@ def _qwen_allow_fused_swiglu() -> bool:
     try:
         return int(raw) != 0
     except ValueError:
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _qwen_allow_fused_downproj_combine() -> bool:
+    """Return True if Qwen should use fused down-proj+combine.
+
+    Default: disabled. Set ``ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE=1`` to opt in.
+    """
+    raw = os.environ.get(_QWEN_FUSED_DOWNPROJ_COMBINE_ENV)
+    if raw is None:
+        return False
+    try:
+        return int(raw) != 0
+    except ValueError:
         return raw.strip().lower() in {"true", "yes", "on"}
+
+
+def _qwen_allow_fused_downproj_combine_kvec() -> bool:
+    """Return True if Qwen should use K-vectorized fused down-proj+combine.
+
+    Default: disabled. Set ``ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC=1`` to opt in.
+    """
+    raw = os.environ.get(_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC_ENV)
+    if raw is None:
+        return False
+    try:
+        return int(raw) != 0
+    except ValueError:
+        return raw.strip().lower() in {"true", "yes", "on"}
+
+
+def _qwen_allow_fused_router_topk() -> bool:
+    """Return True if Qwen should route via fused top-k softmax kernel.
+
+    Default: disabled. Set ``ZMLX_QWEN_FUSED_ROUTER_TOPK=1`` to opt in.
+    """
+    raw = os.environ.get(_QWEN_FUSED_ROUTER_TOPK_ENV)
+    if raw is None:
+        return False
+    try:
+        return int(raw) != 0
+    except ValueError:
+        return raw.strip().lower() in {"true", "yes", "on"}
+
+
+def _qwen_allow_logit_argpartition_router() -> bool:
+    """Return True if Qwen should route via argpartition(logits) + top-k softmax.
+
+    This preserves Qwen's argpartition index ordering but avoids the full
+    softmax over all experts when ``norm_topk_prob=True``.
+
+    Default: disabled. Set ``ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1`` to opt in.
+    """
+    raw = os.environ.get(_QWEN_ROUTER_ARGPARTITION_LOGITS_ENV)
+    if raw is None:
+        return False
+    try:
+        return int(raw) != 0
+    except ValueError:
+        return raw.strip().lower() in {"true", "yes", "on"}
+
+
+def _qwen_allow_logit_argpartition_router_topk() -> bool:
+    """Return True if Qwen should fuse top-k softmax after argpartition(logits).
+
+    Default: disabled. Set ``ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=1``.
+    """
+    raw = os.environ.get(_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK_ENV)
+    if raw is None:
+        return False
+    try:
+        return int(raw) != 0
+    except ValueError:
+        return raw.strip().lower() in {"true", "yes", "on"}
+
+
+def _qwen_combine_mode() -> str:
+    """Return Qwen combine mode override.
+
+    Modes:
+    - ``off`` (default): use MLX native ``(y * w[..., None]).sum(axis=-2)``.
+    - ``fp32``: use ``moe_combine_fp32``.
+    - ``fp32_no_fma``: use ``moe_combine_fp32_no_fma``.
+    - ``exact``: use ``moe_combine_exact`` in expert dtype.
+
+    Set via ``ZMLX_QWEN_COMBINE_MODE``.
+    """
+    raw = os.environ.get(_QWEN_COMBINE_MODE_ENV, "off").strip().lower()
+    if raw in {"", "0", "off", "false", "no"}:
+        return "off"
+    if raw in {"fp32", "fp32_no_fma", "exact"}:
+        return raw
+    return "off"
 
 
 def _gating(
@@ -132,11 +224,44 @@ def _gating(
         return indices, weights
 
     if is_qwen3:
+        norm_topk_prob = bool(getattr(self_mod, "norm_topk_prob", False))
+        if _qwen_allow_fused_router_topk() and norm_topk_prob:
+            # Opt-in fast path: top-k logits + softmax over selected values.
+            # For softmax, top-k logits and top-k probabilities are equivalent.
+            w, idx = moe.topk_gating_softmax(
+                gate_out,
+                k=k,
+                expert_bias=None,
+                norm_topk_prob=True,
+                compute_dtype=mx.float32,
+            )
+            return idx.astype(mx.uint32), w
+
+        # Optional fast path: preserve Qwen argpartition ordering while
+        # avoiding full-softmax over all experts. Restrict to FP32 logits to
+        # minimize numeric drift vs the exact reference path.
+        if (
+            norm_topk_prob
+            and _qwen_allow_logit_argpartition_router()
+            and gate_out.dtype == mx.float32
+        ):
+            if _qwen_allow_logit_argpartition_router_topk():
+                scores, inds = moe.router_argpartition_logits_topk(
+                    gate_out,
+                    k=k,
+                    compute_dtype=mx.float32,
+                )
+                return inds, scores
+            inds = mx.argpartition(gate_out, kth=-k, axis=-1)[..., -k:]
+            topk_logits = mx.take_along_axis(gate_out, inds, axis=-1)
+            scores = mx.softmax(topk_logits, axis=-1, precise=True)  # type: ignore[call-arg]
+            return inds.astype(mx.uint32), scores
+
         # Qwen3 uses precise softmax on logits, then argpartition on probs.
         gates = mx.softmax(gate_out, axis=-1, precise=True)  # type: ignore[call-arg]
         inds = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
         scores = mx.take_along_axis(gates, inds, axis=-1)
-        if getattr(self_mod, "norm_topk_prob", False):
+        if norm_topk_prob:
             scores = scores / mx.sum(scores, axis=-1, keepdims=True)
         return inds.astype(mx.uint32), scores
 
@@ -175,6 +300,33 @@ _MOE_STREAMS_ENV = "ZMLX_MOE_STREAMS"
 _MOE_STREAMS_REDUCE_ENV = "ZMLX_MOE_STREAMS_REDUCE"
 _MOE_SHARED_EXPERTS_OVERLAP_ENV = "ZMLX_MOE_SHARED_EXPERTS_OVERLAP"
 _GLM_FUSED_DOWNPROJ_COMBINE_ENV = "ZMLX_GLM_FUSED_DOWNPROJ_COMBINE"
+_GLM_COMBINE_MODE_ENV = "ZMLX_GLM_COMBINE_MODE"
+_QWEN_FUSED_DOWNPROJ_COMBINE_ENV = "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE"
+_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC_ENV = "ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC"
+_QWEN_FUSED_ROUTER_TOPK_ENV = "ZMLX_QWEN_FUSED_ROUTER_TOPK"
+_QWEN_ROUTER_ARGPARTITION_LOGITS_ENV = "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS"
+_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK_ENV = "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK"
+_QWEN_COMBINE_MODE_ENV = "ZMLX_QWEN_COMBINE_MODE"
+
+
+def _glm_combine_mode() -> str:
+    """Return GLM combine mode override.
+
+    Modes:
+    - ``off`` (default): keep current GLM path (discovered combine if available,
+      otherwise native ``(y * w[..., None]).sum(axis=-2)``).
+    - ``fp32``: use ``moe_combine_fp32``.
+    - ``fp32_no_fma``: use ``moe_combine_fp32_no_fma``.
+    - ``exact``: use ``moe_combine_exact`` in expert dtype.
+
+    Set via ``ZMLX_GLM_COMBINE_MODE``.
+    """
+    raw = os.environ.get(_GLM_COMBINE_MODE_ENV, "off").strip().lower()
+    if raw in {"", "0", "off", "false", "no"}:
+        return "off"
+    if raw in {"fp32", "fp32_no_fma", "exact"}:
+        return raw
+    return "off"
 
 
 def _get_moe_stream_pool() -> list[mx.Stream] | None:
@@ -291,12 +443,24 @@ def _flatten_for_fused_combine(
     indices: Any,
 ) -> tuple[Any, Any, Any, tuple[int, ...]] | None:
     """Normalize MoE tensors to 3D for gather_qmm_combine helpers."""
-    if act.ndim != indices.ndim + 1:
-        return None
     if gate.shape != indices.shape:
         return None
-    if act.shape[:-1] != indices.shape:
+
+    # Common path: act (..., K, D)
+    if act.ndim == indices.ndim + 1:
+        if act.shape[:-1] != indices.shape:
+            return None
+    # SwitchGLU path: act (..., K, 1, D) where the singleton axis is an
+    # implementation detail from quantized expert projection.
+    elif act.ndim == indices.ndim + 2:
+        if int(act.shape[-2]) != 1:
+            return None
+        if act.shape[:-2] != indices.shape:
+            return None
+        act = mx.squeeze(act, axis=-2)
+    else:
         return None
+
     k = indices.shape[-1]
     act_flat = act.reshape(-1, k, act.shape[-1])
     gate_flat = gate.reshape(-1, k)
@@ -513,6 +677,7 @@ def _try_fused_downproj_combine(
     gate: Any,
     *,
     require_fp32: bool,
+    vectorized_k: bool = False,
 ) -> Any | None:
     """Attempt fused down-projection + combine for SwitchGLU modules."""
     if not _is_standard_swiglu_activation(switch_mlp):
@@ -536,8 +701,10 @@ def _try_fused_downproj_combine(
         if getattr(down_proj, "mode", "affine") != "affine":
             return None
 
-    if require_fp32 and gate.dtype != mx.float32:
-        return None
+    # Some MLX builds keep Qwen routing scores in bfloat16 even with
+    # `precise=True` softmax. In that case, use dtype-accurate combine
+    # semantics instead of disabling the fused path entirely.
+    want_fp32 = bool(require_fp32 and gate.dtype == mx.float32)
 
     try:
         gate_act = gate_proj(x, indices)
@@ -554,10 +721,17 @@ def _try_fused_downproj_combine(
         return None
     act_flat, gate_flat, indices_flat, out_shape = flat
 
-    if require_fp32 and (act_flat.dtype != mx.float32 or gate_flat.dtype != mx.float32):
-        return None
+    if want_fp32 and gate_flat.dtype != mx.float32:
+        want_fp32 = False
     if indices_flat.dtype != mx.uint32:
         indices_flat = indices_flat.astype(mx.uint32)
+
+    combine_output_dtype = mx.float32 if want_fp32 else None
+    combine_no_fma = bool(want_fp32)
+    # For Qwen-like FP32 combine semantics, non-streaming is often faster than
+    # per-expert streaming accumulation because it avoids extra accumulator
+    # kernel launches at small decode batch sizes.
+    combine_streaming = False if want_fp32 else None
 
     if is_quantized:
         biases = down_proj.get("biases") if hasattr(down_proj, "get") else None
@@ -570,6 +744,10 @@ def _try_fused_downproj_combine(
             indices_flat,
             group_size=down_proj.group_size,
             bits=down_proj.bits,
+            no_fma=combine_no_fma,
+            output_dtype=combine_output_dtype,
+            streaming=combine_streaming,
+            vectorized_k=vectorized_k,
         )
     else:
         weights = getattr(down_proj, "weight", None)
@@ -583,6 +761,10 @@ def _try_fused_downproj_combine(
             weights,
             gate_flat,
             indices_flat,
+            no_fma=combine_no_fma,
+            output_dtype=combine_output_dtype,
+            streaming=combine_streaming,
+            vectorized_k=vectorized_k,
         )
 
     return out_flat.reshape((*out_shape, out_flat.shape[-1]))
@@ -653,8 +835,8 @@ class _MoEMLPPattern:
         if is_qwen3 and _use_fused_swiglu and not _qwen_allow_fused_swiglu():
             if config.verbose:
                 print(
-                    "  [moe_mlp] Qwen detected: fused SwiGLU disabled by default. "
-                    "Set ZMLX_QWEN_FUSED_SWIGLU=1 to opt in."
+                    "  [moe_mlp] Qwen detected: fused SwiGLU disabled by default; "
+                    "set ZMLX_QWEN_FUSED_SWIGLU=1 to opt in"
                 )
             _use_fused_swiglu = False
         if is_glm and _use_fused_swiglu and not _glm_allow_fused_swiglu():
@@ -677,6 +859,13 @@ class _MoEMLPPattern:
         glm_fused_downproj_combine = os.environ.get(
             _GLM_FUSED_DOWNPROJ_COMBINE_ENV, ""
         ).strip().lower() in {"1", "true", "yes"}
+        glm_combine_mode = _glm_combine_mode()
+        qwen_fused_downproj_combine_kvec = _qwen_allow_fused_downproj_combine_kvec()
+        qwen_combine_mode = _qwen_combine_mode()
+        if is_glm and glm_combine_mode != "off" and config.verbose:
+            print(f"  [moe_mlp] GLM combine override enabled (mode={glm_combine_mode})")
+        if is_qwen3 and qwen_combine_mode != "off" and config.verbose:
+            print(f"  [moe_mlp] Qwen combine override enabled (mode={qwen_combine_mode})")
 
         # Optional: overlap GLM/DeepSeek-style `shared_experts(x)` with routed
         # expert execution. This is experimental and may regress on some MLX
@@ -723,7 +912,16 @@ class _MoEMLPPattern:
                         max_tokens=min(fused_swiglu_max_tokens, 16),
                         no_fma=True,  # GLM requires no-FMA semantics for fidelity
                     )
-                if is_qwen3 or is_lfm2:
+                if is_qwen3 and _qwen_allow_fused_downproj_combine():
+                    fused_out = _try_fused_downproj_combine(
+                        switch_mlp,
+                        x,
+                        indices,
+                        gate_weights,
+                        require_fp32=use_exact_combine,
+                        vectorized_k=qwen_fused_downproj_combine_kvec,
+                    )
+                elif is_lfm2:
                     fused_out = _try_fused_downproj_combine(
                         switch_mlp,
                         x,
@@ -786,16 +984,63 @@ class _MoEMLPPattern:
             # multiply + reduce and avoids custom-kernel dispatch overhead.
             if expert_outputs is not None:
                 if is_glm:
-                    # Try discovered optimized combine (1.64x micro-bench)
-                    y = (_disc_moe_combine(expert_outputs, gate_weights)
-                         if _disc_moe_combine is not None else None)
-                    if y is None:
-                        y = (expert_outputs * gate_weights[..., None]).sum(axis=-2)
-                    y = y.astype(expert_outputs.dtype)
+                    if glm_combine_mode == "fp32":
+                        gw = (
+                            gate_weights
+                            if gate_weights.dtype == mx.float32
+                            else gate_weights.astype(mx.float32)
+                        )
+                        y = moe.moe_combine_fp32(expert_outputs, gw)
+                        y = y.astype(expert_outputs.dtype)
+                    elif glm_combine_mode == "fp32_no_fma":
+                        gw = (
+                            gate_weights
+                            if gate_weights.dtype == mx.float32
+                            else gate_weights.astype(mx.float32)
+                        )
+                        y = moe.moe_combine_fp32_no_fma(expert_outputs, gw)
+                        y = y.astype(expert_outputs.dtype)
+                    elif glm_combine_mode == "exact":
+                        gw = (
+                            gate_weights
+                            if gate_weights.dtype == expert_outputs.dtype
+                            else gate_weights.astype(expert_outputs.dtype)
+                        )
+                        y = moe.moe_combine_exact(expert_outputs, gw)
+                        y = y.astype(expert_outputs.dtype)
+                    else:
+                        # Try discovered optimized combine (1.64x micro-bench)
+                        y = (_disc_moe_combine(expert_outputs, gate_weights)
+                             if _disc_moe_combine is not None else None)
+                        if y is None:
+                            y = (expert_outputs * gate_weights[..., None]).sum(axis=-2)
+                        y = y.astype(expert_outputs.dtype)
                 elif is_qwen3:
-                    # Qwen3: (y * scores[..., None]).sum(axis=-2)
-                    # scores are float32 from precise softmax; MLX promotes naturally.
-                    y = (expert_outputs * gate_weights[..., None]).sum(axis=-2)
+                    # Qwen3 default: (y * scores[..., None]).sum(axis=-2)
+                    # Optional: use ZMLX combine kernels for targeted profiling.
+                    if qwen_combine_mode == "fp32":
+                        gw = (
+                            gate_weights
+                            if gate_weights.dtype == mx.float32
+                            else gate_weights.astype(mx.float32)
+                        )
+                        y = moe.moe_combine_fp32(expert_outputs, gw)
+                    elif qwen_combine_mode == "fp32_no_fma":
+                        gw = (
+                            gate_weights
+                            if gate_weights.dtype == mx.float32
+                            else gate_weights.astype(mx.float32)
+                        )
+                        y = moe.moe_combine_fp32_no_fma(expert_outputs, gw)
+                    elif qwen_combine_mode == "exact":
+                        gw = (
+                            gate_weights
+                            if gate_weights.dtype == expert_outputs.dtype
+                            else gate_weights.astype(expert_outputs.dtype)
+                        )
+                        y = moe.moe_combine_exact(expert_outputs, gw)
+                    else:
+                        y = (expert_outputs * gate_weights[..., None]).sum(axis=-2)
                 elif is_gpt_oss:
                     # GPT-OSS: match MLX's dtype promotion and sum order.
                     if gate_weights.dtype == mx.float32:
