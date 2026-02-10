@@ -19,7 +19,9 @@ except Exception:
     _disc_rmsnorm = None
 
 try:
-    from ..kd import registry as _kd_registry
+    from ..kd import registry as _kd_registry_mod
+
+    _kd_registry: Any = _kd_registry_mod
 except Exception:
     _kd_registry = None
 

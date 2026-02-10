@@ -50,7 +50,8 @@ def load_hf_config(
     if revision:
         kwargs["revision"] = revision
     path = hf_hub_download(**kwargs)
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    result: dict[str, Any] = json.loads(Path(path).read_text(encoding="utf-8"))
+    return result
 
 
 def _as_int(value: Any) -> int | None:

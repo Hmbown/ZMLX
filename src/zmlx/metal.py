@@ -45,14 +45,14 @@ try:
     _PY_CAPSULE_GET_POINTER.argtypes = [ctypes.py_object, ctypes.c_char_p]
     _PY_CAPSULE_GET_POINTER.restype = ctypes.c_void_p
 except Exception:  # pragma: no cover - CPython capsule API should exist
-    _PY_CAPSULE_GET_POINTER = None
+    _PY_CAPSULE_GET_POINTER = None  # type: ignore[assignment]
 
 try:
     _PY_CAPSULE_IS_VALID = ctypes.pythonapi.PyCapsule_IsValid
     _PY_CAPSULE_IS_VALID.argtypes = [ctypes.py_object, ctypes.c_char_p]
     _PY_CAPSULE_IS_VALID.restype = ctypes.c_int
 except Exception:  # pragma: no cover - CPython capsule API should exist
-    _PY_CAPSULE_IS_VALID = None
+    _PY_CAPSULE_IS_VALID = None  # type: ignore[assignment]
 
 
 @dataclass

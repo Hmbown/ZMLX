@@ -12,7 +12,12 @@ from .env import runtime_fingerprint
 from .eval import evaluate_candidate
 from .features import candidate_vector, collect_feature_keys
 from .graph import build_knn_graph
-from .model_shapes import derive_shape_suite_from_config, load_hf_config, parse_decode_rows
+from .model_shapes import (
+    derive_shape_suite_from_config,
+    derive_shape_suite_from_log,
+    load_hf_config,
+    parse_decode_rows,
+)
 from .mutations import initial_population, neighbor_mutations
 from .ops import OPS, get_op
 from .report import (
@@ -52,6 +57,20 @@ def _shape_suite_from_model(args: argparse.Namespace, op_module: Any) -> tuple[s
     return f"hf:{args.model_id}", [op_module.normalize_shape(s) for s in shapes]
 
 
+def _shape_suite_from_log(args: argparse.Namespace, op_module: Any) -> tuple[str, list[dict[str, Any]]]:
+    if not args.shape_log:
+        raise ValueError("--shape-log is required for log-derived shapes")
+    shapes = derive_shape_suite_from_log(
+        op_module.OP_NAME,
+        args.shape_log,
+        dtype_name=args.dtype,
+        max_shapes=int(args.log_max_shapes),
+        min_count=int(args.log_min_count),
+    )
+    label = f"log:{Path(args.shape_log).name}"
+    return label, [op_module.normalize_shape(s) for s in shapes]
+
+
 def _discrete_search_space_size(op_module: Any) -> int | None:
     total = 1
     for attr in ("TEMPLATE_PARAM_SPACE", "LAUNCH_PARAM_SPACE"):
@@ -68,13 +87,16 @@ def _discrete_search_space_size(op_module: Any) -> int | None:
 
 def _run_search(args: argparse.Namespace) -> None:
     op_module = get_op(args.op)
-    if args.shapes == "auto" and not args.model_id:
-        raise ValueError("--shapes auto requires --model-id")
-    use_model_shapes = bool(args.model_id) and (args.shapes in {None, "auto"})
-    if use_model_shapes:
-        shape_suite_name, shape_suite = _shape_suite_from_model(args, op_module)
+    if args.shape_log:
+        shape_suite_name, shape_suite = _shape_suite_from_log(args, op_module)
     else:
-        shape_suite_name, shape_suite = _shape_suite(op_module, args.shapes)
+        if args.shapes == "auto" and not args.model_id:
+            raise ValueError("--shapes auto requires --model-id")
+        use_model_shapes = bool(args.model_id) and (args.shapes in {None, "auto"})
+        if use_model_shapes:
+            shape_suite_name, shape_suite = _shape_suite_from_model(args, op_module)
+        else:
+            shape_suite_name, shape_suite = _shape_suite(op_module, args.shapes)
     search_space_size = _discrete_search_space_size(op_module)
     effective_budget = min(args.budget, search_space_size) if search_space_size is not None else args.budget
 
@@ -154,6 +176,8 @@ def _run_search(args: argparse.Namespace) -> None:
                 seed=args.seed + step * 1009 + idx,
                 warmup=args.warmup,
                 iters=args.iters,
+                repeats=args.bench_repeats,
+                bench_mode=args.bench_mode,
                 baseline_cache=baseline_cache,
             )
             archive.candidates[updated.candidate_id] = updated
@@ -213,33 +237,53 @@ def _run_search(args: argparse.Namespace) -> None:
 
 
 def _run_suggest_shapes(args: argparse.Namespace) -> None:
-    config = load_hf_config(
-        args.model_id,
-        revision=args.revision,
-        local_files_only=bool(args.local_files_only),
-    )
-    decode_rows = parse_decode_rows(args.decode_rows)
     op_names = [args.op] if args.op else list(_PHASE0_OPS)
     shapes: dict[str, list[dict[str, int]]] = {}
     errors: dict[str, str] = {}
-    for op_name in op_names:
-        try:
-            shapes[op_name] = derive_shape_suite_from_config(
-                op_name,
-                config,
-                decode_rows=decode_rows,
-            )
-        except Exception as exc:
-            errors[op_name] = str(exc)
 
-    payload: dict[str, Any] = {
-        "model_id": args.model_id,
-        "revision": args.revision or "main",
-        "model_type": str(config.get("model_type", "unknown")),
-        "decode_rows": list(decode_rows),
-        "shape_suites": shapes,
-        "errors": errors,
-    }
+    if args.shape_log:
+        for op_name in op_names:
+            try:
+                shapes[op_name] = derive_shape_suite_from_log(
+                    op_name,
+                    args.shape_log,
+                    max_shapes=int(args.log_max_shapes),
+                    min_count=int(args.log_min_count),
+                )
+            except Exception as exc:
+                errors[op_name] = str(exc)
+        payload: dict[str, Any] = {
+            "shape_log": str(args.shape_log),
+            "shape_suites": shapes,
+            "errors": errors,
+        }
+    else:
+        if not args.model_id:
+            raise ValueError("--model-id is required unless --shape-log is provided")
+        config = load_hf_config(
+            args.model_id,
+            revision=args.revision,
+            local_files_only=bool(args.local_files_only),
+        )
+        decode_rows = parse_decode_rows(args.decode_rows)
+        for op_name in op_names:
+            try:
+                shapes[op_name] = derive_shape_suite_from_config(
+                    op_name,
+                    config,
+                    decode_rows=decode_rows,
+                )
+            except Exception as exc:
+                errors[op_name] = str(exc)
+
+        payload = {
+            "model_id": args.model_id,
+            "revision": args.revision or "main",
+            "model_type": str(config.get("model_type", "unknown")),
+            "decode_rows": list(decode_rows),
+            "shape_suites": shapes,
+            "errors": errors,
+        }
 
     out = Path(args.output) if args.output else None
     if out is not None:
@@ -269,7 +313,7 @@ def _load_candidates_from_records(records: list[dict[str, Any]]) -> list[KernelC
             template_params=dict(rec.get("template_params", {})),
             launch_params=dict(rec.get("launch_params", {})),
             features=dict(rec.get("features", {})),
-            status=str(rec.get("status", "new")),
+            status=rec.get("status", "new"),  # type: ignore[arg-type]
             metrics=dict(rec.get("metrics", {})),
             parent_id=rec.get("parent_id"),
             notes=dict(rec.get("notes", {})),
@@ -364,6 +408,156 @@ def _run_pack(args: argparse.Namespace) -> None:
     print(f"Packed {len(payloads)} runs into {out}")
 
 
+def _summarize_decisions(decisions: list[Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for decision in decisions:
+        reason = str(getattr(decision, "reason", "unknown"))
+        ok = bool(getattr(decision, "ok", False))
+        if ok:
+            continue
+        counts[reason] = counts.get(reason, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _run_promote(args: argparse.Namespace) -> None:
+    if args.patterns is not None and args.patch_profile is not None:
+        raise ValueError("Use either --patterns or --patch-profile, not both.")
+
+    run_path = Path(args.run)
+    run_dir = run_path
+    ndjson_path = run_path
+    meta_path = run_path / "run_meta.json"
+    if run_path.is_dir():
+        ndjson_path = run_path / "run.ndjson"
+    elif run_path.name.endswith(".ndjson"):
+        run_dir = run_path.parent
+        meta_path = run_dir / "run_meta.json"
+    else:
+        raise FileNotFoundError(f"Expected run directory or run.ndjson, got {run_path}")
+
+    if not ndjson_path.exists():
+        raise FileNotFoundError(f"Missing run log: {ndjson_path}")
+
+    records = load_ndjson(ndjson_path)
+    candidates = _load_candidates_from_records(records)
+    runtime_env: dict[str, Any] = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            runtime_env = dict(meta.get("runtime", {}))
+        except Exception:
+            runtime_env = {}
+
+    from .promotion import PromotionPolicy, build_promotion_capsule, run_promotion_validation, select_promoted_entries
+
+    policy = PromotionPolicy(
+        min_speedup_p10=float(args.min_speedup_p10),
+        noise_guard=float(args.noise_guard),
+        max_noise_pct=float(args.max_noise_pct),
+    )
+    selection = select_promoted_entries(candidates, runtime_env=runtime_env, policy=policy)
+
+    promoted_path = Path(args.promoted_out) if args.promoted_out else (run_dir / "promoted_kernels.json")
+    promoted_path.parent.mkdir(parents=True, exist_ok=True)
+    promoted_path.write_text(json.dumps(selection.payload, indent=2), encoding="utf-8")
+
+    print(f"Promoted entries: {selection.promoted_count}")
+    if args.report_out:
+        report_path = Path(args.report_out)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_payload = {
+            "promoted_entries": selection.promoted_count,
+            "policy": {
+                "min_speedup_p10": policy.min_speedup_p10,
+                "noise_guard": policy.noise_guard,
+                "max_noise_pct": policy.max_noise_pct,
+            },
+            "decisions": [d.__dict__ for d in selection.decisions],
+            "rejection_summary": _summarize_decisions(selection.decisions),
+        }
+        report_path.write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+        print(f"Promotion report: {report_path}")
+
+    if selection.promoted_count == 0:
+        rejection_summary = _summarize_decisions(selection.decisions)
+        if rejection_summary:
+            print("No promotable kernels (summary):")
+            for reason, count in rejection_summary.items():
+                print(f"  - {reason}: {count}")
+        raise SystemExit(2)
+
+    if args.skip_validate:
+        print("Skipping end-to-end validation (--skip-validate).")
+        return
+
+    from zmlx.kv_cache import kv_cache_kwargs
+
+    gen_kwargs = kv_cache_kwargs(
+        kv_bits=args.kv_bits,
+        kv_group_size=args.kv_group_size,
+        quantized_kv_start=args.quantized_kv_start,
+    )
+
+    validation = run_promotion_validation(
+        model_id=args.model,
+        patterns=args.patterns,
+        patch_profile=args.patch_profile,
+        prompt=args.prompt,
+        max_tokens=args.max_tokens,
+        runs=args.runs,
+        gen_kwargs=gen_kwargs,
+        discovered_path=promoted_path,
+    )
+
+    fidelity_line = f"{validation.match_count}/{validation.total} tokens identical"
+    verdict = "PASS" if validation.fidelity_ok else "FAIL"
+    print(f"FIDELITY: {fidelity_line} [{verdict}]")
+    print(
+        f"MEDIAN DECODE: control={validation.control['median_gen_tps']:.2f} "
+        f"discovered={validation.candidate['median_gen_tps']:.2f} "
+        f"ratio={validation.median_gen_ratio:.3f}"
+    )
+
+    if args.capsule_out:
+        capsule_path = Path(args.capsule_out)
+        capsule_path.parent.mkdir(parents=True, exist_ok=True)
+        capsule = build_promotion_capsule(
+            model_id=args.model,
+            patterns=args.patterns,
+            patch_profile=args.patch_profile,
+            max_tokens=args.max_tokens,
+            runs=args.runs,
+            prompt=args.prompt,
+            discovered_path=promoted_path,
+            validation=validation,
+            note="Kernel discovery promotion validation",
+        )
+        capsule_path.write_text(json.dumps(capsule, indent=2), encoding="utf-8")
+        print(f"Repro capsule: {capsule_path}")
+
+    if not validation.fidelity_ok:
+        raise SystemExit(3)
+    if validation.median_gen_ratio < float(args.min_gen_tps_ratio):
+        raise SystemExit(4)
+
+    target = Path(args.output)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        existing = json.loads(target.read_text(encoding="utf-8"))
+    else:
+        existing = {"schema_version": "2", "entries": []}
+
+    merged = merge_best_payloads([existing, selection.payload])
+    target.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+    print(f"Installed promoted kernels to {target}")
+
+
+def _run_pipeline(args: argparse.Namespace) -> None:
+    _run_search(args)
+    args.run = args.out
+    _run_promote(args)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="zmlx-kernel-discover",
@@ -387,6 +581,23 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--out", default="runs/kernel_discovery")
         p.add_argument("--shapes", default=None)
         p.add_argument(
+            "--shape-log",
+            default=None,
+            help="JSONL runtime shape log (ZMLX_KD_SHAPE_LOG) to derive shape suite.",
+        )
+        p.add_argument(
+            "--log-max-shapes",
+            type=int,
+            default=8,
+            help="Max shapes to keep from runtime shape log (per op).",
+        )
+        p.add_argument(
+            "--log-min-count",
+            type=int,
+            default=1,
+            help="Minimum occurrence count to keep a shape from runtime log.",
+        )
+        p.add_argument(
             "--model-id",
             default=None,
             help=(
@@ -407,6 +618,18 @@ def build_parser() -> argparse.ArgumentParser:
         )
         p.add_argument("--warmup", type=int, default=3)
         p.add_argument("--iters", type=int, default=10)
+        p.add_argument(
+            "--bench-repeats",
+            type=int,
+            default=3,
+            help="Repeat interleaved A/B timing batches per shape.",
+        )
+        p.add_argument(
+            "--bench-mode",
+            default="interleaved",
+            choices=["interleaved", "legacy"],
+            help="Benchmarking mode (interleaved A/B or legacy sequential).",
+        )
         p.add_argument("--batch", type=int, default=8)
         p.add_argument("--neighbors", type=int, default=4)
         p.add_argument("--knn", type=int, default=8)
@@ -414,6 +637,64 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--exploit-fraction", type=float, default=0.25)
         p.add_argument("--novelty-fraction", type=float, default=0.25)
         p.add_argument("--min-tour-gap", type=int, default=3)
+
+    def add_promote_args(p: argparse.ArgumentParser, *, include_run: bool = True) -> None:
+        if include_run:
+            p.add_argument("--run", required=True, help="Path to run dir or run.ndjson")
+        p.add_argument("--model", required=True, help="Hugging Face model ID for validation")
+        p.add_argument("--patterns", nargs="+", default=None, help="Patch patterns to apply")
+        p.add_argument("--patch-profile", type=str, default=None, help="Patch profile to apply")
+        p.add_argument("--max-tokens", type=int, default=200, help="Tokens to generate")
+        p.add_argument("--runs", type=int, default=3, help="Timed runs per config")
+        p.add_argument(
+            "--prompt",
+            type=str,
+            default=(
+                "Explain the key differences between TCP and UDP protocols, "
+                "including their use cases, reliability guarantees, and "
+                "performance characteristics. Be thorough and precise."
+            ),
+        )
+        p.add_argument("--kv-bits", type=int, default=None, help="Quantize KV cache to N bits")
+        p.add_argument("--kv-group-size", type=int, default=None, help="Group size for KV cache quantization")
+        p.add_argument("--quantized-kv-start", type=int, default=None, help="Step to begin quantized KV cache")
+        p.add_argument(
+            "--min-gen-tps-ratio",
+            type=float,
+            default=1.0,
+            help="Minimum median decode tok/s ratio vs control to promote.",
+        )
+        p.add_argument(
+            "--min-speedup-p10",
+            type=float,
+            default=1.01,
+            help="Minimum per-shape speedup p10 required for promotion.",
+        )
+        p.add_argument(
+            "--noise-guard",
+            type=float,
+            default=0.5,
+            help="Scale factor for noise-aware promotion gating.",
+        )
+        p.add_argument(
+            "--max-noise-pct",
+            type=float,
+            default=0.2,
+            help="Maximum tolerated speedup noise percentage.",
+        )
+        p.add_argument(
+            "--promoted-out",
+            default=None,
+            help="Optional path to write promoted kernel payload.",
+        )
+        p.add_argument(
+            "--output",
+            default="configs/discovered_kernels.json",
+            help="Pinned kernel config to update on successful promotion.",
+        )
+        p.add_argument("--report-out", default=None, help="Optional JSON report output for promotion decisions.")
+        p.add_argument("--capsule-out", default=None, help="Optional JSON repro capsule output path.")
+        p.add_argument("--skip-validate", action="store_true", help="Skip end-to-end validation.")
 
     p_run = sub.add_parser("run", help="Run kernel discovery")
     add_common(p_run)
@@ -437,11 +718,37 @@ def build_parser() -> argparse.ArgumentParser:
     p_pack.add_argument("--out", required=True, help="Output merged kernel-pack path")
     p_pack.set_defaults(func=_run_pack)
 
+    p_promote = sub.add_parser("promote", help="Promote discovered kernels with validation gating")
+    add_promote_args(p_promote, include_run=True)
+    p_promote.set_defaults(func=_run_promote)
+
+    p_pipeline = sub.add_parser("pipeline", help="Run discovery + validate + promote")
+    add_common(p_pipeline)
+    add_promote_args(p_pipeline, include_run=False)
+    p_pipeline.set_defaults(func=_run_pipeline)
+
     p_suggest = sub.add_parser(
         "suggest-shapes",
         help="Infer model-aware shape suites from Hugging Face config.json",
     )
-    p_suggest.add_argument("--model-id", required=True, help="Hugging Face model ID")
+    p_suggest.add_argument("--model-id", required=False, help="Hugging Face model ID")
+    p_suggest.add_argument(
+        "--shape-log",
+        default=None,
+        help="JSONL runtime shape log (ZMLX_KD_SHAPE_LOG) to derive shape suite.",
+    )
+    p_suggest.add_argument(
+        "--log-max-shapes",
+        type=int,
+        default=8,
+        help="Max shapes to keep from runtime shape log (per op).",
+    )
+    p_suggest.add_argument(
+        "--log-min-count",
+        type=int,
+        default=1,
+        help="Minimum occurrence count to keep a shape from runtime log.",
+    )
     p_suggest.add_argument("--revision", default=None, help="Optional Hugging Face revision")
     p_suggest.add_argument(
         "--local-files-only",

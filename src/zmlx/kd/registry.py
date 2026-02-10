@@ -42,7 +42,8 @@ def _load_payload(path: Path) -> dict[str, Any]:
     cached_path = _payload_cache.get("path")
     cached_mtime = _payload_cache.get("mtime")
     if cached_path == str(path) and cached_mtime == mtime:
-        return _payload_cache.get("payload", {"entries": []})
+        result: dict[str, Any] = _payload_cache.get("payload", {"entries": []})
+        return result
 
     data = json.loads(path.read_text(encoding="utf-8"))
     if "entries" not in data and "ops" in data:
@@ -69,7 +70,7 @@ def _load_payload(path: Path) -> dict[str, Any]:
         "mtime": mtime,
         "payload": data,
     }
-    return data
+    return data  # type: ignore[no-any-return]
 
 
 def _shape_match(allowed: dict[str, Any], actual: dict[str, Any]) -> bool:

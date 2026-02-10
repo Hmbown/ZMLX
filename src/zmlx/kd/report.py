@@ -141,6 +141,7 @@ def best_kernels_payload(
             "entries": [],
             "runtime": runtime_env or {},
         }
+    bench = sorted(bench, key=lambda cand: cand.candidate_id)
 
     def _shape_key(shape_sig: dict[str, Any]) -> str:
         return json.dumps(shape_sig, sort_keys=True, separators=(",", ":"))
@@ -162,8 +163,19 @@ def best_kernels_payload(
             shape_latency = float(case.get("latency_us", cand.metrics.get("latency_us", float("inf"))))
             entry_key = (cand.op_name, dtype_name, _shape_key(shape_sig))
             current = best_by_key.get(entry_key)
-            if current is not None and shape_latency >= current["latency_us"]:
-                continue
+            if current is not None:
+                cur_latency = float(current["latency_us"])
+                cur_err = float(current.get("correctness_max_abs_err", float("inf")))
+                cand_err = float(
+                    case.get("max_abs_err", cand.metrics.get("correctness_max_abs_err", float("inf")))
+                )
+                if shape_latency > cur_latency:
+                    continue
+                if shape_latency == cur_latency:
+                    if cand_err > cur_err:
+                        continue
+                    if cand_err == cur_err and cand.candidate_id >= current["candidate"].candidate_id:
+                        continue
 
             best_by_key[entry_key] = {
                 "candidate": cand,
@@ -232,7 +244,7 @@ def write_best_kernels(
 def merge_best_payloads(payloads: list[dict[str, Any]]) -> dict[str, Any]:
     """Merge best-kernel payloads, keeping the best latency per key."""
     merged: dict[str, dict[str, Any]] = {}
-    runtime = {}
+    runtime: dict[str, Any] = {}
 
     def _key_str(entry: dict[str, Any]) -> str:
         key = entry.get("key", {})

@@ -232,7 +232,7 @@ class SKVMLALatentCacheRuntime:
         self.offset += L
 
     def rank_shd(self, *, compute_dtype: Any | None = None) -> Any:
-        _require(self._compressed_chunks, "SKVMLALatentCacheRuntime: no compressed latent state")
+        _require(bool(self._compressed_chunks), "SKVMLALatentCacheRuntime: no compressed latent state")
         if self._rank_cache_merged is None:
             parts = [
                 skv_dequantize_rank_chunk(state, compute_dtype=mx.float32)
@@ -247,11 +247,12 @@ class SKVMLALatentCacheRuntime:
         if self._compressed_chunks:
             _require(self.basis is not None, "SKVMLALatentCacheRuntime: missing basis")
             rank_state = self.rank_shd(compute_dtype=mx.float32)
+            assert self.basis is not None
             latent_shd = mx.einsum("shr,hdr->shd", rank_state, self.basis.astype(mx.float32))
             S, H, D = map(int, latent_shd.shape)
             out = latent_shd.reshape(S, H, D, 1)
             out = mx.transpose(out, axes=(3, 1, 0, 2))
-            return out.astype(self.basis.dtype)
+            return out.astype(self.basis.dtype)  # basis asserted above
         _require(self.latent_dense is not None, "SKVMLALatentCacheRuntime: no latent state available")
         return self.latent_dense
 
@@ -262,12 +263,14 @@ class SKVMLALatentCacheRuntime:
 
     def rope_shd(self) -> Any:
         _require(self.k_rope_dense is not None, "SKVMLALatentCacheRuntime: no rope state available")
+        assert self.k_rope_dense is not None
         S = int(self.k_rope_dense.shape[2])
         return mx.transpose(self.k_rope_dense, axes=(2, 1, 0, 3)).reshape(S, 1, self.rope_dim)
 
     def materialize_keys_values(self) -> tuple[Any, Any]:
         latent = self.dense_latent_b1hld()
         _require(self.k_rope_dense is not None, "SKVMLALatentCacheRuntime: no rope state available")
+        assert self.k_rope_dense is not None
         keys = mx.concatenate([latent, self.k_rope_dense], axis=-1)
         values = latent
         return keys, values
