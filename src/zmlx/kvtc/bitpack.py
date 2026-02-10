@@ -22,7 +22,7 @@ def pack_uint(values: np.ndarray, bits: int) -> bytes:
     if bits == 0:
         return b""
     if bits == 8:
-        return values.astype(np.uint8, copy=False).tobytes(order="C")
+        return bytes(values.astype(np.uint8, copy=False).tobytes(order="C"))
 
     mask = (1 << bits) - 1
     out = bytearray()

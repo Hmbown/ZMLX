@@ -51,7 +51,9 @@ def main(argv: list[str] | None = None) -> None:
     from .utils import to_numpy
 
     print(f"Loading model: {args.model}")
-    model, tokenizer = mlx_lm.load(args.model)
+    loaded = mlx_lm.load(args.model)
+    model = loaded[0]
+    tokenizer = loaded[1]
 
     tokens = tokenizer.encode(args.prompt)
     print(f"Prompt tokens: {len(tokens)}, generating up to {args.max_tokens} more...")
@@ -69,6 +71,7 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     # Select adapter
+    adapter: GLMMlaCacheAdapter | MLXLMCacheAdapter
     if args.preset:
         preset = model_preset(args.preset)
         if preset.mode == "single_stream":

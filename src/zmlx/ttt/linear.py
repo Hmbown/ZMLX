@@ -18,6 +18,7 @@ path is in ``kernel.py``.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -291,7 +292,7 @@ class TTTLinear(nn.Module):
 
         cache.seq_offset += 1
 
-        return output
+        return cast(mx.array, output)
 
     def _prefill_minibatch(
         self,
@@ -353,7 +354,7 @@ class TTTLinear(nn.Module):
         # Causal attention-like matrix
         Attn1 = xq @ mx.transpose(xk, (0, 2, 1))  # [B*nh, K, K]
         # Apply causal mask
-        mask = mx.tril(mx.ones((K, K)))
+        mask = mx.tril(mx.ones((K, K)), 0)
         Attn1 = Attn1 * mask
 
         # Simplified eta scaling for bias update

@@ -53,7 +53,7 @@ def _simulate_quantization_uniform(block: np.ndarray, bits: int) -> np.ndarray:
     q = np.rint((block - vmin) / scale).astype(np.int32)
     q = np.clip(q, 0, levels - 1).astype(np.float32)
     deq = q * scale + vmin
-    return deq.astype(block.dtype, copy=False)
+    return np.asarray(deq, dtype=block.dtype)
 
 
 def _bits_for_qtype(qtype: str) -> int:

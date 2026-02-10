@@ -22,6 +22,7 @@ Also handles ``shared_experts`` (additive dense MLP) when present.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Any
 
 import mlx.core as mx
@@ -33,11 +34,13 @@ from .._registry import register
 from .._types import PatchConfig
 
 # Discovered kernel imports — safe no-ops if not exported yet.
+_disc_moe_combine: Callable[..., Any | None] | None
 try:
     from ...kernels.discovered.glm_moe_combine import glm_moe_combine as _disc_moe_combine
 except Exception:
     _disc_moe_combine = None
 
+_disc_swiglu: Callable[..., Any | None] | None
 try:
     from ...kernels.discovered.glm_fused_swiglu import glm_fused_swiglu as _disc_swiglu
 except Exception:

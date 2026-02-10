@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from ..discover.candidates import EvalResult, KernelCandidate, KernelSpec
 from ..discover.evaluate import _time_fn, evaluate_candidate
@@ -185,6 +185,6 @@ class Harness:
         if self.target_name in ("fused_swiglu", "glm_fused_swiglu"):
             if ss.compute_grid is not None:
                 actual_grid, _ = ss.compute_grid(self._test_inputs)
-                return actual_grid
+                return cast(tuple[int, int, int], actual_grid)
 
         return grid

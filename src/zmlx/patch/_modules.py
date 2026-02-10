@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import Any
 
 import mlx.core as mx
@@ -11,6 +12,7 @@ import mlx.nn as nn
 from ..kernels import norms, transformer
 
 # Discovered GLM RMSNorm kernel (1.18x micro-bench on D=2048)
+_disc_rmsnorm: Callable[..., Any | None] | None
 try:
     from ..kernels.discovered.glm_rmsnorm import glm_rmsnorm as _disc_rmsnorm
 except Exception:

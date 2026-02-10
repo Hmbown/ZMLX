@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 QuantType = Literal["none", "int2", "int4", "fp8"]
+_VALID_QUANT_TYPES = {"none", "int2", "int4", "fp8"}
 
 
 def bits_for_type(t: QuantType) -> int:
@@ -48,5 +49,10 @@ class QuantPlan:
 
     @staticmethod
     def from_json(obj: dict[str, Any]) -> QuantPlan:
-        groups = [GroupSpec(size=int(g["size"]), qtype=str(g["qtype"])) for g in obj["groups"]]
+        groups = []
+        for g in obj["groups"]:
+            qtype = str(g["qtype"])
+            if qtype not in _VALID_QUANT_TYPES:
+                raise ValueError(f"invalid quant type in plan: {qtype!r}")
+            groups.append(GroupSpec(size=int(g["size"]), qtype=cast(QuantType, qtype)))
         return QuantPlan(groups=groups)

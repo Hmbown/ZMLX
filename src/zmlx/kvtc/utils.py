@@ -22,9 +22,9 @@ def to_numpy(x: Any) -> np.ndarray:
     if isinstance(x, np.ndarray):
         return x
     if hasattr(x, "to_numpy"):
-        return x.to_numpy()
+        return np.asarray(x.to_numpy())
     if hasattr(x, "detach") and hasattr(x, "cpu") and hasattr(x, "numpy"):
-        return x.detach().cpu().numpy()
+        return np.asarray(x.detach().cpu().numpy())
     return np.asarray(x)
 
 

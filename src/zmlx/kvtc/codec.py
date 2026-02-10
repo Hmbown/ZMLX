@@ -4,7 +4,7 @@ import json
 import struct
 import zlib
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 try:
     import numpy as np
@@ -46,7 +46,10 @@ class CalibrationArtifacts:
 
         def load_json(p: str) -> dict[str, Any]:
             with open(p, encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError(f"expected JSON object in {p}, got {type(data).__name__}")
+            return cast(dict[str, Any], data)
 
         k_mu = np.load(os.path.join(path, "k_mu.npy"))
         k_V = np.load(os.path.join(path, "k_V.npy"))
