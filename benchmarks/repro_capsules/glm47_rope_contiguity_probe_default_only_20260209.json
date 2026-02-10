@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "date": "2026-02-09",
+    "model": "mlx-community/GLM-4.7-Flash-4bit",
+    "runs": 1,
+    "max_tokens": 64,
+    "env": {
+      "ZMLX_METAL_CONTIGUITY_TELEMETRY": "1",
+      "ZMLX_METAL_CONTIGUITY_TELEMETRY_KERNELS": "kk_rope_concat_qk_decode_pos*",
+      "ZMLX_METAL_DISABLE_ROW_CONTIGUOUS_KERNELS": ""
+    }
+  },
+  "result": {
+    "prompt_tps": 98.68161364201971,
+    "gen_tps": 35.2616424197965,
+    "gen_tokens": 64,
+    "peak_mem_gb": 16.882739034,
+    "patched_modules": 140,
+    "telemetry": {
+      "kernel_instances": 1,
+      "run_count": 3619,
+      "contiguity_launches": 3619,
+      "contiguity_checks": 7238,
+      "contiguity_unknown_inputs": 14476,
+      "non_row_contiguous_inputs": 0,
+      "launches_with_non_row_contiguous": 0,
+      "copy_risk_launches": 0,
+      "copy_risk_inputs": 0
+    }
+  }
+}

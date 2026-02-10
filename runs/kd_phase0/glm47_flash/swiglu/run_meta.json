@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "created_at": "2026-02-09T19:12:18-0600",
+  "op_name": "swiglu",
+  "seed": 0,
+  "budget": 20,
+  "dtype": "float16",
+  "shape_suite": "glm_flash_small",
+  "runtime": {
+    "mlx_version": "0.30.6.dev20260208+185b06d9",
+    "device_name": "Apple M4 Max",
+    "device_arch": "applegpu_g16s"
+  }
+}

@@ -3,6 +3,7 @@
 from . import (
     deepseek_router,
     geglu_mlp,
+    glm47_skv,
     layernorm,
     moe_mlp,
     residual_norm,
@@ -13,6 +14,7 @@ from . import (
 
 __all__ = [
     "deepseek_router",
+    "glm47_skv",
     "rmsnorm",
     "layernorm",
     "swiglu_mlp",

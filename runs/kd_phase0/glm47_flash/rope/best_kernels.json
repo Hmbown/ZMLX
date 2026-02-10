@@ -1,0 +1,367 @@
+{
+  "schema_version": "2",
+  "runtime": {
+    "mlx_version": "0.30.6.dev20260208+185b06d9",
+    "device_name": "Apple M4 Max",
+    "device_arch": "applegpu_g16s"
+  },
+  "entries": [
+    {
+      "key": {
+        "op_name": "rope",
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_arch": "applegpu_g16s",
+        "device_name": "Apple M4 Max",
+        "dtype": "float16",
+        "shape_signature": {
+          "B": 1,
+          "H_Q": 32,
+          "D_NOPE": 128,
+          "D_ROPE": 64,
+          "D_OUT": 192
+        }
+      },
+      "candidate_id": "rope_981b7e3c51434fe4",
+      "func_name": "kk_kd_rope_dn128_dr64_hq32_tg64_fma1",
+      "metal_source": "constexpr uint D_NOPE = 128;\nconstexpr uint D_ROPE = 64;\nconstexpr uint HALF = D_ROPE / 2;\nconstexpr uint D_OUT = D_NOPE + D_ROPE;\nconstexpr uint H_Q = 32;\nconstexpr bool USE_FMA = true;\n\nconstexpr uint Q_ELEMS_PER_BATCH = H_Q * D_OUT;\nconstexpr uint K_ELEMS_PER_BATCH = D_OUT;\nconstexpr uint ELEMS_PER_BATCH = Q_ELEMS_PER_BATCH + K_ELEMS_PER_BATCH;\n\nuint gid = thread_position_in_grid.x;\nuint batch = gid / ELEMS_PER_BATCH;\nuint in_batch = gid - batch * ELEMS_PER_BATCH;\n\nif (in_batch < Q_ELEMS_PER_BATCH) {\n    uint head = in_batch / D_OUT;\n    uint col = in_batch - head * D_OUT;\n\n    uint q_out_base = (batch * H_Q + head) * D_OUT;\n\n    if (col < D_NOPE) {\n        uint q_nope_base = (batch * H_Q + head) * D_NOPE;\n        q_out[q_out_base + col] = q_nope[q_nope_base + col];\n        return;\n    }\n\n    uint r = col - D_NOPE;\n    uint pair = r / 2;\n    float c = (float)cos[pair];\n    float s = (float)sin[pair];\n\n    uint q_rope_base = (batch * H_Q + head) * D_ROPE;\n    if ((r & 1u) == 0u) {\n        float a = (float)q_rope[q_rope_base + r];\n        float b = (float)q_rope[q_rope_base + r + 1];\n        float rotated = USE_FMA ? fma(-b, s, a * c) : (a * c - b * s);\n        q_out[q_out_base + col] = (T)rotated;\n    } else {\n        float a = (float)q_rope[q_rope_base + r - 1];\n        float b = (float)q_rope[q_rope_base + r];\n        float rotated = USE_FMA ? fma(b, c, a * s) : (a * s + b * c);\n        q_out[q_out_base + col] = (T)rotated;\n    }\n    return;\n}\n\nuint k_col = in_batch - Q_ELEMS_PER_BATCH;\nuint k_out_base = batch * D_OUT;\nif (k_col < D_NOPE) {\n    uint kv_nope_base = batch * D_NOPE;\n    k_out[k_out_base + k_col] = kv_nope[kv_nope_base + k_col];\n    return;\n}\n\nuint kr = k_col - D_NOPE;\nuint kpair = kr / 2;\nfloat kc = (float)cos[kpair];\nfloat ks = (float)sin[kpair];\nuint k_rope_base = batch * D_ROPE;\nif ((kr & 1u) == 0u) {\n    float a = (float)k_rope[k_rope_base + kr];\n    float b = (float)k_rope[k_rope_base + kr + 1];\n    float rotated = USE_FMA ? fma(-b, ks, a * kc) : (a * kc - b * ks);\n    k_out[k_out_base + k_col] = (T)rotated;\n} else {\n    float a = (float)k_rope[k_rope_base + kr - 1];\n    float b = (float)k_rope[k_rope_base + kr];\n    float rotated = USE_FMA ? fma(b, kc, a * ks) : (a * ks + b * kc);\n    k_out[k_out_base + k_col] = (T)rotated;\n}\n",
+      "inputs_spec": [
+        {
+          "name": "q_nope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            32,
+            1,
+            128
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "q_rope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            32,
+            1,
+            64
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "kv_nope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            1,
+            1,
+            128
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "k_rope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            1,
+            1,
+            64
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "cos",
+          "dtype": "float16",
+          "shape": [
+            32
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "sin",
+          "dtype": "float16",
+          "shape": [
+            32
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "outputs_spec": [
+        {
+          "name": "q_out",
+          "dtype": "float16",
+          "shape": [
+            1,
+            32,
+            1,
+            192
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "k_out",
+          "dtype": "float16",
+          "shape": [
+            1,
+            1,
+            1,
+            192
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "template_params": {
+        "use_fma": true
+      },
+      "launch_params": {
+        "threadgroup_x": 64,
+        "launch_kind": "rope_decode_pos"
+      },
+      "source_hash": "d35718dd7286137f5c16989a8ffdb9dce18e398404be4025aabfc457a3444ffc",
+      "metrics": {
+        "latency_us": 129.063,
+        "speedup_vs_ref": 1.6388972827223915,
+        "correctness_max_abs_err": 0.0,
+        "correctness_max_rel_err": 0.0
+      }
+    },
+    {
+      "key": {
+        "op_name": "rope",
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_arch": "applegpu_g16s",
+        "device_name": "Apple M4 Max",
+        "dtype": "float16",
+        "shape_signature": {
+          "B": 2,
+          "H_Q": 32,
+          "D_NOPE": 128,
+          "D_ROPE": 64,
+          "D_OUT": 192
+        }
+      },
+      "candidate_id": "rope_981b7e3c51434fe4",
+      "func_name": "kk_kd_rope_dn128_dr64_hq32_tg64_fma1",
+      "metal_source": "constexpr uint D_NOPE = 128;\nconstexpr uint D_ROPE = 64;\nconstexpr uint HALF = D_ROPE / 2;\nconstexpr uint D_OUT = D_NOPE + D_ROPE;\nconstexpr uint H_Q = 32;\nconstexpr bool USE_FMA = true;\n\nconstexpr uint Q_ELEMS_PER_BATCH = H_Q * D_OUT;\nconstexpr uint K_ELEMS_PER_BATCH = D_OUT;\nconstexpr uint ELEMS_PER_BATCH = Q_ELEMS_PER_BATCH + K_ELEMS_PER_BATCH;\n\nuint gid = thread_position_in_grid.x;\nuint batch = gid / ELEMS_PER_BATCH;\nuint in_batch = gid - batch * ELEMS_PER_BATCH;\n\nif (in_batch < Q_ELEMS_PER_BATCH) {\n    uint head = in_batch / D_OUT;\n    uint col = in_batch - head * D_OUT;\n\n    uint q_out_base = (batch * H_Q + head) * D_OUT;\n\n    if (col < D_NOPE) {\n        uint q_nope_base = (batch * H_Q + head) * D_NOPE;\n        q_out[q_out_base + col] = q_nope[q_nope_base + col];\n        return;\n    }\n\n    uint r = col - D_NOPE;\n    uint pair = r / 2;\n    float c = (float)cos[pair];\n    float s = (float)sin[pair];\n\n    uint q_rope_base = (batch * H_Q + head) * D_ROPE;\n    if ((r & 1u) == 0u) {\n        float a = (float)q_rope[q_rope_base + r];\n        float b = (float)q_rope[q_rope_base + r + 1];\n        float rotated = USE_FMA ? fma(-b, s, a * c) : (a * c - b * s);\n        q_out[q_out_base + col] = (T)rotated;\n    } else {\n        float a = (float)q_rope[q_rope_base + r - 1];\n        float b = (float)q_rope[q_rope_base + r];\n        float rotated = USE_FMA ? fma(b, c, a * s) : (a * s + b * c);\n        q_out[q_out_base + col] = (T)rotated;\n    }\n    return;\n}\n\nuint k_col = in_batch - Q_ELEMS_PER_BATCH;\nuint k_out_base = batch * D_OUT;\nif (k_col < D_NOPE) {\n    uint kv_nope_base = batch * D_NOPE;\n    k_out[k_out_base + k_col] = kv_nope[kv_nope_base + k_col];\n    return;\n}\n\nuint kr = k_col - D_NOPE;\nuint kpair = kr / 2;\nfloat kc = (float)cos[kpair];\nfloat ks = (float)sin[kpair];\nuint k_rope_base = batch * D_ROPE;\nif ((kr & 1u) == 0u) {\n    float a = (float)k_rope[k_rope_base + kr];\n    float b = (float)k_rope[k_rope_base + kr + 1];\n    float rotated = USE_FMA ? fma(-b, ks, a * kc) : (a * kc - b * ks);\n    k_out[k_out_base + k_col] = (T)rotated;\n} else {\n    float a = (float)k_rope[k_rope_base + kr - 1];\n    float b = (float)k_rope[k_rope_base + kr];\n    float rotated = USE_FMA ? fma(b, kc, a * ks) : (a * ks + b * kc);\n    k_out[k_out_base + k_col] = (T)rotated;\n}\n",
+      "inputs_spec": [
+        {
+          "name": "q_nope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            32,
+            1,
+            128
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "q_rope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            32,
+            1,
+            64
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "kv_nope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            1,
+            1,
+            128
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "k_rope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            1,
+            1,
+            64
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "cos",
+          "dtype": "float16",
+          "shape": [
+            32
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "sin",
+          "dtype": "float16",
+          "shape": [
+            32
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "outputs_spec": [
+        {
+          "name": "q_out",
+          "dtype": "float16",
+          "shape": [
+            1,
+            32,
+            1,
+            192
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "k_out",
+          "dtype": "float16",
+          "shape": [
+            1,
+            1,
+            1,
+            192
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "template_params": {
+        "use_fma": true
+      },
+      "launch_params": {
+        "threadgroup_x": 64,
+        "launch_kind": "rope_decode_pos"
+      },
+      "source_hash": "d35718dd7286137f5c16989a8ffdb9dce18e398404be4025aabfc457a3444ffc",
+      "metrics": {
+        "latency_us": 129.063,
+        "speedup_vs_ref": 1.6388972827223915,
+        "correctness_max_abs_err": 0.0,
+        "correctness_max_rel_err": 0.0
+      }
+    },
+    {
+      "key": {
+        "op_name": "rope",
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_arch": "applegpu_g16s",
+        "device_name": "Apple M4 Max",
+        "dtype": "float16",
+        "shape_signature": {
+          "B": 4,
+          "H_Q": 32,
+          "D_NOPE": 128,
+          "D_ROPE": 64,
+          "D_OUT": 192
+        }
+      },
+      "candidate_id": "rope_981b7e3c51434fe4",
+      "func_name": "kk_kd_rope_dn128_dr64_hq32_tg64_fma1",
+      "metal_source": "constexpr uint D_NOPE = 128;\nconstexpr uint D_ROPE = 64;\nconstexpr uint HALF = D_ROPE / 2;\nconstexpr uint D_OUT = D_NOPE + D_ROPE;\nconstexpr uint H_Q = 32;\nconstexpr bool USE_FMA = true;\n\nconstexpr uint Q_ELEMS_PER_BATCH = H_Q * D_OUT;\nconstexpr uint K_ELEMS_PER_BATCH = D_OUT;\nconstexpr uint ELEMS_PER_BATCH = Q_ELEMS_PER_BATCH + K_ELEMS_PER_BATCH;\n\nuint gid = thread_position_in_grid.x;\nuint batch = gid / ELEMS_PER_BATCH;\nuint in_batch = gid - batch * ELEMS_PER_BATCH;\n\nif (in_batch < Q_ELEMS_PER_BATCH) {\n    uint head = in_batch / D_OUT;\n    uint col = in_batch - head * D_OUT;\n\n    uint q_out_base = (batch * H_Q + head) * D_OUT;\n\n    if (col < D_NOPE) {\n        uint q_nope_base = (batch * H_Q + head) * D_NOPE;\n        q_out[q_out_base + col] = q_nope[q_nope_base + col];\n        return;\n    }\n\n    uint r = col - D_NOPE;\n    uint pair = r / 2;\n    float c = (float)cos[pair];\n    float s = (float)sin[pair];\n\n    uint q_rope_base = (batch * H_Q + head) * D_ROPE;\n    if ((r & 1u) == 0u) {\n        float a = (float)q_rope[q_rope_base + r];\n        float b = (float)q_rope[q_rope_base + r + 1];\n        float rotated = USE_FMA ? fma(-b, s, a * c) : (a * c - b * s);\n        q_out[q_out_base + col] = (T)rotated;\n    } else {\n        float a = (float)q_rope[q_rope_base + r - 1];\n        float b = (float)q_rope[q_rope_base + r];\n        float rotated = USE_FMA ? fma(b, c, a * s) : (a * s + b * c);\n        q_out[q_out_base + col] = (T)rotated;\n    }\n    return;\n}\n\nuint k_col = in_batch - Q_ELEMS_PER_BATCH;\nuint k_out_base = batch * D_OUT;\nif (k_col < D_NOPE) {\n    uint kv_nope_base = batch * D_NOPE;\n    k_out[k_out_base + k_col] = kv_nope[kv_nope_base + k_col];\n    return;\n}\n\nuint kr = k_col - D_NOPE;\nuint kpair = kr / 2;\nfloat kc = (float)cos[kpair];\nfloat ks = (float)sin[kpair];\nuint k_rope_base = batch * D_ROPE;\nif ((kr & 1u) == 0u) {\n    float a = (float)k_rope[k_rope_base + kr];\n    float b = (float)k_rope[k_rope_base + kr + 1];\n    float rotated = USE_FMA ? fma(-b, ks, a * kc) : (a * kc - b * ks);\n    k_out[k_out_base + k_col] = (T)rotated;\n} else {\n    float a = (float)k_rope[k_rope_base + kr - 1];\n    float b = (float)k_rope[k_rope_base + kr];\n    float rotated = USE_FMA ? fma(b, kc, a * ks) : (a * ks + b * kc);\n    k_out[k_out_base + k_col] = (T)rotated;\n}\n",
+      "inputs_spec": [
+        {
+          "name": "q_nope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            32,
+            1,
+            128
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "q_rope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            32,
+            1,
+            64
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "kv_nope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            1,
+            1,
+            128
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "k_rope",
+          "dtype": "float16",
+          "shape": [
+            1,
+            1,
+            1,
+            64
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "cos",
+          "dtype": "float16",
+          "shape": [
+            32
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "sin",
+          "dtype": "float16",
+          "shape": [
+            32
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "outputs_spec": [
+        {
+          "name": "q_out",
+          "dtype": "float16",
+          "shape": [
+            1,
+            32,
+            1,
+            192
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "k_out",
+          "dtype": "float16",
+          "shape": [
+            1,
+            1,
+            1,
+            192
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "template_params": {
+        "use_fma": true
+      },
+      "launch_params": {
+        "threadgroup_x": 64,
+        "launch_kind": "rope_decode_pos"
+      },
+      "source_hash": "d35718dd7286137f5c16989a8ffdb9dce18e398404be4025aabfc457a3444ffc",
+      "metrics": {
+        "latency_us": 129.063,
+        "speedup_vs_ref": 1.6388972827223915,
+        "correctness_max_abs_err": 0.0,
+        "correctness_max_rel_err": 0.0
+      }
+    }
+  ]
+}

@@ -25,6 +25,17 @@ from .codec import CalibrationArtifacts, KVTCCacheCodec
 from .plan import GroupSpec, QuantPlan
 from .presets import KVTCPreset, list_presets, model_preset
 from .rope import RotaryConfig, RotaryEmbedding
+from .skv_mla import (
+    SKVMLALatentCacheRuntime,
+    skv_compress_glm_latent,
+    skv_compute_basis,
+    skv_dequantize_rank_chunk,
+    skv_decompress_glm_latent,
+    skv_glm_compressed_attention_scores,
+    skv_project_glm_queries_to_rank,
+    skv_reconstruct_glm_keys,
+    skv_split_glm_keys,
+)
 
 __all__ = [
     "CalibrationArtifacts",
@@ -34,6 +45,15 @@ __all__ = [
     "QuantPlan",
     "RotaryConfig",
     "RotaryEmbedding",
+    "SKVMLALatentCacheRuntime",
+    "skv_compress_glm_latent",
+    "skv_compute_basis",
+    "skv_dequantize_rank_chunk",
+    "skv_decompress_glm_latent",
+    "skv_glm_compressed_attention_scores",
+    "skv_project_glm_queries_to_rank",
+    "skv_reconstruct_glm_keys",
+    "skv_split_glm_keys",
     "list_presets",
     "model_preset",
 ]

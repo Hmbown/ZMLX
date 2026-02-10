@@ -1,0 +1,210 @@
+{
+  "schema_version": "1",
+  "generated_for_branch": "graphkerneldisc",
+  "source_of_truth": {
+    "matrix": "benchmarks/matrix.jsonl",
+    "repro_capsules_dir": "benchmarks/repro_capsules"
+  },
+  "pinning_key_fields": [
+    "op_name",
+    "mlx_version",
+    "device_arch",
+    "device_name",
+    "dtype",
+    "shape_signature"
+  ],
+  "candidate_id_policy": "deterministic_sha256(op_name, metal_source, func_name, inputs_spec, outputs_spec, template_params, launch_params)",
+  "models": [
+    {
+      "model_id": "mlx-community/GLM-4.7-Flash-4bit",
+      "model_family": "glm",
+      "evidence": {
+        "matrix_rows": 24,
+        "matrix_path": "benchmarks/matrix.jsonl",
+        "repro_capsules": [
+          "benchmarks/repro_capsules/glm47_flash_control_kv4_m4max_20260205.json",
+          "benchmarks/repro_capsules/glm47_flash_control_m4max_20260205.json",
+          "benchmarks/repro_capsules/glm47_flash_control_m4max_20260205_rerun2_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/glm47_flash_downproj_combine_m4max_20260205.json",
+          "benchmarks/repro_capsules/glm47_flash_kv4_t1024_s0_m4max_20260205.json",
+          "benchmarks/repro_capsules/glm47_flash_kv4_t1024_s0_m4max_20260205_rerun_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/glm47_flash_kv4_t1024_s128_m4max_20260205.json",
+          "benchmarks/repro_capsules/glm47_flash_kv4_t1024_s128_m4max_20260205_rerun_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/glm47_flash_nokv_t1024_m4max_20260205.json",
+          "benchmarks/repro_capsules/glm47_flash_nokv_t1024_m4max_20260205_rerun_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/glm47_flash_residual_norm_m4max_20260205.json",
+          "benchmarks/repro_capsules/glm47_flash_residual_norm_m4max_20260205_rerun2_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/glm47_flash_rope_m4max_20260205.json",
+          "benchmarks/repro_capsules/glm47_flash_rope_m4max_20260205_rerun2_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/glm47_flash_shared_experts_swiglu_m4max_20260205_1d9ee0e.json",
+          "benchmarks/repro_capsules/glm47_flash_shared_overlap_m4max_20260205.json",
+          "benchmarks/repro_capsules/glm47_flash_shared_overlap_m4max_20260205_rerun2_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/glm_stress_m4_20260204.json",
+          "benchmarks/repro_capsules/glm_stress_m4_20260205_d17ab1b.json",
+          "benchmarks/repro_capsules/glm_stress_m4_20260205_rerun_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/glm_stress_math_creative_m4_20260205_d17ab1b.json",
+          "benchmarks/repro_capsules/glm_stress_quick_m4_20260205_d17ab1b.json"
+        ]
+      },
+      "phase0": {
+        "selected_ops": [
+          "rmsnorm_residual",
+          "rope",
+          "swiglu"
+        ],
+        "rope_status": "selected",
+        "commands_used_or_planned": [
+          "python -m zmlx.kd run --op rmsnorm_residual --budget 20 --seed 0 --dtype float16 --shapes glm_flash_small --out runs/kd_phase0/glm47_flash/rmsnorm_residual",
+          "python -m zmlx.kd run --op rope --budget 20 --seed 0 --dtype float16 --shapes glm_flash_small --out runs/kd_phase0/glm47_flash/rope",
+          "python -m zmlx.kd run --op swiglu --budget 20 --seed 0 --dtype float16 --shapes glm_flash_small --out runs/kd_phase0/glm47_flash/swiglu"
+        ],
+        "optional_baseline_rmsnorm": {
+          "selected": false,
+          "command_planned": "python -m zmlx.kd run --op rmsnorm --budget 20 --seed 0 --dtype float16 --out runs/kd_phase0/<family>/rmsnorm_baseline"
+        }
+      },
+      "runtime_fingerprint": {
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_name": "Apple M4 Max",
+        "device_arch": "applegpu_g16s"
+      }
+    },
+    {
+      "model_id": "mlx-community/LFM2-8B-A1B-4bit",
+      "model_family": "lfm",
+      "evidence": {
+        "matrix_rows": 2,
+        "matrix_path": "benchmarks/matrix.jsonl",
+        "repro_capsules": [
+          "benchmarks/repro_capsules/lfm2_m1pro_20260131.json",
+          "benchmarks/repro_capsules/lfm2_m4max_20260131.json",
+          "benchmarks/repro_capsules/lfm2_m4max_20260205_rerun_mlx0304dev2f324cc.json"
+        ]
+      },
+      "phase0": {
+        "selected_ops": [
+          "rmsnorm_residual",
+          "swiglu"
+        ],
+        "rope_status": "not_selected_glm_mla_specific",
+        "commands_used_or_planned": [
+          "python -m zmlx.kd run --op rmsnorm_residual --budget 20 --seed 0 --dtype float16 --shapes lfm2_decode --out runs/kd_phase0/lfm2_8b_a1b/rmsnorm_residual",
+          "python -m zmlx.kd run --op swiglu --budget 20 --seed 0 --dtype float16 --shapes lfm2_decode --out runs/kd_phase0/lfm2_8b_a1b/swiglu"
+        ],
+        "optional_baseline_rmsnorm": {
+          "selected": false,
+          "command_planned": "python -m zmlx.kd run --op rmsnorm --budget 20 --seed 0 --dtype float16 --out runs/kd_phase0/<family>/rmsnorm_baseline"
+        }
+      },
+      "runtime_fingerprint": {
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_name": "Apple M4 Max",
+        "device_arch": "applegpu_g16s"
+      }
+    },
+    {
+      "model_id": "mlx-community/LFM2-8B-A1B-8bit",
+      "model_family": "lfm",
+      "evidence": {
+        "matrix_rows": 1,
+        "matrix_path": "benchmarks/matrix.jsonl",
+        "repro_capsules": []
+      },
+      "phase0": {
+        "selected_ops": [
+          "rmsnorm_residual",
+          "swiglu"
+        ],
+        "rope_status": "not_selected_glm_mla_specific",
+        "commands_used_or_planned": [
+          "python -m zmlx.kd run --op rmsnorm_residual --budget 20 --seed 0 --dtype float16 --shapes lfm2_decode --out runs/kd_phase0/lfm2_8b_a1b/rmsnorm_residual",
+          "python -m zmlx.kd run --op swiglu --budget 20 --seed 0 --dtype float16 --shapes lfm2_decode --out runs/kd_phase0/lfm2_8b_a1b/swiglu"
+        ],
+        "optional_baseline_rmsnorm": {
+          "selected": false,
+          "command_planned": "python -m zmlx.kd run --op rmsnorm --budget 20 --seed 0 --dtype float16 --out runs/kd_phase0/<family>/rmsnorm_baseline"
+        }
+      },
+      "runtime_fingerprint": {
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_name": "Apple M4 Max",
+        "device_arch": "applegpu_g16s"
+      }
+    },
+    {
+      "model_id": "mlx-community/LFM2-8B-A1B-8bit-MLX",
+      "model_family": "lfm",
+      "evidence": {
+        "matrix_rows": 0,
+        "matrix_path": "benchmarks/matrix.jsonl",
+        "repro_capsules": [
+          "benchmarks/repro_capsules/lfm2_m1pro_20260131.json",
+          "benchmarks/repro_capsules/lfm2_m4max_20260131.json",
+          "benchmarks/repro_capsules/lfm2_m4max_20260205_rerun_mlx0304dev2f324cc.json"
+        ]
+      },
+      "phase0": {
+        "selected_ops": [
+          "rmsnorm_residual",
+          "swiglu"
+        ],
+        "rope_status": "not_selected_glm_mla_specific",
+        "commands_used_or_planned": [
+          "python -m zmlx.kd run --op rmsnorm_residual --budget 20 --seed 0 --dtype float16 --shapes lfm2_decode --out runs/kd_phase0/lfm2_8b_a1b/rmsnorm_residual",
+          "python -m zmlx.kd run --op swiglu --budget 20 --seed 0 --dtype float16 --shapes lfm2_decode --out runs/kd_phase0/lfm2_8b_a1b/swiglu"
+        ],
+        "optional_baseline_rmsnorm": {
+          "selected": false,
+          "command_planned": "python -m zmlx.kd run --op rmsnorm --budget 20 --seed 0 --dtype float16 --out runs/kd_phase0/<family>/rmsnorm_baseline"
+        }
+      },
+      "runtime_fingerprint": {
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_name": "Apple M4 Max",
+        "device_arch": "applegpu_g16s"
+      }
+    },
+    {
+      "model_id": "mlx-community/Qwen3-30B-A3B-4bit",
+      "model_family": "qwen",
+      "evidence": {
+        "matrix_rows": 10,
+        "matrix_path": "benchmarks/matrix.jsonl",
+        "repro_capsules": [
+          "benchmarks/repro_capsules/qwen3_a3b_kv4_t1024_s128_m4max_20260205_rerun_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205.json",
+          "benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205_posthotpath_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205_rerun2_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/qwen3_a3b_moe_mlp_m4max_20260205_rerun3_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/qwen3_a3b_nokv_t1024_m4max_20260205_rerun_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/qwen3_a3b_profile_qwen3_m4max_20260205_posthotpath_r5_mlx0304dev2f324cc.json",
+          "benchmarks/repro_capsules/qwen3_a3b_profile_qwen3_m4max_20260205_rerun2_mlx0304dev2f324cc.json"
+        ]
+      },
+      "phase0": {
+        "selected_ops": [
+          "rmsnorm_residual",
+          "swiglu"
+        ],
+        "rope_status": "not_selected_glm_mla_specific",
+        "commands_used_or_planned": [
+          "python -m zmlx.kd run --op rmsnorm_residual --budget 20 --seed 0 --dtype float16 --shapes qwen30b_decode --out runs/kd_phase0/qwen3_30b_a3b/rmsnorm_residual",
+          "python -m zmlx.kd run --op swiglu --budget 20 --seed 0 --dtype float16 --shapes qwen30b_decode --out runs/kd_phase0/qwen3_30b_a3b/swiglu"
+        ],
+        "optional_baseline_rmsnorm": {
+          "selected": false,
+          "command_planned": "python -m zmlx.kd run --op rmsnorm --budget 20 --seed 0 --dtype float16 --out runs/kd_phase0/<family>/rmsnorm_baseline"
+        }
+      },
+      "runtime_fingerprint": {
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_name": "Apple M4 Max",
+        "device_arch": "applegpu_g16s"
+      }
+    }
+  ],
+  "artifacts": {
+    "install_output": "configs/discovered_kernels_phase0_setup.json",
+    "pack_output": "kernelpacks/phase0_setup_applegpu_g16s.json"
+  }
+}

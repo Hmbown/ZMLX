@@ -5,5 +5,5 @@ Each file contains a single kernel discovered to be faster than the baseline
 for a specific target on specific hardware.
 
 To regenerate: run ``python -m zmlx.discover autorun`` then export winners.
-See ``docs/DISCOVER_PLAYBOOK.md`` for the full workflow.
+See ``docs/kernel_discovery.md`` for the discovery workflow and runtime pinning.
 """

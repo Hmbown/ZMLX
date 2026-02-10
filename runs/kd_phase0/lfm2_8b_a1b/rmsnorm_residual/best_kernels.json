@@ -1,0 +1,253 @@
+{
+  "schema_version": "2",
+  "runtime": {
+    "mlx_version": "0.30.6.dev20260208+185b06d9",
+    "device_name": "Apple M4 Max",
+    "device_arch": "applegpu_g16s"
+  },
+  "entries": [
+    {
+      "key": {
+        "op_name": "rmsnorm_residual",
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_arch": "applegpu_g16s",
+        "device_name": "Apple M4 Max",
+        "dtype": "float16",
+        "shape_signature": {
+          "rows": 1,
+          "D": 2048
+        }
+      },
+      "candidate_id": "rmsnorm_residual_5faa7484fddec673",
+      "func_name": "kk_kd_rmsnorm_res_d2048_tg128_v4_u1_simd1",
+      "metal_source": "constexpr uint D = 2048;\nconstexpr uint TG = 128;\nconstexpr uint VEC = 4;\nconstexpr uint UNROLL = 1;\nconstexpr float EPS = 1e-06f;\nconstexpr bool USE_SIMD = true;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float reduce_buf[TG];\n\nfloat sumsq = 0.0f;\nuint start = tid * VEC;\nuint step = TG * VEC;\nfor (uint j0 = start; j0 < D; j0 += step * UNROLL) {\n    #pragma unroll\n    for (uint u = 0; u < UNROLL; ++u) {\n        uint j = j0 + u * step;\n        if (j >= D) {\n            continue;\n        }\n        #pragma unroll\n        for (uint v = 0; v < VEC; ++v) {\n            uint idx = j + v;\n            if (idx < D) {\n                float x = (float)inp[base + idx] + (float)residual[base + idx];\n                updated_res[base + idx] = (T)x;\n                sumsq += x * x;\n            }\n        }\n    }\n}\n\nif (USE_SIMD) {\n    KK_SIMD_REDUCE_SUM(reduce_buf, sumsq, tid, TG);\n} else {\n    reduce_buf[tid] = sumsq;\n    threadgroup_barrier(mem_flags::mem_threadgroup);\n    for (uint stride = TG / 2; stride > 0; stride >>= 1) {\n        if (tid < stride) {\n            reduce_buf[tid] += reduce_buf[tid + stride];\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n    }\n}\n\nfloat inv = metal::rsqrt(reduce_buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\nfor (uint j0 = start; j0 < D; j0 += step * UNROLL) {\n    #pragma unroll\n    for (uint u = 0; u < UNROLL; ++u) {\n        uint j = j0 + u * step;\n        if (j >= D) {\n            continue;\n        }\n        #pragma unroll\n        for (uint v = 0; v < VEC; ++v) {\n            uint idx = j + v;\n            if (idx < D) {\n                float vres = (float)updated_res[base + idx];\n                float w = (float)weight[idx];\n                out[base + idx] = (T)(vres * inv * w);\n            }\n        }\n    }\n}\n",
+      "inputs_spec": [
+        {
+          "name": "inp",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "residual",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "weight",
+          "dtype": "float16",
+          "shape": [
+            2048
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "outputs_spec": [
+        {
+          "name": "out",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "updated_res",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "template_params": {
+        "vec_width": 4,
+        "unroll": 1,
+        "use_simd": true,
+        "eps": 1e-06
+      },
+      "launch_params": {
+        "threadgroup_x": 128,
+        "launch_kind": "rmsnorm_residual_rows_tg"
+      },
+      "source_hash": "f168957491627f269ef246338049a411d3bdfeaa51f965868f5107522906520a",
+      "metrics": {
+        "latency_us": 123.7295,
+        "speedup_vs_ref": 1.62097559595731,
+        "correctness_max_abs_err": 0.00390625,
+        "correctness_max_rel_err": 0.0009671179883945841
+      }
+    },
+    {
+      "key": {
+        "op_name": "rmsnorm_residual",
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_arch": "applegpu_g16s",
+        "device_name": "Apple M4 Max",
+        "dtype": "float16",
+        "shape_signature": {
+          "rows": 2,
+          "D": 2048
+        }
+      },
+      "candidate_id": "rmsnorm_residual_5faa7484fddec673",
+      "func_name": "kk_kd_rmsnorm_res_d2048_tg128_v4_u1_simd1",
+      "metal_source": "constexpr uint D = 2048;\nconstexpr uint TG = 128;\nconstexpr uint VEC = 4;\nconstexpr uint UNROLL = 1;\nconstexpr float EPS = 1e-06f;\nconstexpr bool USE_SIMD = true;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float reduce_buf[TG];\n\nfloat sumsq = 0.0f;\nuint start = tid * VEC;\nuint step = TG * VEC;\nfor (uint j0 = start; j0 < D; j0 += step * UNROLL) {\n    #pragma unroll\n    for (uint u = 0; u < UNROLL; ++u) {\n        uint j = j0 + u * step;\n        if (j >= D) {\n            continue;\n        }\n        #pragma unroll\n        for (uint v = 0; v < VEC; ++v) {\n            uint idx = j + v;\n            if (idx < D) {\n                float x = (float)inp[base + idx] + (float)residual[base + idx];\n                updated_res[base + idx] = (T)x;\n                sumsq += x * x;\n            }\n        }\n    }\n}\n\nif (USE_SIMD) {\n    KK_SIMD_REDUCE_SUM(reduce_buf, sumsq, tid, TG);\n} else {\n    reduce_buf[tid] = sumsq;\n    threadgroup_barrier(mem_flags::mem_threadgroup);\n    for (uint stride = TG / 2; stride > 0; stride >>= 1) {\n        if (tid < stride) {\n            reduce_buf[tid] += reduce_buf[tid + stride];\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n    }\n}\n\nfloat inv = metal::rsqrt(reduce_buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\nfor (uint j0 = start; j0 < D; j0 += step * UNROLL) {\n    #pragma unroll\n    for (uint u = 0; u < UNROLL; ++u) {\n        uint j = j0 + u * step;\n        if (j >= D) {\n            continue;\n        }\n        #pragma unroll\n        for (uint v = 0; v < VEC; ++v) {\n            uint idx = j + v;\n            if (idx < D) {\n                float vres = (float)updated_res[base + idx];\n                float w = (float)weight[idx];\n                out[base + idx] = (T)(vres * inv * w);\n            }\n        }\n    }\n}\n",
+      "inputs_spec": [
+        {
+          "name": "inp",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "residual",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "weight",
+          "dtype": "float16",
+          "shape": [
+            2048
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "outputs_spec": [
+        {
+          "name": "out",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "updated_res",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "template_params": {
+        "vec_width": 4,
+        "unroll": 1,
+        "use_simd": true,
+        "eps": 1e-06
+      },
+      "launch_params": {
+        "threadgroup_x": 128,
+        "launch_kind": "rmsnorm_residual_rows_tg"
+      },
+      "source_hash": "f168957491627f269ef246338049a411d3bdfeaa51f965868f5107522906520a",
+      "metrics": {
+        "latency_us": 123.7295,
+        "speedup_vs_ref": 1.62097559595731,
+        "correctness_max_abs_err": 0.00390625,
+        "correctness_max_rel_err": 0.0009671179883945841
+      }
+    },
+    {
+      "key": {
+        "op_name": "rmsnorm_residual",
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_arch": "applegpu_g16s",
+        "device_name": "Apple M4 Max",
+        "dtype": "float16",
+        "shape_signature": {
+          "rows": 4,
+          "D": 2048
+        }
+      },
+      "candidate_id": "rmsnorm_residual_5faa7484fddec673",
+      "func_name": "kk_kd_rmsnorm_res_d2048_tg128_v4_u1_simd1",
+      "metal_source": "constexpr uint D = 2048;\nconstexpr uint TG = 128;\nconstexpr uint VEC = 4;\nconstexpr uint UNROLL = 1;\nconstexpr float EPS = 1e-06f;\nconstexpr bool USE_SIMD = true;\n\nuint gid = thread_position_in_grid.x;\nuint tid = thread_position_in_threadgroup.x;\nuint row = gid / TG;\nuint base = row * D;\n\nthreadgroup float reduce_buf[TG];\n\nfloat sumsq = 0.0f;\nuint start = tid * VEC;\nuint step = TG * VEC;\nfor (uint j0 = start; j0 < D; j0 += step * UNROLL) {\n    #pragma unroll\n    for (uint u = 0; u < UNROLL; ++u) {\n        uint j = j0 + u * step;\n        if (j >= D) {\n            continue;\n        }\n        #pragma unroll\n        for (uint v = 0; v < VEC; ++v) {\n            uint idx = j + v;\n            if (idx < D) {\n                float x = (float)inp[base + idx] + (float)residual[base + idx];\n                updated_res[base + idx] = (T)x;\n                sumsq += x * x;\n            }\n        }\n    }\n}\n\nif (USE_SIMD) {\n    KK_SIMD_REDUCE_SUM(reduce_buf, sumsq, tid, TG);\n} else {\n    reduce_buf[tid] = sumsq;\n    threadgroup_barrier(mem_flags::mem_threadgroup);\n    for (uint stride = TG / 2; stride > 0; stride >>= 1) {\n        if (tid < stride) {\n            reduce_buf[tid] += reduce_buf[tid + stride];\n        }\n        threadgroup_barrier(mem_flags::mem_threadgroup);\n    }\n}\n\nfloat inv = metal::rsqrt(reduce_buf[0] / (float)D + EPS);\nthreadgroup_barrier(mem_flags::mem_threadgroup);\n\nfor (uint j0 = start; j0 < D; j0 += step * UNROLL) {\n    #pragma unroll\n    for (uint u = 0; u < UNROLL; ++u) {\n        uint j = j0 + u * step;\n        if (j >= D) {\n            continue;\n        }\n        #pragma unroll\n        for (uint v = 0; v < VEC; ++v) {\n            uint idx = j + v;\n            if (idx < D) {\n                float vres = (float)updated_res[base + idx];\n                float w = (float)weight[idx];\n                out[base + idx] = (T)(vres * inv * w);\n            }\n        }\n    }\n}\n",
+      "inputs_spec": [
+        {
+          "name": "inp",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "residual",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "weight",
+          "dtype": "float16",
+          "shape": [
+            2048
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "outputs_spec": [
+        {
+          "name": "out",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "updated_res",
+          "dtype": "float16",
+          "shape": [
+            1,
+            2048
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "template_params": {
+        "vec_width": 4,
+        "unroll": 1,
+        "use_simd": true,
+        "eps": 1e-06
+      },
+      "launch_params": {
+        "threadgroup_x": 128,
+        "launch_kind": "rmsnorm_residual_rows_tg"
+      },
+      "source_hash": "f168957491627f269ef246338049a411d3bdfeaa51f965868f5107522906520a",
+      "metrics": {
+        "latency_us": 123.7295,
+        "speedup_vs_ref": 1.62097559595731,
+        "correctness_max_abs_err": 0.00390625,
+        "correctness_max_rel_err": 0.0009671179883945841
+      }
+    }
+  ]
+}

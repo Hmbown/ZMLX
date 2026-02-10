@@ -1,0 +1,49 @@
+{
+  "meta": {
+    "date": "2026-02-09",
+    "model": "mlx-community/GLM-4.7-Flash-4bit",
+    "max_tokens": 64,
+    "runs": 1
+  },
+  "default": {
+    "prompt_tps": 98.68161364201971,
+    "gen_tps": 35.2616424197965,
+    "gen_tokens": 64,
+    "peak_mem_gb": 16.882739034,
+    "patched_modules": 140,
+    "telemetry": {
+      "kernel_instances": 1,
+      "run_count": 3619,
+      "contiguity_launches": 3619,
+      "contiguity_checks": 7238,
+      "contiguity_unknown_inputs": 14476,
+      "non_row_contiguous_inputs": 0,
+      "launches_with_non_row_contiguous": 0,
+      "copy_risk_launches": 0,
+      "copy_risk_inputs": 0
+    }
+  },
+  "disable_row_contiguous": {
+    "prompt_tps": 98.65991033211128,
+    "gen_tps": 36.341451229183825,
+    "gen_tokens": 64,
+    "peak_mem_gb": 16.88274621,
+    "patched_modules": 140,
+    "telemetry": {
+      "kernel_instances": 1,
+      "run_count": 3619,
+      "contiguity_launches": 3619,
+      "contiguity_checks": 7238,
+      "contiguity_unknown_inputs": 14476,
+      "non_row_contiguous_inputs": 0,
+      "launches_with_non_row_contiguous": 0,
+      "copy_risk_launches": 0,
+      "copy_risk_inputs": 0
+    }
+  },
+  "delta": {
+    "gen_tps_abs": 1.0798088093873233,
+    "gen_tps_ratio": 1.0306227598967739,
+    "gen_tps_pct": 3.0622759896773877
+  }
+}

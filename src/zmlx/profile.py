@@ -149,7 +149,8 @@ def kernel_stats() -> list[dict[str, Any]]:
 
     Returns:
         List of dicts, each with keys: ``name``, ``compile_time_ms``,
-        ``run_count``, ``total_run_time_ms``.
+        ``run_count``, ``total_run_time_ms``, and contiguity/copy-risk
+        counters when telemetry is enabled.
     """
     from .cache import GLOBAL_KERNEL_CACHE
     from .metal import MetalKernel
@@ -163,6 +164,13 @@ def kernel_stats() -> list[dict[str, Any]]:
                 "compile_time_ms": k.stats.compile_time_ms,
                 "run_count": k.stats.run_count,
                 "total_run_time_ms": k.stats.total_run_time_ms,
+                "contiguity_launches": k.stats.contiguity_launches,
+                "contiguity_checks": k.stats.contiguity_checks,
+                "contiguity_unknown_inputs": k.stats.contiguity_unknown_inputs,
+                "non_row_contiguous_inputs": k.stats.non_row_contiguous_inputs,
+                "launches_with_non_row_contiguous": k.stats.launches_with_non_row_contiguous,
+                "copy_risk_launches": k.stats.copy_risk_launches,
+                "copy_risk_inputs": k.stats.copy_risk_inputs,
             })
     return stats
 

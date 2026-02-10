@@ -1,0 +1,71 @@
+constexpr uint D_NOPE = {{D_NOPE}};
+constexpr uint D_ROPE = {{D_ROPE}};
+constexpr uint HALF = D_ROPE / 2;
+constexpr uint D_OUT = D_NOPE + D_ROPE;
+constexpr uint H_Q = {{H_Q}};
+constexpr bool USE_FMA = {{USE_FMA}};
+
+constexpr uint Q_ELEMS_PER_BATCH = H_Q * D_OUT;
+constexpr uint K_ELEMS_PER_BATCH = D_OUT;
+constexpr uint ELEMS_PER_BATCH = Q_ELEMS_PER_BATCH + K_ELEMS_PER_BATCH;
+
+uint gid = thread_position_in_grid.x;
+uint batch = gid / ELEMS_PER_BATCH;
+uint in_batch = gid - batch * ELEMS_PER_BATCH;
+
+if (in_batch < Q_ELEMS_PER_BATCH) {
+    uint head = in_batch / D_OUT;
+    uint col = in_batch - head * D_OUT;
+
+    uint q_out_base = (batch * H_Q + head) * D_OUT;
+
+    if (col < D_NOPE) {
+        uint q_nope_base = (batch * H_Q + head) * D_NOPE;
+        q_out[q_out_base + col] = q_nope[q_nope_base + col];
+        return;
+    }
+
+    uint r = col - D_NOPE;
+    uint pair = r / 2;
+    float c = (float)cos[pair];
+    float s = (float)sin[pair];
+
+    uint q_rope_base = (batch * H_Q + head) * D_ROPE;
+    if ((r & 1u) == 0u) {
+        float a = (float)q_rope[q_rope_base + r];
+        float b = (float)q_rope[q_rope_base + r + 1];
+        float rotated = USE_FMA ? fma(-b, s, a * c) : (a * c - b * s);
+        q_out[q_out_base + col] = (T)rotated;
+    } else {
+        float a = (float)q_rope[q_rope_base + r - 1];
+        float b = (float)q_rope[q_rope_base + r];
+        float rotated = USE_FMA ? fma(b, c, a * s) : (a * s + b * c);
+        q_out[q_out_base + col] = (T)rotated;
+    }
+    return;
+}
+
+uint k_col = in_batch - Q_ELEMS_PER_BATCH;
+uint k_out_base = batch * D_OUT;
+if (k_col < D_NOPE) {
+    uint kv_nope_base = batch * D_NOPE;
+    k_out[k_out_base + k_col] = kv_nope[kv_nope_base + k_col];
+    return;
+}
+
+uint kr = k_col - D_NOPE;
+uint kpair = kr / 2;
+float kc = (float)cos[kpair];
+float ks = (float)sin[kpair];
+uint k_rope_base = batch * D_ROPE;
+if ((kr & 1u) == 0u) {
+    float a = (float)k_rope[k_rope_base + kr];
+    float b = (float)k_rope[k_rope_base + kr + 1];
+    float rotated = USE_FMA ? fma(-b, ks, a * kc) : (a * kc - b * ks);
+    k_out[k_out_base + k_col] = (T)rotated;
+} else {
+    float a = (float)k_rope[k_rope_base + kr - 1];
+    float b = (float)k_rope[k_rope_base + kr];
+    float rotated = USE_FMA ? fma(b, kc, a * ks) : (a * ks + b * kc);
+    k_out[k_out_base + k_col] = (T)rotated;
+}
