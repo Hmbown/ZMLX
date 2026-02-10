@@ -76,9 +76,17 @@ def build_knowledge_base(repo_root: str | Path | None = None) -> dict[str, Any]:
 
 
 def _resolve_repo_root(repo_root: str | Path | None) -> Path:
-    if repo_root is None:
-        return Path(__file__).resolve().parents[3]
-    return Path(repo_root).resolve()
+    if repo_root is not None:
+        return Path(repo_root).resolve()
+    # Try __file__-based root first (works for editable installs / running from source)
+    candidate = Path(__file__).resolve().parents[3]
+    if (candidate / "src" / "zmlx").is_dir():
+        return candidate
+    # Fall back to cwd (works for non-editable installs run from checkout)
+    cwd = Path.cwd()
+    if (cwd / "src" / "zmlx").is_dir():
+        return cwd
+    return candidate
 
 
 def _build_pattern_entries(repo_root: Path) -> list[dict[str, Any]]:
@@ -192,7 +200,6 @@ def _build_model_entries(definition_lookup: dict[str, dict[str, Any]]) -> list[d
             if f"pattern:{name}" in pattern_id_set
         }
         specialized = _build_specialized_kernel_refs(
-            model_id=model.model_id,
             family=model.family,
             zmlx_family=model.zmlx_family,
             architecture=model.architecture,
@@ -224,7 +231,6 @@ def _build_model_entries(definition_lookup: dict[str, dict[str, Any]]) -> list[d
 
 def _build_specialized_kernel_refs(
     *,
-    model_id: str,
     family: str,
     zmlx_family: str,
     architecture: str,
@@ -298,16 +304,8 @@ def _build_specialized_kernel_refs(
         seen.add(key)  # type: ignore[arg-type]
         deduped.append(ref)
 
-    if not deduped:
-        fallback = {
-            "kernel_id": expected_pattern_ids[0] if expected_pattern_ids else "pattern:swiglu_mlp",
-            "applicability": "unknown",
-            "rationale": f"No model-specific kernel mapping derived for {model_id}.",
-            "constraints": None,
-            "evidence": None,
-        }
-        _attach_model_ref_missing_reason(fallback)
-        deduped.append(fallback)
+    # No fallback — if no specialized kernels match, return empty rather than
+    # fabricating a reference to a definition that may not exist.
     return deduped
 
 

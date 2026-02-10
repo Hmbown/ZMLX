@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 import pytest
 
@@ -37,7 +38,10 @@ def test_kb_build_is_deterministic_bytes() -> None:
 
 
 def test_kb_artifact_matches_builder_output() -> None:
-    artifact = load_knowledge_base("zmlx_knowledge_base.json")
+    artifact_path = Path("zmlx_knowledge_base.json")
+    if not artifact_path.exists():
+        pytest.skip("zmlx_knowledge_base.json not found (not committed)")
+    artifact = load_knowledge_base(str(artifact_path))
     rebuilt = build_knowledge_base()
     assert canonical_dumps(artifact) == canonical_dumps(rebuilt)
 
