@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """SKV helpers for MLA-style caches (GLM-4.7-Flash).
 
 This module is explicitly SKV-labeled and keeps RoPE slices separate:
 only the latent KV portion is compressed.
 """
+
+from __future__ import annotations
 
 from typing import Any
 
@@ -43,11 +43,13 @@ class SKVMLALatentCacheRuntime:
         bits: int,
         group_size: int,
         warmup_tokens: int,
+        chunk_token_block: int = 1,
     ) -> None:
         _require(kv_lora_rank > 1, "SKVMLALatentCacheRuntime: kv_lora_rank must be > 1")
         _require(0 < rank < kv_lora_rank, "SKVMLALatentCacheRuntime: rank must be in (0, kv_lora_rank)")
         _require(bits in (2, 4, 8), "SKVMLALatentCacheRuntime: bits must be one of {2,4,8}")
         _require(group_size > 0, "SKVMLALatentCacheRuntime: group_size must be > 0")
+        _require(chunk_token_block > 0, "SKVMLALatentCacheRuntime: chunk_token_block must be > 0")
 
         self.kv_lora_rank = int(kv_lora_rank)
         self.rope_dim = int(rope_dim)
@@ -55,11 +57,13 @@ class SKVMLALatentCacheRuntime:
         self.bits = int(bits)
         self.group_size = int(group_size)
         self.warmup_tokens = int(max(1, warmup_tokens))
+        self.chunk_token_block = int(chunk_token_block)
 
         self.offset = 0
         self.basis: Any | None = None
         self._compressed_chunks: list[dict[str, Any]] = []
         self._merged_state_cache: dict[str, Any] | None = None
+        self._rank_cache_merged: Any | None = None  # (S,1,rank), dequantized once
         self.latent_dense: Any | None = None  # (B,1,S,D) before compression
         self.k_rope_dense: Any | None = None  # (B,1,S,rope_dim)
 
@@ -68,6 +72,7 @@ class SKVMLALatentCacheRuntime:
         self.basis = None
         self._compressed_chunks = []
         self._merged_state_cache = None
+        self._rank_cache_merged = None
         self.latent_dense = None
         self.k_rope_dense = None
 
@@ -114,6 +119,46 @@ class SKVMLALatentCacheRuntime:
             return delta
         return mx.concatenate([current, delta], axis=2)
 
+    def _append_rank_cache(self, rank_chunk: Any) -> None:
+        if self._rank_cache_merged is None:
+            self._rank_cache_merged = rank_chunk
+            return
+        self._rank_cache_merged = mx.concatenate([self._rank_cache_merged, rank_chunk], axis=0)
+
+    def _append_compressed_chunk(self, chunk: dict[str, Any]) -> None:
+        if self.chunk_token_block <= 1 or not self._compressed_chunks:
+            self._compressed_chunks.append(chunk)
+            self._merged_state_cache = None
+            return
+
+        last = self._compressed_chunks[-1]
+        last_s = int(last["shape"][0])
+        add_s = int(chunk["shape"][0])
+        can_merge = (
+            int(last["shape"][1]) == int(chunk["shape"][1])
+            and int(last["shape"][2]) == int(chunk["shape"][2])
+            and int(last["group_size"]) == int(chunk["group_size"])
+            and int(last["bits"]) == int(chunk["bits"])
+            and last_s < self.chunk_token_block
+            and (last_s + add_s) <= self.chunk_token_block
+        )
+        if not can_merge:
+            self._compressed_chunks.append(chunk)
+            self._merged_state_cache = None
+            return
+
+        merged = {
+            "q_data": mx.concatenate([last["q_data"], chunk["q_data"]], axis=0),
+            "scales": mx.concatenate([last["scales"], chunk["scales"]], axis=0),
+            "zeros": mx.concatenate([last["zeros"], chunk["zeros"]], axis=0),
+            "shape": (last_s + add_s, int(last["shape"][1]), int(last["shape"][2])),
+            "bits": int(last["bits"]),
+            "group_size": int(last["group_size"]),
+            "batch": int(last.get("batch", 1)),
+        }
+        self._compressed_chunks[-1] = merged
+        self._merged_state_cache = None
+
     def _maybe_build_basis_and_compress(self) -> None:
         if self.ready() or self.latent_dense is None:
             return
@@ -132,6 +177,7 @@ class SKVMLALatentCacheRuntime:
             group_size=self.group_size,
         )
         self._compressed_chunks = [first_chunk]
+        self._rank_cache_merged = skv_dequantize_rank_chunk(first_chunk, compute_dtype=mx.float32)
         self._merged_state_cache = None
         # Drop dense latent storage once compressed mode starts.
         self.latent_dense = None
@@ -166,8 +212,8 @@ class SKVMLALatentCacheRuntime:
                 bits=self.bits,
                 group_size=self.group_size,
             )
-            self._compressed_chunks.append(next_chunk)
-            self._merged_state_cache = None
+            self._append_compressed_chunk(next_chunk)
+            self._append_rank_cache(skv_dequantize_rank_chunk(next_chunk, compute_dtype=mx.float32))
             self.offset += L
             return
 
@@ -181,19 +227,31 @@ class SKVMLALatentCacheRuntime:
             group_size=self.group_size,
         )
         self._compressed_chunks = [merged]
+        self._rank_cache_merged = skv_dequantize_rank_chunk(merged, compute_dtype=mx.float32)
         self._merged_state_cache = None
         self.offset += L
+
+    def rank_shd(self, *, compute_dtype: Any | None = None) -> Any:
+        _require(self._compressed_chunks, "SKVMLALatentCacheRuntime: no compressed latent state")
+        if self._rank_cache_merged is None:
+            parts = [
+                skv_dequantize_rank_chunk(state, compute_dtype=mx.float32)
+                for state in self._compressed_chunks
+            ]
+            self._rank_cache_merged = parts[0] if len(parts) == 1 else mx.concatenate(parts, axis=0)
+        if compute_dtype is None:
+            return self._rank_cache_merged
+        return self._rank_cache_merged.astype(compute_dtype)
 
     def dense_latent_b1hld(self) -> Any:
         if self._compressed_chunks:
             _require(self.basis is not None, "SKVMLALatentCacheRuntime: missing basis")
-            parts = [
-                skv_decompress_glm_latent(state, self.basis)
-                for state in self._compressed_chunks
-            ]
-            if len(parts) == 1:
-                return parts[0]
-            return mx.concatenate(parts, axis=2)
+            rank_state = self.rank_shd(compute_dtype=mx.float32)
+            latent_shd = mx.einsum("shr,hdr->shd", rank_state, self.basis.astype(mx.float32))
+            S, H, D = map(int, latent_shd.shape)
+            out = latent_shd.reshape(S, H, D, 1)
+            out = mx.transpose(out, axes=(3, 1, 0, 2))
+            return out.astype(self.basis.dtype)
         _require(self.latent_dense is not None, "SKVMLALatentCacheRuntime: no latent state available")
         return self.latent_dense
 

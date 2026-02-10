@@ -133,3 +133,105 @@ def derive_shape_suite_from_config(
         )
     return [{"B": r, "H_Q": heads, "D_NOPE": d_nope, "D_ROPE": d_rope} for r in rows]
 
+
+def load_shape_log(path: str | Path) -> list[dict[str, Any]]:
+    """Load runtime shape log entries (JSONL)."""
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Shape log not found: {p}")
+    records: list[dict[str, Any]] = []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(rec, dict):
+            continue
+        records.append(rec)
+    return records
+
+
+def derive_shape_suite_from_log(
+    op_name: str,
+    log_path: str | Path,
+    *,
+    dtype_name: str | None = None,
+    max_shapes: int = 8,
+    min_count: int = 1,
+) -> list[dict[str, int]]:
+    """Derive op-specific shape signatures from a runtime shape log."""
+    if op_name not in _SUPPORTED_OPS:
+        raise ValueError(
+            f"Unsupported op {op_name!r} for log-derived shapes. "
+            f"Expected one of: {', '.join(_SUPPORTED_OPS)}"
+        )
+    entries = load_shape_log(log_path)
+    counts: dict[str, dict[str, Any]] = {}
+
+    for rec in entries:
+        if str(rec.get("op_name", "")) != op_name:
+            continue
+        if dtype_name is not None and str(rec.get("dtype", "")) != str(dtype_name):
+            continue
+        shape_sig = rec.get("shape_signature")
+        if not isinstance(shape_sig, dict):
+            continue
+        count = rec.get("count", 1)
+        try:
+            count = int(count)
+        except Exception:
+            count = 1
+        shape_key = json.dumps(shape_sig, sort_keys=True, separators=(",", ":"))
+        if shape_key not in counts:
+            counts[shape_key] = {"shape": shape_sig, "count": 0}
+        counts[shape_key]["count"] += max(1, count)
+
+    ranked = sorted(
+        counts.values(),
+        key=lambda item: (-int(item.get("count", 0)), json.dumps(item.get("shape", {}), sort_keys=True)),
+    )
+
+    out: list[dict[str, int]] = []
+    for item in ranked:
+        if len(out) >= max_shapes:
+            break
+        count = int(item.get("count", 0))
+        if count < min_count:
+            continue
+        shape = item.get("shape", {})
+        if not isinstance(shape, dict):
+            continue
+
+        if op_name == "rmsnorm_residual":
+            if "rows" in shape and "D" in shape:
+                out.append({"rows": int(shape["rows"]), "D": int(shape["D"])})
+            continue
+
+        if op_name == "swiglu":
+            if "rows" in shape and "D" in shape:
+                out.append({"rows": int(shape["rows"]), "D": int(shape["D"])})
+                continue
+            if "N" in shape and "D" in shape:
+                d = int(shape["D"])
+                n = int(shape["N"])
+                if d > 0 and n > 0:
+                    out.append({"rows": max(1, n // d), "D": d})
+            continue
+
+        if op_name == "rope":
+            required = ("B", "H_Q", "D_NOPE", "D_ROPE")
+            if all(k in shape for k in required):
+                out.append(
+                    {
+                        "B": int(shape["B"]),
+                        "H_Q": int(shape["H_Q"]),
+                        "D_NOPE": int(shape["D_NOPE"]),
+                        "D_ROPE": int(shape["D_ROPE"]),
+                    }
+                )
+
+    if not out:
+        raise ValueError(f"No matching shapes found in log for op {op_name!r}")
+    return out

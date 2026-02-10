@@ -20,8 +20,7 @@ import mlx.nn as nn
 
 from ...kvtc.skv_mla import (
     SKVMLALatentCacheRuntime,
-    skv_dequantize_rank_chunk,
-    skv_glm_compressed_attention_scores,
+    skv_project_glm_queries_to_rank,
 )
 from .._registry import register
 from .._types import PatchConfig
@@ -81,6 +80,7 @@ class _GLM47SKVMLAPattern:
         bits = _env_int("ZMLX_SKV_MLA_BITS", 4)
         group_size = _env_int("ZMLX_SKV_MLA_GROUP_SIZE", 32)
         warmup_tokens = _env_int("ZMLX_SKV_MLA_WARMUP_TOKENS", max(rank, 64))
+        chunk_tokens = _env_int("ZMLX_SKV_MLA_CHUNK_TOKENS", 16)
         strategy = _env_str("ZMLX_SKV_MLA_STRATEGY", "B").strip().upper()
 
         def patched_call(
@@ -127,6 +127,7 @@ class _GLM47SKVMLAPattern:
                     bits=bits,
                     group_size=group_size,
                     warmup_tokens=warmup_tokens,
+                    chunk_token_block=chunk_tokens,
                 )
             runtime = self_mod._zmlx_skv_mla_runtime
             if offset == 0 and int(runtime.offset) > 0:
@@ -154,49 +155,26 @@ class _GLM47SKVMLAPattern:
             if use_strategy_b:
                 num_heads = int(self_mod.num_heads)
                 basis = runtime.basis
-                chunks = runtime.compressed_chunks
-                score_parts = [
-                    skv_glm_compressed_attention_scores(
-                        q_nope,
-                        chunk,
-                        basis,
-                        num_heads=num_heads,
-                        scale=float(self_mod.scale),
-                    )
-                    for chunk in chunks
-                ]
-                score_nope = (
-                    score_parts[0]
-                    if len(score_parts) == 1
-                    else mx.concatenate(score_parts, axis=-1)
-                )
+                _ = runtime.compressed_chunks  # explicit: keep chunk list as canonical compressed payload
+                rank_state = runtime.rank_shd(compute_dtype=mx.float32)
+                z_rank = rank_state[:, 0, :]
+                q_rank = skv_project_glm_queries_to_rank(q_nope, basis).astype(mx.float32)
+                score_nope = mx.einsum("qhr,kr->hqk", q_rank, z_rank) * float(self_mod.scale)
                 q_pe_shd = mx.transpose(q_pe, axes=(2, 1, 0, 3)).reshape(
                     int(L), num_heads, int(self_mod.qk_rope_head_dim)
                 )
-                k_rope_shd = runtime.rope_shd()
-                k_rope_heads = mx.repeat(k_rope_shd, repeats=num_heads, axis=1)
+                k_rope_flat = runtime.rope_shd()[:, 0, :].astype(mx.float32)
                 score_rope = (
-                    mx.einsum("qhd,khd->hqk", q_pe_shd, k_rope_heads) * float(self_mod.scale)
+                    mx.einsum("qhd,kd->hqk", q_pe_shd.astype(mx.float32), k_rope_flat)
+                    * float(self_mod.scale)
                 )
 
                 scores = score_nope + score_rope
-                probs = mx.softmax(scores.astype(mx.float32), axis=-1)
+                probs = mx.softmax(scores, axis=-1)
 
                 # Value aggregation in rank-space:
                 #   z_out = sum_i p_i * z_i, then latent_out = z_out @ basis^T.
-                q_len = int(L)
-                rank_dim = int(basis.shape[-1])
-                z_out = mx.zeros((num_heads, q_len, rank_dim), dtype=mx.float32)
-                start = 0
-                for chunk in chunks:
-                    k_len = int(chunk["shape"][0])
-                    end = start + k_len
-                    probs_chunk = probs[..., start:end]
-                    z_chunk = skv_dequantize_rank_chunk(chunk, compute_dtype=mx.float32)
-                    z_heads = mx.repeat(z_chunk, repeats=num_heads, axis=1)
-                    z_out = z_out + mx.einsum("hqk,khr->hqr", probs_chunk, z_heads)
-                    start = end
-
+                z_out = mx.einsum("hqk,kr->hqr", probs, z_rank)
                 latent_out = mx.einsum("hqr,dr->hqd", z_out, basis[0].astype(mx.float32))
                 output = latent_out.astype(q_nope.dtype)[None, ...]
             else:

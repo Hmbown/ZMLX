@@ -61,7 +61,7 @@ class RunArchive:
         return self.candidates.get(candidate_id)
 
     def all_candidates(self) -> list[KernelCandidate]:
-        return list(self.candidates.values())
+        return sorted(self.candidates.values(), key=lambda cand: cand.candidate_id)
 
     def append_event(self, record: dict[str, Any]) -> None:
         with self.ndjson_path.open("a", encoding="utf-8") as f:

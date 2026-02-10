@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import json
+import random
 import statistics
 import time
 from dataclasses import dataclass
@@ -22,6 +23,22 @@ class CorrectnessSummary:
     ok: bool
     max_abs_err: float
     max_rel_err: float
+
+
+@dataclass
+class TimingSummary:
+    median: float
+    p10: float
+    p90: float
+    mean: float
+    stdev: float
+    count: int
+
+    @property
+    def cv(self) -> float:
+        if self.mean <= 0:
+            return 0.0
+        return float(self.stdev / self.mean)
 
 
 def tolerances(dtype_name: str) -> tuple[float, float]:
@@ -102,6 +119,70 @@ def _compute_quantiles(values: list[float]) -> tuple[float, float, float]:
     return float(median), float(ordered[p10_idx]), float(ordered[p90_idx])
 
 
+def _summarize_timings(values: list[float]) -> TimingSummary:
+    if not values:
+        return TimingSummary(
+            median=float("inf"),
+            p10=float("inf"),
+            p90=float("inf"),
+            mean=float("inf"),
+            stdev=0.0,
+            count=0,
+        )
+    median, p10, p90 = _compute_quantiles(values)
+    mean = statistics.mean(values)
+    stdev = statistics.pstdev(values) if len(values) > 1 else 0.0
+    return TimingSummary(
+        median=float(median),
+        p10=float(p10),
+        p90=float(p90),
+        mean=float(mean),
+        stdev=float(stdev),
+        count=len(values),
+    )
+
+
+def _interleaved_timings(
+    mx_mod: Any,
+    *,
+    ref_fn: Any,
+    cand_fn: Any,
+    warmup: int,
+    iters: int,
+    repeats: int,
+    seed: int,
+) -> tuple[list[float], list[float], list[float]]:
+    rng = random.Random(seed)
+    warmup = max(0, warmup)
+    iters = max(1, iters)
+    repeats = max(1, repeats)
+
+    for _ in range(warmup):
+        _materialize(mx_mod, ref_fn())
+        _materialize(mx_mod, cand_fn())
+
+    ref_times: list[float] = []
+    cand_times: list[float] = []
+    for _ in range(repeats):
+        order = ["ref", "cand"] * iters
+        rng.shuffle(order)
+        for tag in order:
+            t0 = time.perf_counter_ns()
+            if tag == "ref":
+                _materialize(mx_mod, ref_fn())
+                ref_times.append((time.perf_counter_ns() - t0) / 1e3)
+            else:
+                _materialize(mx_mod, cand_fn())
+                cand_times.append((time.perf_counter_ns() - t0) / 1e3)
+
+    speedups: list[float] = []
+    pair_count = min(len(ref_times), len(cand_times))
+    for i in range(pair_count):
+        if cand_times[i] > 0:
+            speedups.append(ref_times[i] / cand_times[i])
+    return ref_times, cand_times, speedups
+
+
 def _launch_candidate(
     *,
     candidate_kernel: Any,
@@ -151,6 +232,8 @@ def evaluate_candidate(
     seed: int,
     warmup: int,
     iters: int,
+    repeats: int = 3,
+    bench_mode: str = "interleaved",
     baseline_cache: dict[tuple[str, str], float],
 ) -> KernelCandidate:
     """Compile, validate, and benchmark one candidate across a shape suite."""

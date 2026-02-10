@@ -1144,6 +1144,14 @@ def topk_gating_softmax(
             )
             return weights, indices
 
+    # Full-softmax, unnormalized top-k path must match MLX reference exactly.
+    # Keep this path on pure MLX ops to avoid set differences in edge tie cases.
+    if bias is None and not norm:
+        gates = mx.softmax(x_cast, axis=-1)
+        inds = mx.argpartition(gates, kth=-K, axis=-1)[..., -K:]
+        scores = mx.take_along_axis(gates, inds, axis=-1)
+        return scores, inds.astype(mx.uint32)
+
     # Full softmax path (exact for bias and/or norm_topk_prob=False).
     if K <= _MAX_FUSED_TOPK and bias_supported:
         rows = x_cast.size // D

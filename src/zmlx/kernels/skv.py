@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """SKV kernels: spectral KV compression primitives for MLX/ZMLX.
 
 All public entrypoints are explicitly prefixed with ``skv_`` to make the
 integration path easy to audit.
 """
+
+from __future__ import annotations
 
 from functools import cache
 from typing import Any
