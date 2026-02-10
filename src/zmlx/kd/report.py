@@ -165,10 +165,10 @@ def best_kernels_payload(
             current = best_by_key.get(entry_key)
             if current is not None:
                 cur_latency = float(current["latency_us"])
-                cur_err = float(current.get("correctness_max_abs_err", float("inf")))
-                cand_err = float(
-                    case.get("max_abs_err", cand.metrics.get("correctness_max_abs_err", float("inf")))
-                )
+                cur_err_raw = current.get("correctness_max_abs_err")
+                cur_err = float("inf") if cur_err_raw is None else float(cur_err_raw)
+                cand_err_raw = case.get("max_abs_err", cand.metrics.get("correctness_max_abs_err"))
+                cand_err = float("inf") if cand_err_raw is None else float(cand_err_raw)
                 if shape_latency > cur_latency:
                     continue
                 if shape_latency == cur_latency:

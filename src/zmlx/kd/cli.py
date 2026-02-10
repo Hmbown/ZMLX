@@ -448,7 +448,12 @@ def _run_promote(args: argparse.Namespace) -> None:
         except Exception:
             runtime_env = {}
 
-    from .promotion import PromotionPolicy, build_promotion_capsule, run_promotion_validation, select_promoted_entries
+    from .promotion import (
+        PromotionPolicy,
+        build_promotion_capsule,
+        run_promotion_validation,
+        select_promoted_entries,
+    )
 
     policy = PromotionPolicy(
         min_speedup_p10=float(args.min_speedup_p10),
