@@ -63,6 +63,22 @@ Notes:
 - Grouped routing (`n_group > 1`) is supported as long as `n_group` divides
   `n_routed_experts`.
 
+## Known model IDs (as of 2026-02-08)
+
+- Upstream/base: `moonshotai/Kimi-K2.5`
+- MLX-converted 4-bit target: `mlx-community/Kimi-K2.5`
+- Newer K2 instruct branch also exists in MLX form (separate architecture line):
+  `mlx-community/Kimi-K2-Instruct-0905-mlx-3bit`
+
+Recommended first validation pass:
+
+```bash
+source .venv/bin/activate
+python -m zmlx.validate mlx-community/Kimi-K2.5 \
+  --patterns deepseek_router moe_mlp swiglu_mlp \
+  --runs 1 --max-tokens 200
+```
+
 ## Exo Labs quickstart
 
 `zmlx.exo` can launch exo with ZMLX patching enabled (no exo source changes).
@@ -103,7 +119,7 @@ Notes:
      materializing `(T, K, D)` expert outputs at all.
 
 4) **Kimi K2.5 integration**
-   - In current `mlx-lm`, `kimi_k25` is a thin wrapper over `deepseek_v3`, so
-     the gate modules should already match this pattern. If upstream refactors
-     module paths or renames the gate class, update `_is_deepseek_gate_module()`
-     in `src/zmlx/patch/patterns/deepseek_router.py`.
+   - `deepseek_router` now matches `mlx_lm.models.kimi_k25` gate module paths
+     in addition to DeepSeek paths.
+   - If upstream renames the gate class or moves modules, update
+     `_is_deepseek_gate_module()` in `src/zmlx/patch/patterns/deepseek_router.py`.

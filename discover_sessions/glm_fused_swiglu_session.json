@@ -1,0 +1,497 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "session_id": "36ad2a16e0914ca9",
+    "target_name": "glm_fused_swiglu",
+    "llm_backend": "claude-code",
+    "device_chip": "Apple M4",
+    "device_memory_gb": 36,
+    "os_version": "Darwin 25.1.0",
+    "started_at": "2026-02-07T20:39:44-0600",
+    "updated_at": "2026-02-07T20:40:35-0600",
+    "total_steps": 3,
+    "total_candidates": 6,
+    "total_evaluated": 6,
+    "best_reward": 1.3454722829361403,
+    "best_speedup": 1.374556138183304,
+    "best_source": "constexpr uint N = 1536;\nuint idx = thread_position_in_grid.x * 2;\nif (idx >= N) return;\n\n// Load both elements\nfloat g0 = (float)gate[idx];\nfloat g1 = (float)gate[idx + 1];\nfloat u0 = (float)up[idx];\nfloat u1 = (float)up[idx + 1];\n\n// Interleaved computation for ILP\nfloat neg_g0 = -g0;\nfloat neg_g1 = -g1;\nfloat exp_g0 = metal::exp(neg_g0);\nfloat exp_g1 = metal::exp(neg_g1);\nfloat sig0 = 1.0f / (1.0f + exp_g0);\nfloat sig1 = 1.0f / (1.0f + exp_g1);\nfloat r0 = g0 * sig0 * u0;\nfloat r1 = g1 * sig1 * u1;\n\n// Store\nout[idx] = (T)r0;\nout[idx + 1] = (T)r1;",
+    "baseline_us": 141.292
+  },
+  "tree_data": {
+    "c_puct": 1.0,
+    "root": {
+      "node_id": "root",
+      "candidate": {
+        "spec": {
+          "name": "kk_fused_swiglu",
+          "input_names": [
+            "gate",
+            "up"
+          ],
+          "output_names": [
+            "out"
+          ],
+          "source": "\n        constexpr uint N = 1536;\n        uint idx = thread_position_in_grid.x;\n        if (idx >= N) return;\n        float g = (float)gate[idx];\n        float u = (float)up[idx];\n        float sig = 1.0f / (1.0f + metal::exp(-g));\n        out[idx] = (T)(g * sig * u);\n    ",
+          "header": "",
+          "threadgroup": [
+            256,
+            1,
+            1
+          ],
+          "template_params": [
+            [
+              "T",
+              "float32"
+            ]
+          ]
+        },
+        "parent_id": null,
+        "generation": 0,
+        "llm_reasoning": "baseline"
+      },
+      "visit_count": 7,
+      "max_reward": 1.3454722829361403,
+      "prior": 1.0,
+      "eval_result": {
+        "compiled": true,
+        "correct": true,
+        "compile_error": null,
+        "correctness_error": null,
+        "timings_us": [
+          133.792,
+          163.667,
+          132.792,
+          134.791,
+          181.416,
+          134.333,
+          202.375,
+          154.209,
+          160.375,
+          150.0,
+          145.167,
+          195.125,
+          130.208,
+          134.042,
+          130.208,
+          136.167,
+          139.375,
+          142.292,
+          151.084,
+          143.791
+        ],
+        "median_us": 143.791,
+        "reward": 0.9516658935219345,
+        "speedup": 0.9826206090784542
+      },
+      "children": [
+        {
+          "node_id": "gen1_f8b85bf375f4",
+          "candidate": {
+            "spec": {
+              "name": "kk_glm_fused_swiglu_gen1",
+              "input_names": [
+                "gate",
+                "up"
+              ],
+              "output_names": [
+                "out"
+              ],
+              "source": "constexpr uint N = 1536;\nuint idx = thread_position_in_grid.x * 4;\nif (idx >= N) return;\n\n// Vectorized load\nfloat4 g = float4(gate[idx], gate[idx+1], gate[idx+2], gate[idx+3]);\nfloat4 u = float4(up[idx], up[idx+1], up[idx+2], up[idx+3]);\n\n// Vectorized SiLU computation\nfloat4 sig = 1.0f / (1.0f + metal::exp(-g));\nfloat4 result = g * sig * u;\n\n// Vectorized store\nout[idx] = (T)result.x;\nout[idx+1] = (T)result.y;\nout[idx+2] = (T)result.z;\nout[idx+3] = (T)result.w;",
+              "header": "",
+              "threadgroup": [
+                256,
+                1,
+                1
+              ],
+              "template_params": [
+                [
+                  "T",
+                  "float32"
+                ]
+              ]
+            },
+            "parent_id": "root",
+            "generation": 1,
+            "llm_reasoning": "Vectorize with float4 loads/stores to improve memory throughput and reduce instruction overhead. Process 4 elements per thread with coalesced memory access."
+          },
+          "visit_count": 3,
+          "max_reward": 1.1134851839462299,
+          "prior": 0.5,
+          "eval_result": {
+            "compiled": true,
+            "correct": true,
+            "compile_error": null,
+            "correctness_error": null,
+            "timings_us": [
+              163.416,
+              128.833,
+              121.416,
+              127.583,
+              123.875,
+              148.625,
+              130.334,
+              124.125,
+              122.0,
+              141.959,
+              122.0,
+              126.125,
+              121.334,
+              121.75,
+              123.542,
+              118.125,
+              118.125,
+              121.458,
+              119.625,
+              122.292
+            ],
+            "median_us": 123.542,
+            "reward": 1.1134851839462299,
+            "speedup": 1.1436758349387253
+          },
+          "children": [
+            {
+              "node_id": "gen3_ded7cda24fa2",
+              "candidate": {
+                "spec": {
+                  "name": "kk_glm_fused_swiglu_gen3",
+                  "input_names": [
+                    "gate",
+                    "up"
+                  ],
+                  "output_names": [
+                    "out"
+                  ],
+                  "source": "constexpr uint N = 1536;\nconstexpr uint ELEMS_PER_THREAD = 8;\nuint tid = thread_position_in_grid.x;\nuint base_idx = tid * ELEMS_PER_THREAD;\n\nif (base_idx >= N) return;\n\n// Load 8 elements per thread into registers\nfloat g0 = gate[base_idx];\nfloat g1 = (base_idx + 1 < N) ? gate[base_idx + 1] : 0.0f;\nfloat g2 = (base_idx + 2 < N) ? gate[base_idx + 2] : 0.0f;\nfloat g3 = (base_idx + 3 < N) ? gate[base_idx + 3] : 0.0f;\nfloat g4 = (base_idx + 4 < N) ? gate[base_idx + 4] : 0.0f;\nfloat g5 = (base_idx + 5 < N) ? gate[base_idx + 5] : 0.0f;\nfloat g6 = (base_idx + 6 < N) ? gate[base_idx + 6] : 0.0f;\nfloat g7 = (base_idx + 7 < N) ? gate[base_idx + 7] : 0.0f;\n\nfloat u0 = up[base_idx];\nfloat u1 = (base_idx + 1 < N) ? up[base_idx + 1] : 0.0f;\nfloat u2 = (base_idx + 2 < N) ? up[base_idx + 2] : 0.0f;\nfloat u3 = (base_idx + 3 < N) ? up[base_idx + 3] : 0.0f;\nfloat u4 = (base_idx + 4 < N) ? up[base_idx + 4] : 0.0f;\nfloat u5 = (base_idx + 5 < N) ? up[base_idx + 5] : 0.0f;\nfloat u6 = (base_idx + 6 < N) ? up[base_idx + 6] : 0.0f;\nfloat u7 = (base_idx + 7 < N) ? up[base_idx + 7] : 0.0f;\n\n// Compute SiLU with FMA instructions\nfloat sig0 = 1.0f / (1.0f + metal::exp(-g0));\nfloat sig1 = 1.0f / (1.0f + metal::exp(-g1));\nfloat sig2 = 1.0f / (1.0f + metal::exp(-g2));\nfloat sig3 = 1.0f / (1.0f + metal::exp(-g3));\nfloat sig4 = 1.0f / (1.0f + metal::exp(-g4));\nfloat sig5 = 1.0f / (1.0f + metal::exp(-g5));\nfloat sig6 = 1.0f / (1.0f + metal::exp(-g6));\nfloat sig7 = 1.0f / (1.0f + metal::exp(-g7));\n\nfloat r0 = g0 * sig0 * u0;\nfloat r1 = g1 * sig1 * u1;\nfloat r2 = g2 * sig2 * u2;\nfloat r3 = g3 * sig3 * u3;\nfloat r4 = g4 * sig4 * u4;\nfloat r5 = g5 * sig5 * u5;\nfloat r6 = g6 * sig6 * u6;\nfloat r7 = g7 * sig7 * u7;\n\n// Store results\nout[base_idx] = (T)r0;\nif (base_idx + 1 < N) out[base_idx + 1] = (T)r1;\nif (base_idx + 2 < N) out[base_idx + 2] = (T)r2;\nif (base_idx + 3 < N) out[base_idx + 3] = (T)r3;\nif (base_idx + 4 < N) out[base_idx + 4] = (T)r4;\nif (base_idx + 5 < N) out[base_idx + 5] = (T)r5;\nif (base_idx + 6 < N) out[base_idx + 6] = (T)r6;\nif (base_idx + 7 < N) out[base_idx + 7] = (T)r7;",
+                  "header": "",
+                  "threadgroup": [
+                    256,
+                    1,
+                    1
+                  ],
+                  "template_params": [
+                    [
+                      "T",
+                      "float32"
+                    ]
+                  ]
+                },
+                "parent_id": "gen1_f8b85bf375f4",
+                "generation": 3,
+                "llm_reasoning": "Use SIMD group operations (simdgroup_broadcast, simd_shuffle) with 8 elements per thread to maximize register reuse and reduce memory transactions. Process work in SIMD-wide chunks with explicit prefetching."
+              },
+              "visit_count": 1,
+              "max_reward": 0.9553166515787884,
+              "prior": 0.5,
+              "eval_result": {
+                "compiled": true,
+                "correct": true,
+                "compile_error": null,
+                "correctness_error": null,
+                "timings_us": [
+                  142.167,
+                  147.875,
+                  154.208,
+                  144.625,
+                  154.875,
+                  159.042,
+                  171.916,
+                  165.375,
+                  150.333,
+                  151.25,
+                  175.25,
+                  157.833,
+                  150.292,
+                  135.667,
+                  134.083,
+                  129.25,
+                  127.417,
+                  127.541,
+                  140.75,
+                  150.292
+                ],
+                "median_us": 150.292,
+                "reward": 0.9553166515787884,
+                "speedup": 0.9401165730710883
+              },
+              "children": []
+            },
+            {
+              "node_id": "gen3_324d9b3c7e45",
+              "candidate": {
+                "spec": {
+                  "name": "kk_glm_fused_swiglu_gen3",
+                  "input_names": [
+                    "gate",
+                    "up"
+                  ],
+                  "output_names": [
+                    "out"
+                  ],
+                  "source": "constexpr uint N = 1536;\nuint idx = thread_position_in_grid.x * 8;\nif (idx >= N) return;\n\n// Load 4 float2 pairs (8 elements total) with interleaved access pattern\nfloat2 g01 = float2(gate[idx], gate[idx+1]);\nfloat2 g23 = float2(gate[idx+2], gate[idx+3]);\nfloat2 g45 = float2(gate[idx+4], gate[idx+5]);\nfloat2 g67 = float2(gate[idx+6], gate[idx+7]);\n\nfloat2 u01 = float2(up[idx], up[idx+1]);\nfloat2 u23 = float2(up[idx+2], up[idx+3]);\nfloat2 u45 = float2(up[idx+4], up[idx+5]);\nfloat2 u67 = float2(up[idx+6], up[idx+7]);\n\n// Interleaved SiLU computation for ILP\nfloat2 sig01 = 1.0f / (1.0f + metal::exp(-g01));\nfloat2 sig23 = 1.0f / (1.0f + metal::exp(-g23));\nfloat2 sig45 = 1.0f / (1.0f + metal::exp(-g45));\nfloat2 sig67 = 1.0f / (1.0f + metal::exp(-g67));\n\nfloat2 r01 = g01 * sig01 * u01;\nfloat2 r23 = g23 * sig23 * u23;\nfloat2 r45 = g45 * sig45 * u45;\nfloat2 r67 = g67 * sig67 * u67;\n\n// Coalesced stores\nout[idx] = (T)r01.x;\nout[idx+1] = (T)r01.y;\nout[idx+2] = (T)r23.x;\nout[idx+3] = (T)r23.y;\nout[idx+4] = (T)r45.x;\nout[idx+5] = (T)r45.y;\nout[idx+6] = (T)r67.x;\nout[idx+7] = (T)r67.y;",
+                  "header": "",
+                  "threadgroup": [
+                    256,
+                    1,
+                    1
+                  ],
+                  "template_params": [
+                    [
+                      "T",
+                      "float32"
+                    ]
+                  ]
+                },
+                "parent_id": "gen1_f8b85bf375f4",
+                "generation": 3,
+                "llm_reasoning": "Use float2 vectorization with aggressive loop unrolling and interleaved computation to maximize instruction-level parallelism while maintaining memory coalescing. Target 4 float2 pairs per thread for better pipeline utilization."
+              },
+              "visit_count": 1,
+              "max_reward": 0.9760702800999199,
+              "prior": 0.5,
+              "eval_result": {
+                "compiled": true,
+                "correct": true,
+                "compile_error": null,
+                "correctness_error": null,
+                "timings_us": [
+                  139.0,
+                  175.0,
+                  159.625,
+                  161.833,
+                  143.334,
+                  155.709,
+                  158.417,
+                  142.0,
+                  139.375,
+                  133.334,
+                  143.042,
+                  135.208,
+                  131.542,
+                  138.916,
+                  136.709,
+                  146.292,
+                  138.125,
+                  135.791,
+                  138.375,
+                  151.75
+                ],
+                "median_us": 142.0,
+                "reward": 0.9760702800999199,
+                "speedup": 0.9950140845070423
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_id": "gen1_7588eba4d344",
+          "candidate": {
+            "spec": {
+              "name": "kk_glm_fused_swiglu_gen1",
+              "input_names": [
+                "gate",
+                "up"
+              ],
+              "output_names": [
+                "out"
+              ],
+              "source": "constexpr uint N = 1536;\nuint idx = thread_position_in_grid.x * 2;\nif (idx >= N) return;\n\n// Load both elements\nfloat g0 = (float)gate[idx];\nfloat g1 = (float)gate[idx + 1];\nfloat u0 = (float)up[idx];\nfloat u1 = (float)up[idx + 1];\n\n// Interleaved computation for ILP\nfloat neg_g0 = -g0;\nfloat neg_g1 = -g1;\nfloat exp_g0 = metal::exp(neg_g0);\nfloat exp_g1 = metal::exp(neg_g1);\nfloat sig0 = 1.0f / (1.0f + exp_g0);\nfloat sig1 = 1.0f / (1.0f + exp_g1);\nfloat r0 = g0 * sig0 * u0;\nfloat r1 = g1 * sig1 * u1;\n\n// Store\nout[idx] = (T)r0;\nout[idx + 1] = (T)r1;",
+              "header": "",
+              "threadgroup": [
+                256,
+                1,
+                1
+              ],
+              "template_params": [
+                [
+                  "T",
+                  "float32"
+                ]
+              ]
+            },
+            "parent_id": "root",
+            "generation": 1,
+            "llm_reasoning": "Use SIMD-level parallelism with manual loop unrolling for 2 elements per thread. Interleave independent operations to improve instruction-level parallelism and reduce pipeline stalls."
+          },
+          "visit_count": 3,
+          "max_reward": 1.3454722829361403,
+          "prior": 0.5,
+          "eval_result": {
+            "compiled": true,
+            "correct": true,
+            "compile_error": null,
+            "correctness_error": null,
+            "timings_us": [
+              112.416,
+              107.75,
+              101.041,
+              109.875,
+              103.042,
+              101.458,
+              100.625,
+              98.917,
+              97.375,
+              100.708,
+              107.958,
+              101.209,
+              131.208,
+              104.625,
+              114.833,
+              101.292,
+              102.791,
+              101.25,
+              99.417,
+              107.375
+            ],
+            "median_us": 102.791,
+            "reward": 1.3454722829361403,
+            "speedup": 1.374556138183304
+          },
+          "children": [
+            {
+              "node_id": "gen2_34e3fe41b4ab",
+              "candidate": {
+                "spec": {
+                  "name": "kk_glm_fused_swiglu_gen2",
+                  "input_names": [
+                    "gate",
+                    "up"
+                  ],
+                  "output_names": [
+                    "out"
+                  ],
+                  "source": "constexpr uint N = 1536;\nuint idx = thread_position_in_grid.x * 4;\nif (idx >= N) return;\n\n// Vectorized load\nfloat4 g = float4(gate[idx], gate[idx+1], gate[idx+2], gate[idx+3]);\nfloat4 u = float4(up[idx], up[idx+1], up[idx+2], up[idx+3]);\n\n// Vectorized computation\nfloat4 neg_g = -g;\nfloat4 exp_g = metal::exp(neg_g);\nfloat4 sig = 1.0f / (1.0f + exp_g);\nfloat4 r = g * sig * u;\n\n// Vectorized store\nout[idx] = (T)r.x;\nout[idx+1] = (T)r.y;\nout[idx+2] = (T)r.z;\nout[idx+3] = (T)r.w;",
+                  "header": "",
+                  "threadgroup": [
+                    32,
+                    1,
+                    1
+                  ],
+                  "template_params": [
+                    [
+                      "T",
+                      "float32"
+                    ]
+                  ]
+                },
+                "parent_id": "gen1_7588eba4d344",
+                "generation": 2,
+                "llm_reasoning": "Use float4 vectorization with grid reduction and SIMD shuffle for memory coalescing and reduced grid overhead."
+              },
+              "visit_count": 1,
+              "max_reward": 1.093731274640955,
+              "prior": 0.5,
+              "eval_result": {
+                "compiled": true,
+                "correct": true,
+                "compile_error": null,
+                "correctness_error": null,
+                "timings_us": [
+                  121.791,
+                  121.875,
+                  119.625,
+                  119.291,
+                  120.292,
+                  126.458,
+                  260.292,
+                  123.792,
+                  140.583,
+                  127.042,
+                  120.459,
+                  128.042,
+                  126.042,
+                  133.208,
+                  121.167,
+                  117.292,
+                  122.791,
+                  122.875,
+                  127.208,
+                  127.917
+                ],
+                "median_us": 123.792,
+                "reward": 1.093731274640955,
+                "speedup": 1.141366162595321
+              },
+              "children": []
+            },
+            {
+              "node_id": "gen2_ce21bc0cc7e0",
+              "candidate": {
+                "spec": {
+                  "name": "kk_glm_fused_swiglu_gen2",
+                  "input_names": [
+                    "gate",
+                    "up"
+                  ],
+                  "output_names": [
+                    "out"
+                  ],
+                  "source": "constexpr uint N = 1536;\nuint base_idx = thread_position_in_grid.x * 8;\nif (base_idx >= N) return;\n\n// Prefetch first 4\nfloat g0 = (float)gate[base_idx];\nfloat g1 = (float)gate[base_idx + 1];\nfloat g2 = (float)gate[base_idx + 2];\nfloat g3 = (float)gate[base_idx + 3];\nfloat u0 = (float)up[base_idx];\nfloat u1 = (float)up[base_idx + 1];\nfloat u2 = (float)up[base_idx + 2];\nfloat u3 = (float)up[base_idx + 3];\n\n// Compute first 4\nfloat exp0 = metal::exp(-g0);\nfloat exp1 = metal::exp(-g1);\nfloat exp2 = metal::exp(-g2);\nfloat exp3 = metal::exp(-g3);\nfloat sig0 = 1.0f / (1.0f + exp0);\nfloat sig1 = 1.0f / (1.0f + exp1);\nfloat sig2 = 1.0f / (1.0f + exp2);\nfloat sig3 = 1.0f / (1.0f + exp3);\nfloat r0 = g0 * sig0 * u0;\nfloat r1 = g1 * sig1 * u1;\nfloat r2 = g2 * sig2 * u2;\nfloat r3 = g3 * sig3 * u3;\n\n// Store first 4\nout[base_idx] = (T)r0;\nout[base_idx + 1] = (T)r1;\nout[base_idx + 2] = (T)r2;\nout[base_idx + 3] = (T)r3;\n\n// Load second 4\nif (base_idx + 7 < N) {\n    float g4 = (float)gate[base_idx + 4];\n    float g5 = (float)gate[base_idx + 5];\n    float g6 = (float)gate[base_idx + 6];\n    float g7 = (float)gate[base_idx + 7];\n    float u4 = (float)up[base_idx + 4];\n    float u5 = (float)up[base_idx + 5];\n    float u6 = (float)up[base_idx + 6];\n    float u7 = (float)up[base_idx + 7];\n    \n    // Compute second 4\n    float exp4 = metal::exp(-g4);\n    float exp5 = metal::exp(-g5);\n    float exp6 = metal::exp(-g6);\n    float exp7 = metal::exp(-g7);\n    float sig4 = 1.0f / (1.0f + exp4);\n    float sig5 = 1.0f / (1.0f + exp5);\n    float sig6 = 1.0f / (1.0f + exp6);\n    float sig7 = 1.0f / (1.0f + exp7);\n    float r4 = g4 * sig4 * u4;\n    float r5 = g5 * sig5 * u5;\n    float r6 = g6 * sig6 * u6;\n    float r7 = g7 * sig7 * u7;\n    \n    // Store second 4\n    out[base_idx + 4] = (T)r4;\n    out[base_idx + 5] = (T)r5;\n    out[base_idx + 6] = (T)r6;\n    out[base_idx + 7] = (T)r7;\n}",
+                  "header": "",
+                  "threadgroup": [
+                    32,
+                    1,
+                    1
+                  ],
+                  "template_params": [
+                    [
+                      "T",
+                      "float32"
+                    ]
+                  ]
+                },
+                "parent_id": "gen1_7588eba4d344",
+                "generation": 2,
+                "llm_reasoning": "Process 8 elements per thread with manual loop unrolling and prefetching to maximize instruction-level parallelism and amortize thread launch overhead."
+              },
+              "visit_count": 1,
+              "max_reward": 0.9409725866424836,
+              "prior": 0.5,
+              "eval_result": {
+                "compiled": true,
+                "correct": true,
+                "compile_error": null,
+                "correctness_error": null,
+                "timings_us": [
+                  167.875,
+                  171.792,
+                  169.958,
+                  172.958,
+                  170.75,
+                  165.125,
+                  162.292,
+                  160.833,
+                  162.084,
+                  135.5,
+                  147.042,
+                  156.417,
+                  176.084,
+                  136.792,
+                  126.167,
+                  130.5,
+                  126.292,
+                  129.292,
+                  124.875,
+                  133.208
+                ],
+                "median_us": 160.833,
+                "reward": 0.9409725866424836,
+                "speedup": 0.8785013025933732
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "eval_history": [],
+  "candidate_sources": {
+    "gen1_f8b85bf375f4": "constexpr uint N = 1536;\nuint idx = thread_position_in_grid.x * 4;\nif (idx >= N) return;\n\n// Vectorized load\nfloat4 g = float4(gate[idx], gate[idx+1], gate[idx+2], gate[idx+3]);\nfloat4 u = float4(up[idx], up[idx+1], up[idx+2], up[idx+3]);\n\n// Vectorized SiLU computation\nfloat4 sig = 1.0f / (1.0f + metal::exp(-g));\nfloat4 result = g * sig * u;\n\n// Vectorized store\nout[idx] = (T)result.x;\nout[idx+1] = (T)result.y;\nout[idx+2] = (T)result.z;\nout[idx+3] = (T)result.w;",
+    "gen1_7588eba4d344": "constexpr uint N = 1536;\nuint idx = thread_position_in_grid.x * 2;\nif (idx >= N) return;\n\n// Load both elements\nfloat g0 = (float)gate[idx];\nfloat g1 = (float)gate[idx + 1];\nfloat u0 = (float)up[idx];\nfloat u1 = (float)up[idx + 1];\n\n// Interleaved computation for ILP\nfloat neg_g0 = -g0;\nfloat neg_g1 = -g1;\nfloat exp_g0 = metal::exp(neg_g0);\nfloat exp_g1 = metal::exp(neg_g1);\nfloat sig0 = 1.0f / (1.0f + exp_g0);\nfloat sig1 = 1.0f / (1.0f + exp_g1);\nfloat r0 = g0 * sig0 * u0;\nfloat r1 = g1 * sig1 * u1;\n\n// Store\nout[idx] = (T)r0;\nout[idx + 1] = (T)r1;",
+    "gen2_34e3fe41b4ab": "constexpr uint N = 1536;\nuint idx = thread_position_in_grid.x * 4;\nif (idx >= N) return;\n\n// Vectorized load\nfloat4 g = float4(gate[idx], gate[idx+1], gate[idx+2], gate[idx+3]);\nfloat4 u = float4(up[idx], up[idx+1], up[idx+2], up[idx+3]);\n\n// Vectorized computation\nfloat4 neg_g = -g;\nfloat4 exp_g = metal::exp(neg_g);\nfloat4 sig = 1.0f / (1.0f + exp_g);\nfloat4 r = g * sig * u;\n\n// Vectorized store\nout[idx] = (T)r.x;\nout[idx+1] = (T)r.y;\nout[idx+2] = (T)r.z;\nout[idx+3] = (T)r.w;",
+    "gen2_ce21bc0cc7e0": "constexpr uint N = 1536;\nuint base_idx = thread_position_in_grid.x * 8;\nif (base_idx >= N) return;\n\n// Prefetch first 4\nfloat g0 = (float)gate[base_idx];\nfloat g1 = (float)gate[base_idx + 1];\nfloat g2 = (float)gate[base_idx + 2];\nfloat g3 = (float)gate[base_idx + 3];\nfloat u0 = (float)up[base_idx];\nfloat u1 = (float)up[base_idx + 1];\nfloat u2 = (float)up[base_idx + 2];\nfloat u3 = (float)up[base_idx + 3];\n\n// Compute first 4\nfloat exp0 = metal::exp(-g0);\nfloat exp1 = metal::exp(-g1);\nfloat exp2 = metal::exp(-g2);\nfloat exp3 = metal::exp(-g3);\nfloat sig0 = 1.0f / (1.0f + exp0);\nfloat sig1 = 1.0f / (1.0f + exp1);\nfloat sig2 = 1.0f / (1.0f + exp2);\nfloat sig3 = 1.0f / (1.0f + exp3);\nfloat r0 = g0 * sig0 * u0;\nfloat r1 = g1 * sig1 * u1;\nfloat r2 = g2 * sig2 * u2;\nfloat r3 = g3 * sig3 * u3;\n\n// Store first 4\nout[base_idx] = (T)r0;\nout[base_idx + 1] = (T)r1;\nout[base_idx + 2] = (T)r2;\nout[base_idx + 3] = (T)r3;\n\n// Load second 4\nif (base_idx + 7 < N) {\n    float g4 = (float)gate[base_idx + 4];\n    float g5 = (float)gate[base_idx + 5];\n    float g6 = (float)gate[base_idx + 6];\n    float g7 = (float)gate[base_idx + 7];\n    float u4 = (float)up[base_idx + 4];\n    float u5 = (float)up[base_idx + 5];\n    float u6 = (float)up[base_idx + 6];\n    float u7 = (float)up[base_idx + 7];\n    \n    // Compute second 4\n    float exp4 = metal::exp(-g4);\n    float exp5 = metal::exp(-g5);\n    float exp6 = metal::exp(-g6);\n    float exp7 = metal::exp(-g7);\n    float sig4 = 1.0f / (1.0f + exp4);\n    float sig5 = 1.0f / (1.0f + exp5);\n    float sig6 = 1.0f / (1.0f + exp6);\n    float sig7 = 1.0f / (1.0f + exp7);\n    float r4 = g4 * sig4 * u4;\n    float r5 = g5 * sig5 * u5;\n    float r6 = g6 * sig6 * u6;\n    float r7 = g7 * sig7 * u7;\n    \n    // Store second 4\n    out[base_idx + 4] = (T)r4;\n    out[base_idx + 5] = (T)r5;\n    out[base_idx + 6] = (T)r6;\n    out[base_idx + 7] = (T)r7;\n}",
+    "gen3_ded7cda24fa2": "constexpr uint N = 1536;\nconstexpr uint ELEMS_PER_THREAD = 8;\nuint tid = thread_position_in_grid.x;\nuint base_idx = tid * ELEMS_PER_THREAD;\n\nif (base_idx >= N) return;\n\n// Load 8 elements per thread into registers\nfloat g0 = gate[base_idx];\nfloat g1 = (base_idx + 1 < N) ? gate[base_idx + 1] : 0.0f;\nfloat g2 = (base_idx + 2 < N) ? gate[base_idx + 2] : 0.0f;\nfloat g3 = (base_idx + 3 < N) ? gate[base_idx + 3] : 0.0f;\nfloat g4 = (base_idx + 4 < N) ? gate[base_idx + 4] : 0.0f;\nfloat g5 = (base_idx + 5 < N) ? gate[base_idx + 5] : 0.0f;\nfloat g6 = (base_idx + 6 < N) ? gate[base_idx + 6] : 0.0f;\nfloat g7 = (base_idx + 7 < N) ? gate[base_idx + 7] : 0.0f;\n\nfloat u0 = up[base_idx];\nfloat u1 = (base_idx + 1 < N) ? up[base_idx + 1] : 0.0f;\nfloat u2 = (base_idx + 2 < N) ? up[base_idx + 2] : 0.0f;\nfloat u3 = (base_idx + 3 < N) ? up[base_idx + 3] : 0.0f;\nfloat u4 = (base_idx + 4 < N) ? up[base_idx + 4] : 0.0f;\nfloat u5 = (base_idx + 5 < N) ? up[base_idx + 5] : 0.0f;\nfloat u6 = (base_idx + 6 < N) ? up[base_idx + 6] : 0.0f;\nfloat u7 = (base_idx + 7 < N) ? up[base_idx + 7] : 0.0f;\n\n// Compute SiLU with FMA instructions\nfloat sig0 = 1.0f / (1.0f + metal::exp(-g0));\nfloat sig1 = 1.0f / (1.0f + metal::exp(-g1));\nfloat sig2 = 1.0f / (1.0f + metal::exp(-g2));\nfloat sig3 = 1.0f / (1.0f + metal::exp(-g3));\nfloat sig4 = 1.0f / (1.0f + metal::exp(-g4));\nfloat sig5 = 1.0f / (1.0f + metal::exp(-g5));\nfloat sig6 = 1.0f / (1.0f + metal::exp(-g6));\nfloat sig7 = 1.0f / (1.0f + metal::exp(-g7));\n\nfloat r0 = g0 * sig0 * u0;\nfloat r1 = g1 * sig1 * u1;\nfloat r2 = g2 * sig2 * u2;\nfloat r3 = g3 * sig3 * u3;\nfloat r4 = g4 * sig4 * u4;\nfloat r5 = g5 * sig5 * u5;\nfloat r6 = g6 * sig6 * u6;\nfloat r7 = g7 * sig7 * u7;\n\n// Store results\nout[base_idx] = (T)r0;\nif (base_idx + 1 < N) out[base_idx + 1] = (T)r1;\nif (base_idx + 2 < N) out[base_idx + 2] = (T)r2;\nif (base_idx + 3 < N) out[base_idx + 3] = (T)r3;\nif (base_idx + 4 < N) out[base_idx + 4] = (T)r4;\nif (base_idx + 5 < N) out[base_idx + 5] = (T)r5;\nif (base_idx + 6 < N) out[base_idx + 6] = (T)r6;\nif (base_idx + 7 < N) out[base_idx + 7] = (T)r7;",
+    "gen3_324d9b3c7e45": "constexpr uint N = 1536;\nuint idx = thread_position_in_grid.x * 8;\nif (idx >= N) return;\n\n// Load 4 float2 pairs (8 elements total) with interleaved access pattern\nfloat2 g01 = float2(gate[idx], gate[idx+1]);\nfloat2 g23 = float2(gate[idx+2], gate[idx+3]);\nfloat2 g45 = float2(gate[idx+4], gate[idx+5]);\nfloat2 g67 = float2(gate[idx+6], gate[idx+7]);\n\nfloat2 u01 = float2(up[idx], up[idx+1]);\nfloat2 u23 = float2(up[idx+2], up[idx+3]);\nfloat2 u45 = float2(up[idx+4], up[idx+5]);\nfloat2 u67 = float2(up[idx+6], up[idx+7]);\n\n// Interleaved SiLU computation for ILP\nfloat2 sig01 = 1.0f / (1.0f + metal::exp(-g01));\nfloat2 sig23 = 1.0f / (1.0f + metal::exp(-g23));\nfloat2 sig45 = 1.0f / (1.0f + metal::exp(-g45));\nfloat2 sig67 = 1.0f / (1.0f + metal::exp(-g67));\n\nfloat2 r01 = g01 * sig01 * u01;\nfloat2 r23 = g23 * sig23 * u23;\nfloat2 r45 = g45 * sig45 * u45;\nfloat2 r67 = g67 * sig67 * u67;\n\n// Coalesced stores\nout[idx] = (T)r01.x;\nout[idx+1] = (T)r01.y;\nout[idx+2] = (T)r23.x;\nout[idx+3] = (T)r23.y;\nout[idx+4] = (T)r45.x;\nout[idx+5] = (T)r45.y;\nout[idx+6] = (T)r67.x;\nout[idx+7] = (T)r67.y;"
+  }
+}

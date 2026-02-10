@@ -1,0 +1,38 @@
+[
+  {
+    "target": "glm_fused_swiglu",
+    "backend": "claude-code",
+    "best_speedup": 1.2033753877973112,
+    "best_reward": 1.2020222632407604,
+    "steps": 10,
+    "evaluated": 40,
+    "session_path": "discover_sessions/autorun/glm_fused_swiglu_claude-code/glm_fused_swiglu_session.json"
+  },
+  {
+    "target": "glm_rmsnorm",
+    "backend": "claude-code",
+    "best_speedup": 1.1595491576746533,
+    "best_reward": 1.1495834890142032,
+    "steps": 10,
+    "evaluated": 40,
+    "session_path": "discover_sessions/autorun/glm_rmsnorm_claude-code/glm_rmsnorm_session.json"
+  },
+  {
+    "target": "glm_moe_combine",
+    "backend": "claude-code",
+    "best_speedup": 1.6404200531101634,
+    "best_reward": 1.614281540079141,
+    "steps": 10,
+    "evaluated": 40,
+    "session_path": "discover_sessions/autorun/glm_moe_combine_claude-code/glm_moe_combine_session.json"
+  },
+  {
+    "target": "glm_topk_gating",
+    "backend": "claude-code",
+    "best_speedup": 5.790909165322877,
+    "best_reward": 5.459715136595719,
+    "steps": 10,
+    "evaluated": 40,
+    "session_path": "discover_sessions/autorun/glm_topk_gating_claude-code/glm_topk_gating_session.json"
+  }
+]
