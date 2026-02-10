@@ -16,13 +16,16 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 
 ## Benchmark Snapshot (2026-02-08)
 
-Latest sequential 4-bit MoE sweep (`--max-tokens 1000 --runs 1`, default patch path, token-identical):
+Snapshot: sequential 4-bit MoE sweep (`--max-tokens 1000 --runs 1`, default patch path, token-identical).
+These rows are from `benchmarks/matrix.jsonl` (dated `2026-02-08`; `custom_mlx=true`; ZMLX `0.8.2`).
 
 | Model | Baseline | Patched | Speedup | Fidelity |
 |:--|--:|--:|--:|:--|
 | `mlx-community/LFM2-8B-A1B-4bit` | 209.79 tok/s | 235.68 tok/s | **1.123x** | PASS |
 | `mlx-community/GLM-4.7-Flash-4bit` | 74.54 tok/s | 78.57 tok/s | 1.054x | PASS |
 | `mlx-community/Qwen3-30B-A3B-4bit` | 103.27 tok/s | 106.26 tok/s | 1.029x | PASS |
+
+For the current promoted custom-MLX stack results (v8), see the next section.
 
 Revalidation at 200 tokens (GLM default path, 3 runs):
 - `mlx-community/GLM-4.7-Flash-4bit`: `82.23 -> 89.63 tok/s` (`1.090x`, PASS)
