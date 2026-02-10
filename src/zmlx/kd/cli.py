@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -489,6 +490,28 @@ def _run_promote(args: argparse.Namespace) -> None:
             print("No promotable kernels (summary):")
             for reason, count in rejection_summary.items():
                 print(f"  - {reason}: {count}")
+        if args.capsule_out:
+            capsule_path = Path(args.capsule_out)
+            capsule_path.parent.mkdir(parents=True, exist_ok=True)
+            capsule = {
+                "meta": {
+                    "date": time.strftime("%Y-%m-%d"),
+                    "model": args.model,
+                    "run": str(run_path),
+                    "patterns": args.patterns if args.patterns is not None else "(default)",
+                    "patch_profile": args.patch_profile,
+                },
+                "policy": {
+                    "min_speedup_p10": policy.min_speedup_p10,
+                    "noise_guard": policy.noise_guard,
+                    "max_noise_pct": policy.max_noise_pct,
+                },
+                "rejected": True,
+                "rejection_summary": rejection_summary,
+                "decisions": [d.__dict__ for d in selection.decisions],
+            }
+            capsule_path.write_text(json.dumps(capsule, indent=2), encoding="utf-8")
+            print(f"Repro capsule (rejection): {capsule_path}")
         raise SystemExit(2)
 
     if args.skip_validate:

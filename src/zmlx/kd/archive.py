@@ -115,5 +115,5 @@ class RunArchive:
 
     def top_benchmarked(self, limit: int = 10) -> list[KernelCandidate]:
         bench = [c for c in self.candidates.values() if c.status == "benchmarked"]
-        bench.sort(key=lambda c: float(c.metrics.get("latency_us", float("inf"))))
+        bench.sort(key=lambda c: (float(c.metrics.get("latency_us", float("inf"))), c.candidate_id))
         return bench[:limit]

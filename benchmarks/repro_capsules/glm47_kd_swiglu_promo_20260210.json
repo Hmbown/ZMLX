@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "date": "2026-02-09",
+    "model": "mlx-community/GLM-4.7-Flash-4bit",
+    "run": "runs/kd_glm47_swiglu_log_20260210",
+    "patterns": [
+      "moe_mlp",
+      "swiglu_mlp",
+      "glm47_rope"
+    ],
+    "patch_profile": null
+  },
+  "policy": {
+    "min_speedup_p10": 1.01,
+    "noise_guard": 0.5,
+    "max_noise_pct": 0.2
+  },
+  "rejected": true,
+  "rejection_summary": {},
+  "decisions": []
+}

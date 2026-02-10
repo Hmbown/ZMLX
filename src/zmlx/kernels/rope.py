@@ -944,6 +944,30 @@ def rope_concat_qk_decode_pos(
 
     D_OUT = d_nope + d_rope
 
+    try:
+        dtype_str = "float32"
+        dts = str(q_nope.dtype)
+        if "bfloat16" in dts:
+            dtype_str = "bfloat16"
+        elif "float16" in dts:
+            dtype_str = "float16"
+        from ..kd.shape_log import record_shape
+
+        record_shape(
+            "rope",
+            dtype_str,
+            {
+                "B": int(B),
+                "H_Q": int(Hq),
+                "D_NOPE": int(d_nope),
+                "D_ROPE": int(d_rope),
+                "D_OUT": int(D_OUT),
+            },
+            source="rope_concat_qk_decode_pos",
+        )
+    except Exception:
+        pass
+
     # Optional discovered-kernel fast path (decode helper fusion).
     try:
         from ..kd import registry as kd_registry

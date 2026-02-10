@@ -7,6 +7,7 @@ import json
 import pytest
 
 from zmlx.kd import registry as kd_registry
+from zmlx.kd.archive import RunArchive
 from zmlx.kd.cli import _discrete_search_space_size, build_parser, main
 from zmlx.kd.eval import evaluate_candidate
 from zmlx.kd.features import candidate_vector, collect_feature_keys
@@ -14,6 +15,7 @@ from zmlx.kd.graph import build_knn_graph
 from zmlx.kd.model_shapes import derive_shape_suite_from_config, parse_decode_rows
 from zmlx.kd.mutations import initial_population
 from zmlx.kd.ops import get_op
+from zmlx.kd.promotion import PromotionPolicy, select_promoted_entries
 from zmlx.kd.registry import get_kernel
 from zmlx.kd.report import best_kernels_payload
 from zmlx.kd.tour import build_union_tours, schedule_batch
@@ -519,6 +521,132 @@ def test_cli_help() -> None:
     with pytest.raises(SystemExit) as exc:
         parser.parse_args(["run", "--help"])
     assert exc.value.code == 0
+
+
+def test_archive_candidate_order_is_deterministic(tmp_path) -> None:
+    archive = RunArchive(
+        out_dir=tmp_path,
+        op_name="rmsnorm",
+        seed=0,
+        budget=2,
+        dtype_name="float16",
+        shape_suite="default",
+        runtime_env={},
+    )
+    cand_b = KernelCandidate(
+        op_name="rmsnorm",
+        candidate_id="",
+        metal_source="source_b",
+        func_name="fn_b",
+        inputs_spec=[],
+        outputs_spec=[],
+        template_params={},
+        launch_params={},
+    )
+    cand_a = KernelCandidate(
+        op_name="rmsnorm",
+        candidate_id="",
+        metal_source="source_a",
+        func_name="fn_a",
+        inputs_spec=[],
+        outputs_spec=[],
+        template_params={},
+        launch_params={},
+    )
+    archive.register_candidate(cand_b)
+    archive.register_candidate(cand_a)
+
+    ids = [cand.candidate_id for cand in archive.all_candidates()]
+    assert ids == sorted(ids)
+
+
+def test_promotion_selects_best_per_shape() -> None:
+    shape_sig = {"rows": 1, "D": 64}
+    cand_fast = KernelCandidate(
+        op_name="swiglu",
+        candidate_id="fast",
+        metal_source="src_fast",
+        func_name="fn_fast",
+        inputs_spec=[],
+        outputs_spec=[],
+        template_params={},
+        launch_params={},
+    )
+    cand_fast.status = "benchmarked"
+    cand_fast.metrics = {
+        "dtype": "float16",
+        "per_shape": [
+            {
+                "shape": shape_sig,
+                "latency_us": 1.0,
+                "speedup_vs_ref": 1.12,
+                "speedup_p10": 1.08,
+                "speedup_p90": 1.18,
+            }
+        ],
+    }
+
+    cand_slow = KernelCandidate(
+        op_name="swiglu",
+        candidate_id="slow",
+        metal_source="src_slow",
+        func_name="fn_slow",
+        inputs_spec=[],
+        outputs_spec=[],
+        template_params={},
+        launch_params={},
+    )
+    cand_slow.status = "benchmarked"
+    cand_slow.metrics = {
+        "dtype": "float16",
+        "per_shape": [
+            {
+                "shape": shape_sig,
+                "latency_us": 1.2,
+                "speedup_vs_ref": 1.08,
+                "speedup_p10": 1.04,
+                "speedup_p90": 1.11,
+            }
+        ],
+    }
+
+    policy = PromotionPolicy(min_speedup_p10=1.05, noise_guard=0.5, max_noise_pct=0.5)
+    selection = select_promoted_entries([cand_slow, cand_fast], runtime_env={}, policy=policy)
+
+    assert selection.promoted_count == 1
+    entry = selection.payload["entries"][0]
+    assert entry["candidate_id"] == "fast"
+
+
+def test_promotion_gate_rejects_unclear_speedup() -> None:
+    shape_sig = {"rows": 1, "D": 64}
+    cand = KernelCandidate(
+        op_name="swiglu",
+        candidate_id="maybe",
+        metal_source="src_maybe",
+        func_name="fn_maybe",
+        inputs_spec=[],
+        outputs_spec=[],
+        template_params={},
+        launch_params={},
+    )
+    cand.status = "benchmarked"
+    cand.metrics = {
+        "dtype": "float16",
+        "per_shape": [
+            {
+                "shape": shape_sig,
+                "latency_us": 1.0,
+                "speedup_vs_ref": 1.01,
+                "speedup_p10": 1.00,
+                "speedup_p90": 1.02,
+            }
+        ],
+    }
+
+    policy = PromotionPolicy(min_speedup_p10=1.02, noise_guard=0.5, max_noise_pct=0.5)
+    selection = select_promoted_entries([cand], runtime_env={}, policy=policy)
+    assert selection.promoted_count == 0
 
 
 def test_parse_decode_rows_is_stable() -> None:

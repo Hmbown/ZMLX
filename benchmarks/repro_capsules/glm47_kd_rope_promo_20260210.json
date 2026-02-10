@@ -1,0 +1,183 @@
+{
+  "meta": {
+    "date": "2026-02-09",
+    "model": "mlx-community/GLM-4.7-Flash-4bit",
+    "run": "runs/kd_glm47_rope_log_20260210",
+    "patterns": [
+      "moe_mlp",
+      "swiglu_mlp",
+      "glm47_rope"
+    ],
+    "patch_profile": null
+  },
+  "policy": {
+    "min_speedup_p10": 1.01,
+    "noise_guard": 0.5,
+    "max_noise_pct": 0.2
+  },
+  "rejected": true,
+  "rejection_summary": {
+    "noise_pct=0.272 > 0.200": 1,
+    "noise_pct=0.307 > 0.200": 1,
+    "noise_pct=0.314 > 0.200": 1,
+    "noise_pct=0.330 > 0.200": 1,
+    "noise_pct=0.386 > 0.200": 1,
+    "noise_pct=0.408 > 0.200": 1,
+    "noise_pct=0.415 > 0.200": 1,
+    "speedup_p10=0.721 < 1.010": 1
+  },
+  "decisions": [
+    {
+      "op_name": "rope",
+      "dtype": "bfloat16",
+      "shape_signature": {
+        "B": 1,
+        "D_NOPE": 512,
+        "D_OUT": 576,
+        "D_ROPE": 64,
+        "H_Q": 20
+      },
+      "candidate_id": "rope_081fe55834fdc7a1",
+      "latency_us": 114.417,
+      "speedup_median": 1.5464025596214208,
+      "speedup_p10": 1.2606279415597357,
+      "speedup_p90": 1.6816767997594368,
+      "speedup_noise_pct": 0.27227635881744744,
+      "ok": false,
+      "reason": "noise_pct=0.272 > 0.200"
+    },
+    {
+      "op_name": "rope",
+      "dtype": "bfloat16",
+      "shape_signature": {
+        "B": 1,
+        "D_NOPE": 512,
+        "D_OUT": 576,
+        "D_ROPE": 64,
+        "H_Q": 20
+      },
+      "candidate_id": "rope_14b7a89cef87878f",
+      "latency_us": 118.5,
+      "speedup_median": 1.5077361206707538,
+      "speedup_p10": 1.2299697478991596,
+      "speedup_p90": 1.811709022605332,
+      "speedup_noise_pct": 0.3858362658628695,
+      "ok": false,
+      "reason": "noise_pct=0.386 > 0.200"
+    },
+    {
+      "op_name": "rope",
+      "dtype": "bfloat16",
+      "shape_signature": {
+        "B": 1,
+        "D_NOPE": 512,
+        "D_OUT": 576,
+        "D_ROPE": 64,
+        "H_Q": 20
+      },
+      "candidate_id": "rope_3271daa1b86f7f1d",
+      "latency_us": 128.2705,
+      "speedup_median": 1.4630101708129244,
+      "speedup_p10": 1.102122205541428,
+      "speedup_p90": 1.709321654028613,
+      "speedup_noise_pct": 0.41503433168191406,
+      "ok": false,
+      "reason": "noise_pct=0.415 > 0.200"
+    },
+    {
+      "op_name": "rope",
+      "dtype": "bfloat16",
+      "shape_signature": {
+        "B": 1,
+        "D_NOPE": 512,
+        "D_OUT": 576,
+        "D_ROPE": 64,
+        "H_Q": 20
+      },
+      "candidate_id": "rope_93a538bbad434793",
+      "latency_us": 118.7295,
+      "speedup_median": 1.5751007593138846,
+      "speedup_p10": 1.3375241779497098,
+      "speedup_p90": 1.8315877389192354,
+      "speedup_noise_pct": 0.3136710829755045,
+      "ok": false,
+      "reason": "noise_pct=0.314 > 0.200"
+    },
+    {
+      "op_name": "rope",
+      "dtype": "bfloat16",
+      "shape_signature": {
+        "B": 1,
+        "D_NOPE": 512,
+        "D_OUT": 576,
+        "D_ROPE": 64,
+        "H_Q": 20
+      },
+      "candidate_id": "rope_ae84811eda2bb09a",
+      "latency_us": 141.91649999999998,
+      "speedup_median": 1.471940165419009,
+      "speedup_p10": 0.7213699333794801,
+      "speedup_p90": 1.774362607825275,
+      "speedup_noise_pct": 0.7153773632816423,
+      "ok": false,
+      "reason": "speedup_p10=0.721 < 1.010"
+    },
+    {
+      "op_name": "rope",
+      "dtype": "bfloat16",
+      "shape_signature": {
+        "B": 1,
+        "D_NOPE": 512,
+        "D_OUT": 576,
+        "D_ROPE": 64,
+        "H_Q": 20
+      },
+      "candidate_id": "rope_cd83519d65be01e4",
+      "latency_us": 113.9585,
+      "speedup_median": 1.5081554785646423,
+      "speedup_p10": 1.3341418290941933,
+      "speedup_p90": 1.8315847491224846,
+      "speedup_noise_pct": 0.32983530352037904,
+      "ok": false,
+      "reason": "noise_pct=0.330 > 0.200"
+    },
+    {
+      "op_name": "rope",
+      "dtype": "bfloat16",
+      "shape_signature": {
+        "B": 1,
+        "D_NOPE": 512,
+        "D_OUT": 576,
+        "D_ROPE": 64,
+        "H_Q": 20
+      },
+      "candidate_id": "rope_d70f4f2b4a5633c4",
+      "latency_us": 120.3125,
+      "speedup_median": 1.498137956833033,
+      "speedup_p10": 1.1717751277683135,
+      "speedup_p90": 1.7827512383179416,
+      "speedup_noise_pct": 0.40782366387751906,
+      "ok": false,
+      "reason": "noise_pct=0.408 > 0.200"
+    },
+    {
+      "op_name": "rope",
+      "dtype": "bfloat16",
+      "shape_signature": {
+        "B": 1,
+        "D_NOPE": 512,
+        "D_OUT": 576,
+        "D_ROPE": 64,
+        "H_Q": 20
+      },
+      "candidate_id": "rope_dae8d84b17b4095a",
+      "latency_us": 118.5,
+      "speedup_median": 1.5116693578164861,
+      "speedup_p10": 1.2371610371842694,
+      "speedup_p90": 1.7017511961722487,
+      "speedup_noise_pct": 0.30733583146717436,
+      "ok": false,
+      "reason": "noise_pct=0.307 > 0.200"
+    }
+  ]
+}

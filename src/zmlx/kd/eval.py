@@ -119,6 +119,16 @@ def _compute_quantiles(values: list[float]) -> tuple[float, float, float]:
     return float(median), float(ordered[p10_idx]), float(ordered[p90_idx])
 
 
+def _to_numpy(mx_mod: Any, value: Any) -> np.ndarray:
+    try:
+        return np.array(value)
+    except Exception:
+        try:
+            return np.array(value.astype(mx_mod.float32))
+        except Exception:
+            return np.array(value)
+
+
 def _summarize_timings(values: list[float]) -> TimingSummary:
     if not values:
         return TimingSummary(
@@ -265,8 +275,11 @@ def evaluate_candidate(
     per_shape: list[dict[str, Any]] = []
     all_candidate_timings: list[float] = []
     all_reference_timings: list[float] = []
+    all_speedups: list[float] = []
     max_abs_err = 0.0
     max_rel_err = 0.0
+
+    bench_mode_norm = str(bench_mode or "interleaved").strip().lower()
 
     for shape_idx, shape in enumerate(shape_suite):
         case_seed = seed + shape_idx * 1009
@@ -313,8 +326,8 @@ def evaluate_candidate(
             }
             return candidate
 
-        cand_np = [np.array(x) for x in cand_outputs]
-        ref_np = [np.array(x) for x in ref_outputs]
+        cand_np = [_to_numpy(mx, x) for x in cand_outputs]
+        ref_np = [_to_numpy(mx, x) for x in ref_outputs]
         corr = assess_correctness(cand_np, ref_np, atol=atol, rtol=rtol)
         max_abs_err = max(max_abs_err, corr.max_abs_err)
         max_rel_err = max(max_rel_err, corr.max_rel_err)
@@ -342,49 +355,96 @@ def evaluate_candidate(
             shape=shape,
             dtype_name=dtype_name,
         )
-        try:
-            cand_timings = _time_callable(mx, run_candidate, warmup=warmup, iters=iters)
-        except Exception as exc:
-            candidate.status = "failed"
-            candidate.metrics = {
-                "failure": "benchmark_runtime_error",
-                "failure_reason": str(exc),
-                "compile_time_ms": compile_time_ms,
-            }
-            return candidate
+        def _run_ref(inputs=inputs, shape=shape, dtype_name=dtype_name) -> Any:
+            return op_module.reference(mx, inputs, shape, dtype_name)
 
-        shape_sig = op_module.shape_signature(shape)
-        cache_key = (candidate.op_name, json.dumps(shape_sig, sort_keys=True))
-        if cache_key in baseline_cache:
-            baseline_median = baseline_cache[cache_key]
-            ref_timings = []
-        else:
+        if bench_mode_norm == "legacy":
             try:
-                baseline_median, ref_timings = _baseline_for_shape(
-                    mx_mod=mx,
-                    op_module=op_module,
-                    inputs=inputs,
-                    shape=shape,
-                    dtype_name=dtype_name,
-                    warmup=warmup,
-                    iters=iters,
-                )
+                cand_timings = _time_callable(mx, run_candidate, warmup=warmup, iters=iters)
             except Exception as exc:
                 candidate.status = "failed"
                 candidate.metrics = {
-                    "failure": "reference_timing_error",
+                    "failure": "benchmark_runtime_error",
                     "failure_reason": str(exc),
                     "compile_time_ms": compile_time_ms,
                 }
                 return candidate
-            baseline_cache[cache_key] = baseline_median
 
-        cand_median, cand_p10, cand_p90 = _compute_quantiles(cand_timings)
+            shape_sig = op_module.shape_signature(shape)
+            cache_key = (candidate.op_name, json.dumps(shape_sig, sort_keys=True))
+            if cache_key in baseline_cache:
+                baseline_median = baseline_cache[cache_key]
+                ref_timings: list[float] = []
+            else:
+                try:
+                    baseline_median, ref_timings = _baseline_for_shape(
+                        mx_mod=mx,
+                        op_module=op_module,
+                        inputs=inputs,
+                        shape=shape,
+                        dtype_name=dtype_name,
+                        warmup=warmup,
+                        iters=iters,
+                    )
+                except Exception as exc:
+                    candidate.status = "failed"
+                    candidate.metrics = {
+                        "failure": "reference_timing_error",
+                        "failure_reason": str(exc),
+                        "compile_time_ms": compile_time_ms,
+                    }
+                    return candidate
+                baseline_cache[cache_key] = baseline_median
+
+            cand_stats = _summarize_timings(cand_timings)
+            ref_stats = _summarize_timings(ref_timings or [baseline_median])
+            speedup = (baseline_median / cand_stats.median) if cand_stats.median > 0 else 0.0
+            speedups = [speedup]
+            shape_sig = op_module.shape_signature(shape)
+        else:
+            shape_sig = op_module.shape_signature(shape)
+            try:
+                ref_timings, cand_timings, speedups = _interleaved_timings(
+                    mx,
+                    ref_fn=_run_ref,
+                    cand_fn=run_candidate,
+                    warmup=warmup,
+                    iters=iters,
+                    repeats=repeats,
+                    seed=seed + shape_idx * 1009 + 17,
+                )
+            except Exception as exc:
+                candidate.status = "failed"
+                candidate.metrics = {
+                    "failure": "benchmark_runtime_error",
+                    "failure_reason": str(exc),
+                    "compile_time_ms": compile_time_ms,
+                }
+                return candidate
+
+            cand_stats = _summarize_timings(cand_timings)
+            ref_stats = _summarize_timings(ref_timings)
+            speedup_stats = _summarize_timings(speedups)
+            speedup = (
+                speedup_stats.median
+                if speedup_stats.count > 0
+                else (ref_stats.median / cand_stats.median if cand_stats.median > 0 else 0.0)
+            )
+            baseline_median = ref_stats.median
+
+        cand_median = cand_stats.median
+        cand_p10 = cand_stats.p10
+        cand_p90 = cand_stats.p90
         gbps = 0.0
         if cand_median > 0:
             gbps = (op_module.bytes_moved(shape, dtype_name) / (cand_median * 1e-6)) / 1e9
 
-        speedup = (baseline_median / cand_median) if cand_median > 0 else 0.0
+        speedup_stats = _summarize_timings(speedups)
+        speedup_p10 = speedup_stats.p10
+        speedup_p90 = speedup_stats.p90
+        speedup_noise = 0.0
+        if speedup_stats.count > 0 and speedup_stats.median not in {0.0, float("inf")}:
+            speedup_noise = float((speedup_p90 - speedup_p10) / max(1e-9, speedup_stats.median))
         per_shape.append(
             {
                 "shape": shape_sig,
@@ -393,21 +453,36 @@ def evaluate_candidate(
                 "p90_us": cand_p90,
                 "baseline_us": baseline_median,
                 "speedup_vs_ref": speedup,
+                "speedup_p10": speedup_p10,
+                "speedup_p90": speedup_p90,
+                "speedup_noise_pct": speedup_noise,
+                "reference_p10_us": ref_stats.p10,
+                "reference_p90_us": ref_stats.p90,
+                "reference_median_us": ref_stats.median,
                 "gbps_est": gbps,
                 "max_abs_err": corr.max_abs_err,
                 "max_rel_err": corr.max_rel_err,
+                "bench_mode": bench_mode_norm,
+                "bench_iters": int(iters),
+                "bench_repeats": int(repeats if bench_mode_norm != "legacy" else 1),
             }
         )
 
         all_candidate_timings.extend(cand_timings)
-        if ref_timings:
-            all_reference_timings.extend(ref_timings)
-        else:
-            all_reference_timings.append(baseline_median)
+        all_reference_timings.extend(ref_timings or [baseline_median])
+        all_speedups.extend(speedups)
 
-    cand_median, cand_p10, cand_p90 = _compute_quantiles(all_candidate_timings)
-    ref_median, _, _ = _compute_quantiles(all_reference_timings)
-    speedup_vs_ref = (ref_median / cand_median) if cand_median > 0 else 0.0
+    cand_stats = _summarize_timings(all_candidate_timings)
+    ref_stats = _summarize_timings(all_reference_timings)
+    if not all_speedups and cand_stats.median > 0 and ref_stats.median > 0:
+        all_speedups = [ref_stats.median / cand_stats.median]
+    speedup_stats = _summarize_timings(all_speedups)
+    speedup_vs_ref = speedup_stats.median if speedup_stats.count > 0 else 0.0
+    speedup_noise = 0.0
+    if speedup_stats.count > 0 and speedup_stats.median not in {0.0, float("inf")}:
+        speedup_noise = float(
+            (speedup_stats.p90 - speedup_stats.p10) / max(1e-9, speedup_stats.median)
+        )
     gbps_est = 0.0
     if per_shape:
         gbps_est = float(sum(case["gbps_est"] for case in per_shape) / len(per_shape))
@@ -415,15 +490,23 @@ def evaluate_candidate(
     candidate.status = "benchmarked"
     candidate.metrics = {
         "compile_time_ms": compile_time_ms,
-        "latency_us": cand_median,
-        "p10_us": cand_p10,
-        "p90_us": cand_p90,
-        "reference_latency_us": ref_median,
+        "latency_us": cand_stats.median,
+        "p10_us": cand_stats.p10,
+        "p90_us": cand_stats.p90,
+        "reference_latency_us": ref_stats.median,
+        "reference_p10_us": ref_stats.p10,
+        "reference_p90_us": ref_stats.p90,
         "speedup_vs_ref": speedup_vs_ref,
+        "speedup_p10": speedup_stats.p10,
+        "speedup_p90": speedup_stats.p90,
+        "speedup_noise_pct": speedup_noise,
         "gbps_est": gbps_est,
         "correctness_max_abs_err": max_abs_err,
         "correctness_max_rel_err": max_rel_err,
         "dtype": dtype_name,
+        "bench_mode": bench_mode_norm,
+        "bench_iters": int(iters),
+        "bench_repeats": int(repeats if bench_mode_norm != "legacy" else 1),
         "per_shape": per_shape,
     }
     return candidate
