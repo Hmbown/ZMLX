@@ -1,0 +1,199 @@
+{
+  "schema_version": "2",
+  "runtime": {
+    "mlx_version": "0.30.6.dev20260208+185b06d9",
+    "device_name": "Apple M4 Max",
+    "device_arch": "applegpu_g16s"
+  },
+  "entries": [
+    {
+      "key": {
+        "op_name": "swiglu",
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_arch": "applegpu_g16s",
+        "device_name": "Apple M4 Max",
+        "dtype": "float16",
+        "shape_signature": {
+          "rows": 1,
+          "D": 7168,
+          "N": 7168
+        }
+      },
+      "candidate_id": "swiglu_17b9b3778cca546b",
+      "func_name": "kk_kd_swiglu_n7168_tg128_v2_u1_fast1",
+      "metal_source": "constexpr uint N = 7168;\nconstexpr uint VEC = 2;\nconstexpr uint UNROLL = 1;\nconstexpr bool FAST_SIGMOID = true;\n\nuint tid = thread_position_in_grid.x;\nuint base = tid * VEC * UNROLL;\n\n#pragma unroll\nfor (uint u = 0; u < UNROLL; ++u) {\n    uint idx0 = base + u * VEC;\n    if (idx0 >= N) {\n        continue;\n    }\n\n    #pragma unroll\n    for (uint v = 0; v < VEC; ++v) {\n        uint idx = idx0 + v;\n        if (idx >= N) {\n            continue;\n        }\n\n        float g = (float)gate[idx];\n        float upv = (float)up[idx];\n        float sig;\n        if (FAST_SIGMOID) {\n            sig = kk_sigmoid(g);\n        } else {\n            sig = 1.0f / (1.0f + metal::exp(-g));\n        }\n        out[idx] = (T)(g * sig * upv);\n    }\n}\n",
+      "inputs_spec": [
+        {
+          "name": "gate",
+          "dtype": "float16",
+          "shape": [
+            7168
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "up",
+          "dtype": "float16",
+          "shape": [
+            7168
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "outputs_spec": [
+        {
+          "name": "out",
+          "dtype": "float16",
+          "shape": [
+            7168
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "template_params": {
+        "vec_width": 2,
+        "unroll": 1,
+        "fast_sigmoid": true
+      },
+      "launch_params": {
+        "threadgroup_x": 128,
+        "launch_kind": "swiglu_flat",
+        "vec_width": 2,
+        "unroll": 1
+      },
+      "source_hash": "4ff991be796eadfabe6dc321de9c897258e64e121ea749a5a12311d62728bd9f",
+      "metrics": {
+        "latency_us": 135.813,
+        "speedup_vs_ref": 1.088047535950167,
+        "correctness_max_abs_err": 0.0,
+        "correctness_max_rel_err": 0.0
+      }
+    },
+    {
+      "key": {
+        "op_name": "swiglu",
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_arch": "applegpu_g16s",
+        "device_name": "Apple M4 Max",
+        "dtype": "float16",
+        "shape_signature": {
+          "rows": 2,
+          "D": 7168,
+          "N": 14336
+        }
+      },
+      "candidate_id": "swiglu_17b9b3778cca546b",
+      "func_name": "kk_kd_swiglu_n7168_tg128_v2_u1_fast1",
+      "metal_source": "constexpr uint N = 7168;\nconstexpr uint VEC = 2;\nconstexpr uint UNROLL = 1;\nconstexpr bool FAST_SIGMOID = true;\n\nuint tid = thread_position_in_grid.x;\nuint base = tid * VEC * UNROLL;\n\n#pragma unroll\nfor (uint u = 0; u < UNROLL; ++u) {\n    uint idx0 = base + u * VEC;\n    if (idx0 >= N) {\n        continue;\n    }\n\n    #pragma unroll\n    for (uint v = 0; v < VEC; ++v) {\n        uint idx = idx0 + v;\n        if (idx >= N) {\n            continue;\n        }\n\n        float g = (float)gate[idx];\n        float upv = (float)up[idx];\n        float sig;\n        if (FAST_SIGMOID) {\n            sig = kk_sigmoid(g);\n        } else {\n            sig = 1.0f / (1.0f + metal::exp(-g));\n        }\n        out[idx] = (T)(g * sig * upv);\n    }\n}\n",
+      "inputs_spec": [
+        {
+          "name": "gate",
+          "dtype": "float16",
+          "shape": [
+            7168
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "up",
+          "dtype": "float16",
+          "shape": [
+            7168
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "outputs_spec": [
+        {
+          "name": "out",
+          "dtype": "float16",
+          "shape": [
+            7168
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "template_params": {
+        "vec_width": 2,
+        "unroll": 1,
+        "fast_sigmoid": true
+      },
+      "launch_params": {
+        "threadgroup_x": 128,
+        "launch_kind": "swiglu_flat",
+        "vec_width": 2,
+        "unroll": 1
+      },
+      "source_hash": "4ff991be796eadfabe6dc321de9c897258e64e121ea749a5a12311d62728bd9f",
+      "metrics": {
+        "latency_us": 135.813,
+        "speedup_vs_ref": 1.088047535950167,
+        "correctness_max_abs_err": 0.0,
+        "correctness_max_rel_err": 0.0
+      }
+    },
+    {
+      "key": {
+        "op_name": "swiglu",
+        "mlx_version": "0.30.6.dev20260208+185b06d9",
+        "device_arch": "applegpu_g16s",
+        "device_name": "Apple M4 Max",
+        "dtype": "float16",
+        "shape_signature": {
+          "rows": 4,
+          "D": 7168,
+          "N": 28672
+        }
+      },
+      "candidate_id": "swiglu_17b9b3778cca546b",
+      "func_name": "kk_kd_swiglu_n7168_tg128_v2_u1_fast1",
+      "metal_source": "constexpr uint N = 7168;\nconstexpr uint VEC = 2;\nconstexpr uint UNROLL = 1;\nconstexpr bool FAST_SIGMOID = true;\n\nuint tid = thread_position_in_grid.x;\nuint base = tid * VEC * UNROLL;\n\n#pragma unroll\nfor (uint u = 0; u < UNROLL; ++u) {\n    uint idx0 = base + u * VEC;\n    if (idx0 >= N) {\n        continue;\n    }\n\n    #pragma unroll\n    for (uint v = 0; v < VEC; ++v) {\n        uint idx = idx0 + v;\n        if (idx >= N) {\n            continue;\n        }\n\n        float g = (float)gate[idx];\n        float upv = (float)up[idx];\n        float sig;\n        if (FAST_SIGMOID) {\n            sig = kk_sigmoid(g);\n        } else {\n            sig = 1.0f / (1.0f + metal::exp(-g));\n        }\n        out[idx] = (T)(g * sig * upv);\n    }\n}\n",
+      "inputs_spec": [
+        {
+          "name": "gate",
+          "dtype": "float16",
+          "shape": [
+            7168
+          ],
+          "strides": "contiguous"
+        },
+        {
+          "name": "up",
+          "dtype": "float16",
+          "shape": [
+            7168
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "outputs_spec": [
+        {
+          "name": "out",
+          "dtype": "float16",
+          "shape": [
+            7168
+          ],
+          "strides": "contiguous"
+        }
+      ],
+      "template_params": {
+        "vec_width": 2,
+        "unroll": 1,
+        "fast_sigmoid": true
+      },
+      "launch_params": {
+        "threadgroup_x": 128,
+        "launch_kind": "swiglu_flat",
+        "vec_width": 2,
+        "unroll": 1
+      },
+      "source_hash": "4ff991be796eadfabe6dc321de9c897258e64e121ea749a5a12311d62728bd9f",
+      "metrics": {
+        "latency_us": 135.813,
+        "speedup_vs_ref": 1.088047535950167,
+        "correctness_max_abs_err": 0.0,
+        "correctness_max_rel_err": 0.0
+      }
+    }
+  ]
+}

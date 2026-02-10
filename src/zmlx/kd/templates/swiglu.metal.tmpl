@@ -1,0 +1,33 @@
+constexpr uint N = {{N}};
+constexpr uint VEC = {{VEC}};
+constexpr uint UNROLL = {{UNROLL}};
+constexpr bool FAST_SIGMOID = {{FAST_SIGMOID}};
+
+uint tid = thread_position_in_grid.x;
+uint base = tid * VEC * UNROLL;
+
+#pragma unroll
+for (uint u = 0; u < UNROLL; ++u) {
+    uint idx0 = base + u * VEC;
+    if (idx0 >= N) {
+        continue;
+    }
+
+    #pragma unroll
+    for (uint v = 0; v < VEC; ++v) {
+        uint idx = idx0 + v;
+        if (idx >= N) {
+            continue;
+        }
+
+        float g = (float)gate[idx];
+        float upv = (float)up[idx];
+        float sig;
+        if (FAST_SIGMOID) {
+            sig = kk_sigmoid(g);
+        } else {
+            sig = 1.0f / (1.0f + metal::exp(-g));
+        }
+        out[idx] = (T)(g * sig * upv);
+    }
+}

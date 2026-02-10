@@ -58,7 +58,7 @@ All bundled DeepSeek cards share:
   - Always shards `layer.self_attn.kv_b_proj`, shards-to-all `layer.self_attn.o_proj`, and sets `layer.self_attn.num_heads //= world_size`.
   - MoE layers shard expert projections in-place and wrap the MoE module with `ShardedDeepseekV3MoE` which `all_sum`s the output across ranks.
 - Placement restriction: `exo/src/exo/master/placement.py` blocks **pipeline parallelism** for `mlx-community/DeepSeek-V3.1-8bit`.
-- ZMLX experiments: the opt-in DeepSeek/Kimi router fusion is documented in `docs/DEEPSEEK_KIMI_ROUTER_FUSION.md` and `docs/HANDOFF_DEEPSEEK_KIMI.md`.
+- ZMLX experiments: the opt-in DeepSeek/Kimi router fusion is documented in `docs/DEEPSEEK_KIMI_ROUTER_FUSION.md`.
 
 ## Verified module surface (from Exo sharding code)
 

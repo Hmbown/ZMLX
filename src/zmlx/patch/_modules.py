@@ -18,7 +18,23 @@ try:
 except Exception:
     _disc_rmsnorm = None
 
+try:
+    from ..kd import registry as _kd_registry
+except Exception:
+    _kd_registry = None
+
 _TG_CANDIDATES = (32, 64, 128, 256, 512, 1024)
+
+
+def _dtype_name(dtype: Any) -> str:
+    s = str(dtype)
+    if "bfloat16" in s:
+        return "bfloat16"
+    if "float16" in s:
+        return "float16"
+    if "float32" in s:
+        return "float32"
+    return s
 
 
 def _autotune_threadgroup(fn: Any, x: Any, warmup: int = 2, iters: int = 5) -> int:
@@ -68,6 +84,27 @@ class ZMLXRMSNorm(nn.Module):
         return self._resolved_tg or 256
 
     def __call__(self, x: Any) -> Any:
+        # Runtime-discovered kernel fast path (env-gated, safe fallback).
+        if _kd_registry is not None and _kd_registry.enabled():
+            try:
+                d = int(x.shape[-1])
+                rows = int(x.size // d)
+                shape_sig = {"rows": rows, "D": d}
+                entry = _kd_registry.get_kernel("rmsnorm", _dtype_name(x.dtype), shape_sig)
+                if entry is not None:
+                    x2 = x.reshape(rows, d)
+                    outputs = _kd_registry.launch_kernel(
+                        entry=entry,
+                        inputs=[x2, self.weight],
+                        output_shapes=[(rows, d)],
+                        output_dtypes=[x.dtype],
+                        shape_signature=shape_sig,
+                    )
+                    if outputs is not None:
+                        return outputs[0].reshape(x.shape)
+            except Exception:
+                pass
+
         # Try discovered GLM-optimized kernel for D=2048
         if _disc_rmsnorm is not None:
             result = _disc_rmsnorm(x, self.weight, eps=self.eps)

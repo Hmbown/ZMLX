@@ -1,0 +1,70 @@
+constexpr uint D = {{D}};
+constexpr uint TG = {{TG}};
+constexpr uint VEC = {{VEC}};
+constexpr uint UNROLL = {{UNROLL}};
+constexpr float EPS = {{EPS}}f;
+constexpr bool USE_SIMD = {{USE_SIMD}};
+
+uint gid = thread_position_in_grid.x;
+uint tid = thread_position_in_threadgroup.x;
+uint row = gid / TG;
+uint base = row * D;
+
+threadgroup float reduce_buf[TG];
+
+float sumsq = 0.0f;
+uint start = tid * VEC;
+uint step = TG * VEC;
+for (uint j0 = start; j0 < D; j0 += step * UNROLL) {
+    #pragma unroll
+    for (uint u = 0; u < UNROLL; ++u) {
+        uint j = j0 + u * step;
+        if (j >= D) {
+            continue;
+        }
+        #pragma unroll
+        for (uint v = 0; v < VEC; ++v) {
+            uint idx = j + v;
+            if (idx < D) {
+                float x = (float)inp[base + idx] + (float)residual[base + idx];
+                updated_res[base + idx] = (T)x;
+                sumsq += x * x;
+            }
+        }
+    }
+}
+
+if (USE_SIMD) {
+    KK_SIMD_REDUCE_SUM(reduce_buf, sumsq, tid, TG);
+} else {
+    reduce_buf[tid] = sumsq;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint stride = TG / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            reduce_buf[tid] += reduce_buf[tid + stride];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+}
+
+float inv = metal::rsqrt(reduce_buf[0] / (float)D + EPS);
+threadgroup_barrier(mem_flags::mem_threadgroup);
+
+for (uint j0 = start; j0 < D; j0 += step * UNROLL) {
+    #pragma unroll
+    for (uint u = 0; u < UNROLL; ++u) {
+        uint j = j0 + u * step;
+        if (j >= D) {
+            continue;
+        }
+        #pragma unroll
+        for (uint v = 0; v < VEC; ++v) {
+            uint idx = j + v;
+            if (idx < D) {
+                float vres = (float)updated_res[base + idx];
+                float w = (float)weight[idx];
+                out[base + idx] = (T)(vres * inv * w);
+            }
+        }
+    }
+}

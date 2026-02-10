@@ -918,6 +918,35 @@ def swiglu2(gate: Any, up: Any, *, compute_dtype: Any | None = None) -> Any:
     if gate.shape != up.shape:
         raise ValueError("swiglu2: gate and up must have the same shape")
 
+    # Optional discovered-kernel fast path (inference-focused; env-gated).
+    try:
+        from ..kd import registry as kd_registry
+
+        if kd_registry.enabled():
+            d = int(gate.shape[-1]) if int(gate.ndim) >= 1 else int(gate.size)
+            rows = int(gate.size // max(1, d))
+            n = int(gate.size)
+            dtype_str = "float32"
+            dts = str(gate.dtype)
+            if "bfloat16" in dts:
+                dtype_str = "bfloat16"
+            elif "float16" in dts:
+                dtype_str = "float16"
+            shape_sig = {"rows": rows, "D": d, "N": n}
+            entry = kd_registry.get_kernel("swiglu", dtype_str, shape_sig)
+            if entry is not None:
+                outputs = kd_registry.launch_kernel(
+                    entry=entry,
+                    inputs=[gate.reshape(-1), up.reshape(-1)],
+                    output_shapes=[(n,)],
+                    output_dtypes=[gate.dtype],
+                    shape_signature=shape_sig,
+                )
+                if outputs is not None:
+                    return outputs[0].reshape(gate.shape)
+    except Exception:
+        pass
+
     n = gate.size
     k_fwd = _swiglu2_fwd_kernel()
 

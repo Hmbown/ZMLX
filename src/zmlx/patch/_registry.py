@@ -39,6 +39,7 @@ def _ensure_loaded() -> None:
         deepseek_router,
         geglu_mlp,
         glm47_rope,
+        glm47_skv,
         layernorm,
         moe_mlp,
         residual_norm,

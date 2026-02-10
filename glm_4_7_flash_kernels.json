@@ -1,0 +1,43 @@
+{
+  "model": {
+    "id": "mlx-community/GLM-4.7-Flash-4bit",
+    "display_name": "GLM-4.7-Flash-4bit",
+    "family": "glm",
+    "zmlx_family": "glm",
+    "architecture": "moe",
+    "quant": "4bit",
+    "params": "4B",
+    "layers": 47,
+    "hidden_size": 2048,
+    "storage_gb": 18.0
+  },
+  "pattern_policy": {
+    "expected": [],
+    "excluded": {
+      "swiglu_mlp": "perf",
+      "moe_mlp": "perf"
+    },
+    "explanation": "GLM family has known performance regressions with standard kernels on stock MLX, and fidelity issues with rmsnorm."
+  },
+  "discovered_kernels": [
+    {
+      "name": "glm_moe_combine",
+      "description": "Drop-in for ``moe.moe_combine`` when D=2048, K=4 (GLM-4.7-Flash).\n\nReturns ``None`` when dimensions don't match so the caller can fall back.\n\nWhen expert_outputs and weights have different dtypes (e.g. bfloat16\nexperts + float32 weights), promotes both to the wider dtype before\nthe kernel and casts the result back \u2014 matching MLX's broadcast-multiply\npromotion semantics.\n",
+      "constants": {
+        "D": 2048,
+        "K": 4
+      },
+      "source_file": "src/zmlx/kernels/discovered/glm_moe_combine.py",
+      "source_code": "\"\"\"Auto-generated kernel from ZMLX Discover.\n\nTarget: glm_moe_combine\nSpeedup: 1.64x\nDevice: Apple M4\nSession: 4a82a9ba06d1485b\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom functools import cache\nfrom typing import Any\n\nfrom zmlx.metal import kernel as metal_kernel\nfrom zmlx.msl import DEFAULT_HEADER\n\n\n@cache\ndef _discovered_kernel() -> Any:\n    \"\"\"Build the discovered kernel.\"\"\"\n    source = \"\"\"\n#pragma clang fp contract(off)\nconstexpr uint D = 2048;\nconstexpr uint K = 4;\nuint token_idx = thread_position_in_grid.y;\nuint d_idx = thread_position_in_grid.x;\n\nif (d_idx < D) {\n    // Multiply then accumulate in native T \u2014 contract(off) prevents FMA\n    // contraction so products are rounded to T before addition, matching\n    // MLX's (expert_outputs * weights[..., None]).sum(axis=-2) semantics.\n    // Explicit (T) casts needed because bfloat16 multiply promotes to float.\n    T p0 = (T)(weights[token_idx * K + 0] * expert_outputs[(token_idx * K + 0) * D + d_idx]);\n    T p1 = (T)(weights[token_idx * K + 1] * expert_outputs[(token_idx * K + 1) * D + d_idx]);\n    T p2 = (T)(weights[token_idx * K + 2] * expert_outputs[(token_idx * K + 2) * D + d_idx]);\n    T p3 = (T)(weights[token_idx * K + 3] * expert_outputs[(token_idx * K + 3) * D + d_idx]);\n    // Left-to-right accumulation matching MLX's .sum(axis=-2)\n    T acc = (T)(p0 + p1);\n    acc = (T)(acc + p2);\n    acc = (T)(acc + p3);\n    out[token_idx * D + d_idx] = acc;\n}\"\"\"\n\n    return metal_kernel(\n        name=\"kk_discovered_glm_moe_combine\",\n        input_names=['expert_outputs', 'weights'],\n        output_names=['out'],\n        source=source,\n        header=DEFAULT_HEADER,\n        cache=True,\n    )\n\n\n# Specialization constants\n_D = 2048\n_K = 4\n\n\n@cache\ndef _promoted_dtype(lhs_dtype: Any, rhs_dtype: Any) -> Any:\n    \"\"\"Infer MLX promotion result for binary multiply.\"\"\"\n    import mlx.core as mx\n\n    return (mx.array([0], dtype=lhs_dtype) * mx.array([0], dtype=rhs_dtype)).dtype\n\n\ndef glm_moe_combine(expert_outputs: Any, weights: Any) -> Any | None:\n    \"\"\"Drop-in for ``moe.moe_combine`` when D=2048, K=4 (GLM-4.7-Flash).\n\n    Returns ``None`` when dimensions don't match so the caller can fall back.\n\n    When expert_outputs and weights have different dtypes (e.g. bfloat16\n    experts + float32 weights), promotes both to the wider dtype before\n    the kernel and casts the result back \u2014 matching MLX's broadcast-multiply\n    promotion semantics.\n    \"\"\"\n    K = weights.shape[-1]\n    D = expert_outputs.shape[-1]\n    if D != _D or K != _K:\n        return None\n\n    # Match MLX's dtype promotion: when dtypes differ, promote to the wider\n    # type for the compute, then cast back to the original expert dtype.\n    out_dtype = expert_outputs.dtype\n    if expert_outputs.dtype != weights.dtype:\n        compute_dtype = _promoted_dtype(expert_outputs.dtype, weights.dtype)\n        expert_outputs = expert_outputs.astype(compute_dtype)\n        weights = weights.astype(compute_dtype)\n    else:\n        compute_dtype = expert_outputs.dtype\n\n    original_shape = weights.shape[:-1]\n    expert_outputs_flat = expert_outputs.reshape(-1, K, D)\n    weights_flat = weights.reshape(-1, K)\n    B = weights_flat.shape[0]\n\n    k = _discovered_kernel()\n    out = k(\n        expert_outputs_flat, weights_flat,\n        template=[(\"T\", compute_dtype)],\n        grid=(D, B, 1),\n        threadgroup=(min(D, 256), 1, 1),\n        output_shapes=[(B, D)],\n        output_dtypes=[compute_dtype],\n    )[0]\n    out = out.reshape((*original_shape, D))\n    if compute_dtype != out_dtype:\n        out = out.astype(out_dtype)\n    return out\n"
+    },
+    {
+      "name": "glm_fused_swiglu",
+      "description": "Drop-in for ``transformer.swiglu2`` when D=1536 (GLM-4.7-Flash).\n\nReturns ``None`` when dimensions don't match so the caller can fall back.\n",
+      "constants": {
+        "D": 1536
+      },
+      "source_file": "src/zmlx/kernels/discovered/glm_fused_swiglu.py",
+      "source_code": "\"\"\"Auto-generated kernel from ZMLX Discover.\n\nTarget: glm_fused_swiglu\nSpeedup: 1.20x\nDevice: Apple M4\nSession: 0cf2e9c745ef4bf4\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom functools import lru_cache\nfrom typing import Any\n\nfrom zmlx.metal import kernel as metal_kernel\nfrom zmlx.msl import DEFAULT_HEADER\n\n\n@lru_cache(maxsize=8)\ndef _discovered_kernel(n: int) -> Any:\n    \"\"\"Build the discovered kernel for *n* total elements.\n\n    The kernel source is parameterized by N (total element count, not just D).\n    MLX caches compiled Metal programs by source-string hash, so repeated calls\n    with the same *n* reuse the compiled binary.\n    \"\"\"\n    source = f\"\"\"constexpr uint N = {n};\nuint base_idx = thread_position_in_grid.x * 16;\n\n// Prefetch first batch\nT g0 = (base_idx < N) ? gate[base_idx] : T(0);\nT u0 = (base_idx < N) ? up[base_idx] : T(0);\n\n#pragma unroll\nfor (uint i = 0; i < 16; i++) {{\n    uint idx = base_idx + i;\n    if (idx >= N) return;\n\n    // Prefetch next iteration\n    uint next_idx = idx + 1;\n    T g_next = (next_idx < N && i < 15) ? gate[next_idx] : T(0);\n    T u_next = (next_idx < N && i < 15) ? up[next_idx] : T(0);\n\n    // Compute: silu(gate) * up \u2014 matches MLX's native SwitchGLU precision\n    out[idx] = kk_silu(g0) * u0;\n\n    // Swap buffers\n    g0 = g_next;\n    u0 = u_next;\n}}\"\"\"\n\n    return metal_kernel(\n        name=\"kk_discovered_glm_fused_swiglu\",\n        input_names=['gate', 'up'],\n        output_names=['out'],\n        source=source,\n        header=DEFAULT_HEADER,\n        cache=True,\n    )\n\n\n# Specialization constant\n_D = 1536\n\n\ndef glm_fused_swiglu(gate: Any, up: Any) -> Any | None:\n    \"\"\"Drop-in for ``transformer.swiglu2`` when D=1536 (GLM-4.7-Flash).\n\n    Returns ``None`` when dimensions don't match so the caller can fall back.\n    \"\"\"\n\n    D = gate.shape[-1]\n    if D != _D:\n        return None\n\n    n = gate.size\n    k = _discovered_kernel(n)\n    # Kernel processes 16 elements per thread\n    grid_x = (n + 15) // 16\n    out = k(\n        gate.reshape(-1), up.reshape(-1),\n        template=[(\"T\", gate.dtype)],\n        grid=(grid_x, 1, 1),\n        threadgroup=(min(grid_x, 256), 1, 1),\n        output_shapes=[(n,)],\n        output_dtypes=[gate.dtype],\n    )[0]\n    return out.reshape(gate.shape)\n"
+    }
+  ]
+}

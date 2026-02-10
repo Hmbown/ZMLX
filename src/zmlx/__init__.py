@@ -54,7 +54,7 @@ def __getattr__(name: str):
     if name in {
         "autograd", "elementwise", "kernels", "metal", "registry", "rowwise", "msl",
         "patch", "codegen", "autotune", "optimizers", "nn", "kv_cache",
-        "testing", "bench", "profile", "device_profile",
+        "testing", "bench", "profile", "device_profile", "kd",
     }:
         import importlib
         return importlib.import_module(f"{__name__}.{name}")
@@ -107,6 +107,8 @@ __all__ = [
     # Kernel catalog
     "kernels",
     "registry",
+    # Kernel discovery
+    "kd",
     # Patch system
     "patch",
     # KVTC (pure NumPy, platform-independent)

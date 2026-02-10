@@ -943,6 +943,41 @@ def rope_concat_qk_decode_pos(
         raise ValueError("rope_concat_qk_decode_pos: cos/sin length must be d_rope/2")
 
     D_OUT = d_nope + d_rope
+
+    # Optional discovered-kernel fast path (decode helper fusion).
+    try:
+        from ..kd import registry as kd_registry
+
+        if kd_registry.enabled():
+            dtype_str = "float32"
+            dts = str(q_nope.dtype)
+            if "bfloat16" in dts:
+                dtype_str = "bfloat16"
+            elif "float16" in dts:
+                dtype_str = "float16"
+            shape_sig = {
+                "B": B,
+                "H_Q": Hq,
+                "D_NOPE": d_nope,
+                "D_ROPE": d_rope,
+                "D_OUT": D_OUT,
+            }
+            q_out_shape = (B, Hq, 1, D_OUT)
+            k_out_shape = (B, 1, 1, D_OUT)
+            entry = kd_registry.get_kernel("rope", dtype_str, shape_sig)
+            if entry is not None:
+                outputs = kd_registry.launch_kernel(
+                    entry=entry,
+                    inputs=[q_nope, q_rope, kv_nope, k_rope, cos, sin],
+                    output_shapes=[q_out_shape, k_out_shape],
+                    output_dtypes=[q_nope.dtype, q_nope.dtype],
+                    shape_signature=shape_sig,
+                )
+                if outputs is not None and len(outputs) == 2:
+                    return outputs[0], outputs[1]
+    except Exception:
+        pass
+
     k = _rope_concat_qk_decode_pos_kernel(d_nope, d_rope, Hq)
     q_out_shape = (B, Hq, 1, D_OUT)
     k_out_shape = (B, 1, 1, D_OUT)
