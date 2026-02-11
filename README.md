@@ -43,14 +43,17 @@ Near-term roadmap:
 
 ## Default Speed Expectations (2026-02-11)
 
+GLM headline number (custom MLX + default `patch(model)` path):
+- **~`+6.4%` decode overall vs unpatched baseline** (from `+6.2%` at 200 tokens and `+6.7%` at 1024 tokens).
+
 If you are using GLM with custom MLX, this is already the default behavior:
 - custom MLX primitive: `gather_qmm_swiglu`
 - GLM default combine path in `patch(model)`: `glm_combine_fp32_no_fma`
 
-| Model | Default behavior | Expected decode gain vs current ZMLX control | Fidelity | Evidence |
-|:--|:--|--:|:--|:--|
-| GLM-4.7-Flash-4bit-mxfp4 | `patch(model)` default (`glm_combine_fp32_no_fma`) | `+2.3%` average (`+0.3%..+6.7%`) | PASS | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
-| Qwen3-30B-A3B-4bit | keep control baseline | no reliable decode gain yet | PASS | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
+| Model | Default behavior | Overall decode gain vs unpatched baseline | Incremental decode gain vs current ZMLX control | Fidelity | Evidence |
+|:--|:--|--:|--:|:--|:--|
+| GLM-4.7-Flash-4bit-mxfp4 | `patch(model)` default (`glm_combine_fp32_no_fma`) | `+6.2%` (200), `+6.7%` (1024), `~+6.4%` average | `+2.3%` average (`+0.3%..+6.7%`) | PASS | `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t200_r2_summary.json`, `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t1024_r2_summary.json`, `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
+| Qwen3-30B-A3B-4bit | keep control baseline | no promoted overall gain claim | no reliable decode gain yet | PASS | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
 
 GLM long-context confirmation (`runs=5`, `max_tokens=1024`): decode `+0.93%` vs control (PASS fidelity).  
 Capsule: `benchmarks/repro_capsules/glm47_final_longconfirm_t1024_r5_20260211_summary.json`.
@@ -237,9 +240,9 @@ ZMLX provides the model-side integration: auto-detecting MoE architectures, rewi
 
 **On stock MLX (released 0.30.4/0.30.5), ZMLX auto-skips these models** (0 modules patched, 0% change) to avoid regressions. `patch()` is always safe to call.
 
-| Model | Recommended config | Decode vs control | Fidelity | Evidence |
+| Model | Recommended config | Overall decode gain vs unpatched baseline | Fidelity | Evidence |
 |:--|:--|--:|:--|:--|
-| GLM-4.7-Flash-4bit-mxfp4 | `glm_combine_fp32_no_fma` | `+2.3%` average (`+0.3%..+6.7%`) | PASS | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
+| GLM-4.7-Flash-4bit-mxfp4 | `glm_combine_fp32_no_fma` | `+6.2%` (200), `+6.7%` (1024), `~+6.4%` average | PASS | `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t200_r2_summary.json`, `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t1024_r2_summary.json` |
 
 Qwen note: no candidate is promoted yet; keep control baseline until a clear decode-positive variant is reproduced.
 
