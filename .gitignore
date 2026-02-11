@@ -10,6 +10,7 @@ build/
 
 # Virtual environments
 .venv/
+.venv-mlx-dev/
 venv/
 ENV/
 
@@ -33,28 +34,35 @@ htmlcov/
 zig/.zig-cache/
 zig/zig-out/
 
-# Project-specific exclusions (sensitive/local-only)
-firebase-debug.log
-SETUP_TRAINING.md
-NEXT_SESSION.md
-CLAUDE.md
+# Session-specific prompt files (local handoff docs, not general documentation)
 HANDOFF_PROMPT.md
 REVIEW_PROMPT.md
 IMPLEMENTATION_SUMMARY.md
-AGENTS.md
-UPSTREAM_PLAN.md
 PARALLEL_MOE_PROMPT.md
+NEXT_SESSION_PROMPT.md
+NEXT_SESSION.md
+NEXT_AI_KERNEL_DISCOVERY_TAKEOVER_PROMPT.md
+SETUP_TRAINING.md
+firebase-debug.log
+
+# Ephemeral output directories (generated locally, not shipped)
+sessions/
+runs/
+training_data/
+discover_sessions/
 benchmarks/results/
 
-# Local-only directories (not shipped)
+# External projects (cloned locally, not part of ZMLX)
 mlx_local/
-_worktrees/
-stable-diffcoder-mlx/
-experiments/
 exo/
 vllm-metal/
+stable-diffcoder-mlx/
 zmlx_kvtc_integration/
+_worktrees/
+
+# Local experiment scripts (not shipped)
+experiments/
+
+# Tool state
 .aleph/
-NEXT_SESSION_PROMPT.md
 .hf_cache/
-src/zmlx/foundry/

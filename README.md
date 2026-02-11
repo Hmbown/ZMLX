@@ -181,6 +181,7 @@ ZMLX hooks into exo's model loading at runtime — when GLM/Qwen3 load with the 
 | [`docs/COOKBOOK.md`](docs/COOKBOOK.md) | Recipes for common patterns |
 | [`docs/KERNELS.md`](docs/KERNELS.md) | Kernel catalog (by module/domain) |
 | [`docs/KNOWLEDGE_BASE.md`](docs/KNOWLEDGE_BASE.md) | Canonical KB schema, rebuild, and validation |
+| [`docs/FOUNDRY.md`](docs/FOUNDRY.md) | Kernel template evaluation, dataset generation, SFT export |
 | [`docs/kernel_discovery.md`](docs/kernel_discovery.md) | Hamiltonian-guided fused-boundary kernel discovery (`zmlx.kd`) |
 | [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Benchmark methodology + raw data |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Design philosophy |
