@@ -106,6 +106,24 @@ def test_qwen_combine_mode_invalid_falls_back(monkeypatch: pytest.MonkeyPatch):
     assert moe_mlp._qwen_combine_mode() == "off"
 
 
+@pytest.mark.cpu
+def test_glm_combine_mode_default_fp32_no_fma(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("ZMLX_GLM_COMBINE_MODE", raising=False)
+    assert moe_mlp._glm_combine_mode() == "fp32_no_fma"
+
+
+@pytest.mark.cpu
+def test_glm_combine_mode_valid(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ZMLX_GLM_COMBINE_MODE", "exact")
+    assert moe_mlp._glm_combine_mode() == "exact"
+
+
+@pytest.mark.cpu
+def test_glm_combine_mode_invalid_falls_back(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ZMLX_GLM_COMBINE_MODE", "weird")
+    assert moe_mlp._glm_combine_mode() == "fp32_no_fma"
+
+
 class _FakeGateUpProj:
     def __init__(self, d_hidden: int):
         self.d_hidden = int(d_hidden)

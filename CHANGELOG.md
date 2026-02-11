@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- GLM combine-mode default now resolves to `fp32_no_fma` when `ZMLX_GLM_COMBINE_MODE` is unset/invalid, aligning runtime behavior with the documented default path.
+
 ## [0.8.5] - 2026-02-11
 
 ### Added
