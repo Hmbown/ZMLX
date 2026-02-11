@@ -1,0 +1,98 @@
+{
+  "suite": "glm47",
+  "timestamp_utc": "20260211T033655Z",
+  "script": "bench_glm47_flash_experiments.py",
+  "runs": 5,
+  "max_tokens": 1024,
+  "variants": [
+    "glm_combine_fp32_no_fma",
+    "control_swiglu_moe"
+  ],
+  "env_overrides": {},
+  "results": [
+    {
+      "variant": "glm_combine_fp32_no_fma",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_consistency_abba_t1024_r5_repB_20260211_glm_combine_fp32_no_fma.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "5",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_consistency_abba_t1024_r5_repB_20260211_glm_combine_fp32_no_fma.json",
+        "--variants",
+        "glm_combine_fp32_no_fma",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "glm_combine_fp32_no_fma",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 78.1,
+          "patched": 73.9,
+          "speedup": 0.9462
+        },
+        "prefill": {
+          "baseline": 177.4,
+          "patched": 173.0,
+          "change": -0.0248
+        },
+        "memory_gb": {
+          "baseline": 16.0,
+          "patched": 16.0
+        }
+      }
+    },
+    {
+      "variant": "control_swiglu_moe",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_consistency_abba_t1024_r5_repB_20260211_control_swiglu_moe.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "5",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_consistency_abba_t1024_r5_repB_20260211_control_swiglu_moe.json",
+        "--variants",
+        "control_swiglu_moe",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "control_swiglu_moe",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 77.3,
+          "patched": 72.9,
+          "speedup": 0.9431
+        },
+        "prefill": {
+          "baseline": 175.2,
+          "patched": 174.1,
+          "change": -0.0063
+        },
+        "memory_gb": {
+          "baseline": 16.0,
+          "patched": 16.0
+        }
+      }
+    }
+  ]
+}

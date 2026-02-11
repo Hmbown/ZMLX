@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.8.5] - 2026-02-11
+
+### Added
+
+- Benchmark-vs-baseline truth-set artifacts for current kernel candidates:
+  - `benchmarks/repro_capsules/benchmark_vs_baseline_snapshot_20260210.json`
+  - `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json`
+  - `benchmarks/repro_capsules/glm47_final_longconfirm_t1024_r5_20260211_summary.json`
+- Follow-up reproducibility capsules for replicated isolation sweeps (`runs=5`, `max_tokens=200/1024`) across GLM and Qwen suites.
+
+### Changed
+
+- README benchmark sections now reflect the 2026-02-11 benchmark-vs-baseline truth set.
+- Qwen candidate variants remain non-promoted in current controls; GLM `glm_combine_fp32_no_fma` remains the active default combine path with decode-positive follow-up evidence.
+
 ## [0.8.4] - 2026-02-10
 
 ### Added

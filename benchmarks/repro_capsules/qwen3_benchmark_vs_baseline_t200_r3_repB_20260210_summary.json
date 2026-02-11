@@ -1,0 +1,184 @@
+{
+  "suite": "qwen3",
+  "timestamp_utc": "20260210T225434Z",
+  "script": "bench_qwen3_a3b_experiments.py",
+  "runs": 3,
+  "max_tokens": 200,
+  "variants": [
+    "control_patterns_moe_mlp",
+    "qwen_combine_exact",
+    "qwen_router_argpartition_logits",
+    "qwen_router_argpartition_logits_topk_combine_exact"
+  ],
+  "env_overrides": {},
+  "results": [
+    {
+      "variant": "control_patterns_moe_mlp",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_benchmark_vs_baseline_t200_r3_repB_20260210_control_patterns_moe_mlp.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "3",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_benchmark_vs_baseline_t200_r3_repB_20260210_control_patterns_moe_mlp.json",
+        "--variants",
+        "control_patterns_moe_mlp",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "control_patterns_moe_mlp",
+        "fidelity": {
+          "matched": 200,
+          "total": 200,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 117.0,
+          "patched": 111.9,
+          "speedup": 0.9564
+        },
+        "prefill": {
+          "baseline": 337.1,
+          "patched": 332.3,
+          "change": -0.0142
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.24
+        }
+      }
+    },
+    {
+      "variant": "qwen_combine_exact",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_benchmark_vs_baseline_t200_r3_repB_20260210_qwen_combine_exact.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "3",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_benchmark_vs_baseline_t200_r3_repB_20260210_qwen_combine_exact.json",
+        "--variants",
+        "qwen_combine_exact",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_combine_exact",
+        "fidelity": {
+          "matched": 200,
+          "total": 200,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 116.9,
+          "patched": 114.7,
+          "speedup": 0.9812
+        },
+        "prefill": {
+          "baseline": 338.1,
+          "patched": 333.9,
+          "change": -0.0124
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.24
+        }
+      }
+    },
+    {
+      "variant": "qwen_router_argpartition_logits",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_benchmark_vs_baseline_t200_r3_repB_20260210_qwen_router_argpartition_logits.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "3",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_benchmark_vs_baseline_t200_r3_repB_20260210_qwen_router_argpartition_logits.json",
+        "--variants",
+        "qwen_router_argpartition_logits",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_router_argpartition_logits",
+        "fidelity": {
+          "matched": 200,
+          "total": 200,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 117.2,
+          "patched": 111.6,
+          "speedup": 0.9522
+        },
+        "prefill": {
+          "baseline": 338.8,
+          "patched": 333.9,
+          "change": -0.0145
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.24
+        }
+      }
+    },
+    {
+      "variant": "qwen_router_argpartition_logits_topk_combine_exact",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_benchmark_vs_baseline_t200_r3_repB_20260210_qwen_router_argpartition_logits_topk_combine_exact.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "3",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_benchmark_vs_baseline_t200_r3_repB_20260210_qwen_router_argpartition_logits_topk_combine_exact.json",
+        "--variants",
+        "qwen_router_argpartition_logits_topk_combine_exact",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_router_argpartition_logits_topk_combine_exact",
+        "fidelity": {
+          "matched": 200,
+          "total": 200,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 113.7,
+          "patched": 116.6,
+          "speedup": 1.0255
+        },
+        "prefill": {
+          "baseline": 330.7,
+          "patched": 331.2,
+          "change": 0.0015
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.24
+        }
+      }
+    }
+  ]
+}
