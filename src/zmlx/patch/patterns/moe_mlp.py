@@ -313,20 +313,20 @@ def _glm_combine_mode() -> str:
     """Return GLM combine mode override.
 
     Modes:
-    - ``off`` (default): keep current GLM path (discovered combine if available,
+    - ``fp32_no_fma`` (default): use ``moe_combine_fp32_no_fma``.
+    - ``off``: keep current GLM path (discovered combine if available,
       otherwise native ``(y * w[..., None]).sum(axis=-2)``).
     - ``fp32``: use ``moe_combine_fp32``.
-    - ``fp32_no_fma``: use ``moe_combine_fp32_no_fma``.
     - ``exact``: use ``moe_combine_exact`` in expert dtype.
 
     Set via ``ZMLX_GLM_COMBINE_MODE``.
     """
-    raw = os.environ.get(_GLM_COMBINE_MODE_ENV, "off").strip().lower()
+    raw = os.environ.get(_GLM_COMBINE_MODE_ENV, "fp32_no_fma").strip().lower()
     if raw in {"", "0", "off", "false", "no"}:
-        return "off"
+        return "fp32_no_fma"
     if raw in {"fp32", "fp32_no_fma", "exact"}:
         return raw
-    return "off"
+    return "fp32_no_fma"
 
 
 def _get_moe_stream_pool() -> list[mx.Stream] | None:
