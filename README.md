@@ -41,36 +41,21 @@ Why these are lower than earlier 8-12% headlines on GLM/Qwen3:
 Near-term roadmap:
 - Prepare Qwen3.5 model aliases/presets once official `Qwen/*` checkpoints are published on Hugging Face, then validate with `python -m zmlx.validate <model> --max-tokens 200 --runs 3` before long-run matrix entries.
 
-## Benchmark-vs-Baseline Truth Set (2026-02-11)
+## What To Use Right Now (2026-02-11)
 
-Current setup on custom MLX + ZMLX:
+Custom-MLX setup:
 - custom MLX primitive: `gather_qmm_swiglu`
-- GLM default behavior: `patch(model)` uses `glm_combine_fp32_no_fma` for GLM MoE blocks.
-- GLM benchmark defaults target `mlx-community/GLM-4.7-Flash-4bit-mxfp4`.
+- GLM default combine path: `glm_combine_fp32_no_fma`
 
-Protocol:
-- Isolated sweeps with `benchmarks/bench_iso_variant_sweep.py`.
-- `runs=5`, `max_tokens=200` and `1024`, replicate blocks `repA`/`repB` with order control.
-- Fidelity must pass for consideration.
-- Aggregate snapshot: `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json`.
-- Prefill delta sign: positive means patched prefill is slower than control.
+| Model | Use this config | Decode vs control | Prefill vs control | Fidelity | Evidence |
+|:--|:--|--:|--:|:--|:--|
+| GLM-4.7-Flash-4bit-mxfp4 | `glm_combine_fp32_no_fma` | `+2.31 pp` mean (`+0.31..+6.73`) | `-0.88 pp` mean (`-2.94..+1.85`) | PASS | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
+| Qwen3-30B-A3B-4bit | keep control baseline | no reliable decode gain from tested variants | n/a | PASS | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
 
-| Model | Candidate variant | Decode delta vs control (mean; min..max) | Prefill delta vs control (mean; min..max) | Fidelity | Verdict | Evidence |
-|:--|:--|--:|--:|:--|:--|:--|
-| GLM-4.7-Flash-4bit-mxfp4 | `glm_combine_fp32_no_fma` | `+2.31 pp; +0.31..+6.73` | `-0.88 pp; -2.94..+1.85` | PASS | promote-candidate | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
-| Qwen3-30B-A3B-4bit | `qwen_combine_exact` | `-2.40 pp; -6.00..-0.54` | `+0.89 pp; -0.95..+2.55` | PASS | reject | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
-| Qwen3-30B-A3B-4bit | `qwen_router_argpartition_logits` | `-0.21 pp; -0.65..+0.66` | `-0.68 pp; -2.05..+0.30` | PASS | reject | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
-| Qwen3-30B-A3B-4bit | `qwen_router_argpartition_logits_topk_combine_exact` | `-1.66 pp; -5.71..+0.53` | `+1.85 pp; +0.37..+5.70` | PASS | reject | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
+GLM long-context confirmation (`runs=5`, `max_tokens=1024`): decode `+0.93 pp` vs control (PASS fidelity).  
+Capsule: `benchmarks/repro_capsules/glm47_final_longconfirm_t1024_r5_20260211_summary.json`.
 
-Long-context GLM confirmation (`runs=5`, `max_tokens=1024`):
-- `control_swiglu_moe`: decode `0.9440x`, prefill `-1.53%`, fidelity `PASS`.
-- `glm_combine_fp32_no_fma`: decode `0.9533x`, prefill `+0.82%`, fidelity `PASS`.
-- Delta vs control: decode `+0.93 pp`, prefill `+2.35 pp`.
-- Capsule: `benchmarks/repro_capsules/glm47_final_longconfirm_t1024_r5_20260211_summary.json`.
-
-Current default guidance:
-- GLM: keep `glm_combine_fp32_no_fma` as the default combine path.
-- Qwen: keep baseline control behavior; no new custom-kernel candidate is promoted.
+For full protocol and per-variant detail, see `benchmarks/LAB_NOTEBOOK.md`.
 
 ## GLM-4.7-Flash Stress Benchmark (Historical Reference)
 
@@ -246,15 +231,11 @@ ZMLX provides the model-side integration: auto-detecting MoE architectures, rewi
 
 **On stock MLX (released 0.30.4/0.30.5), ZMLX auto-skips these models** (0 modules patched, 0% change) to avoid regressions. `patch()` is always safe to call.
 
-| Model | Candidate variant | Decode delta vs control (mean; min..max) | Prefill delta vs control (mean; min..max, positive=slower) | Fidelity | Verdict | Capsule set |
-|:--|:--|--:|--:|:--|:--|:--|
-| GLM-4.7-Flash-4bit-mxfp4 | `glm_combine_fp32_no_fma` | `+2.31 pp; +0.31..+6.73` | `-0.88 pp; -2.94..+1.85` | PASS | promote-candidate | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
-| Qwen3-30B-A3B-4bit | `qwen_combine_exact` | `-2.40 pp; -6.00..-0.54` | `+0.89 pp; -0.95..+2.55` | PASS | reject | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
-| Qwen3-30B-A3B-4bit | `qwen_router_argpartition_logits` | `-0.21 pp; -0.65..+0.66` | `-0.68 pp; -2.05..+0.30` | PASS | reject | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
-| Qwen3-30B-A3B-4bit | `qwen_router_argpartition_logits_topk_combine_exact` | `-1.66 pp; -5.71..+0.53` | `+1.85 pp; +0.37..+5.70` | PASS | reject | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
+| Model | Recommended config | Decode vs control | Fidelity | Evidence |
+|:--|:--|--:|:--|:--|
+| GLM-4.7-Flash-4bit-mxfp4 | `glm_combine_fp32_no_fma` | `+2.31 pp` mean (`+0.31..+6.73`) | PASS | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
 
-GLM long-context confirmation capsule:
-- `benchmarks/repro_capsules/glm47_final_longconfirm_t1024_r5_20260211_summary.json` (`decode +0.93 pp vs control`, fidelity PASS).
+Qwen note: no candidate is promoted yet; keep control baseline until a clear decode-positive variant is reproduced.
 
 For the full GLM-4.7-Flash stress protocol + tables, see “GLM-4.7-Flash Stress Benchmark (Historical Reference)” above.
 
