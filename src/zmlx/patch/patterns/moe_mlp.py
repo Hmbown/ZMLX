@@ -199,6 +199,63 @@ def _qwen_combine_mode() -> str:
     return "off"
 
 
+def _lfm2_gate_mode() -> str:
+    """Return LFM2 gate mode for experimental optimization.
+
+    Modes:
+    - ``kernel`` (default): use fused ``topk_gating_softmax`` Metal kernel.
+    - ``native``: use exact original MLX ops (softmax + argpartition).
+      Guaranteed fidelity but may have higher dispatch count.
+    - ``fast64``: use new D-SIMD optimized kernel for D=64
+      (2 SIMD groups, 4K barriers vs 24+). Experimental.
+
+    Set via ``ZMLX_LFM2_GATE_MODE``.
+    """
+    raw = os.environ.get(_LFM2_GATE_MODE_ENV, "kernel").strip().lower()
+    if raw in {"kernel", "native", "fast64"}:
+        return raw
+    return "kernel"
+
+
+def _lfm2_combine_mode(num_experts_per_tok: int = 2) -> str:
+    """Return LFM2 combine mode for experimental optimization.
+
+    Modes:
+    - ``kernel``: use ``moe_combine`` Metal kernel.
+    - ``native``: use MLX native ``(y * w[..., None]).sum(axis=-2)``.
+    - ``fp32_no_fma``: use ``moe_combine_fp32_no_fma``.
+
+    Default: ``native`` for K>=3 (LFM2-24B), ``kernel`` for K<=2 (LFM2-8B).
+    Set via ``ZMLX_LFM2_COMBINE_MODE``.
+    """
+    raw = os.environ.get(_LFM2_COMBINE_MODE_ENV)
+    if raw is not None:
+        raw = raw.strip().lower()
+        if raw in {"kernel", "native", "fp32_no_fma"}:
+            return raw
+    # LFM2-24B (K=4): native combine is fidelity-safe and fastest.
+    # LFM2-8B (K=2): kernel combine works fine.
+    return "native" if num_experts_per_tok >= 3 else "kernel"
+
+
+def _lfm2_allow_fused_swiglu(num_experts_per_tok: int = 2) -> bool:
+    """Return True if LFM2 should use gather_qmm_swiglu fused SwiGLU.
+
+    Default: enabled for K<=2 (LFM2-8B where it gives +11.6%),
+    disabled for K>=3 (LFM2-24B where it regresses to ~0.77x).
+    Set ``ZMLX_LFM2_FUSED_SWIGLU=0`` or ``=1`` to override.
+    """
+    raw = os.environ.get("ZMLX_LFM2_FUSED_SWIGLU")
+    if raw is not None:
+        try:
+            return int(raw) != 0
+        except ValueError:
+            pass
+    # K=4 (LFM2-24B): gather_qmm_swiglu causes both fidelity failure and
+    # performance regression.  K=2 (LFM2-8B): proven +11.6% win.
+    return num_experts_per_tok <= 2
+
+
 def _gating(
     self_mod: Any,
     x: Any,
@@ -307,6 +364,8 @@ _QWEN_FUSED_ROUTER_TOPK_ENV = "ZMLX_QWEN_FUSED_ROUTER_TOPK"
 _QWEN_ROUTER_ARGPARTITION_LOGITS_ENV = "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS"
 _QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK_ENV = "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK"
 _QWEN_COMBINE_MODE_ENV = "ZMLX_QWEN_COMBINE_MODE"
+_LFM2_GATE_MODE_ENV = "ZMLX_LFM2_GATE_MODE"
+_LFM2_COMBINE_MODE_ENV = "ZMLX_LFM2_COMBINE_MODE"
 
 
 def _glm_combine_mode() -> str:
@@ -314,6 +373,8 @@ def _glm_combine_mode() -> str:
 
     Modes:
     - ``fp32_no_fma`` (default): use ``moe_combine_fp32_no_fma``.
+    - ``fp32_no_fma_row_tile``: use ``moe_combine_fp32_no_fma_row_tile``.
+    - ``fp32_no_fma_weighted_sum``: use ``moe_combine_weighted_sum_fp32_no_fma``.
     - ``off``: keep current GLM path (discovered combine if available,
       otherwise native ``(y * w[..., None]).sum(axis=-2)``).
     - ``fp32``: use ``moe_combine_fp32``.
@@ -321,10 +382,21 @@ def _glm_combine_mode() -> str:
 
     Set via ``ZMLX_GLM_COMBINE_MODE``.
     """
-    raw = os.environ.get(_GLM_COMBINE_MODE_ENV, "fp32_no_fma").strip().lower()
-    if raw in {"", "0", "off", "false", "no"}:
+    raw = os.environ.get(_GLM_COMBINE_MODE_ENV)
+    if raw is None:
         return "fp32_no_fma"
-    if raw in {"fp32", "fp32_no_fma", "exact"}:
+    raw = raw.strip().lower()
+    if raw in {"", "default", "auto"}:
+        return "fp32_no_fma"
+    if raw in {"0", "off", "false", "no"}:
+        return "off"
+    if raw in {
+        "fp32",
+        "fp32_no_fma",
+        "fp32_no_fma_row_tile",
+        "fp32_no_fma_weighted_sum",
+        "exact",
+    }:
         return raw
     return "fp32_no_fma"
 
@@ -846,6 +918,13 @@ class _MoEMLPPattern:
                     "ZMLX_GLM_FUSED_SWIGLU=0"
                 )
             _use_fused_swiglu = False
+        if is_lfm2 and _use_fused_swiglu and not _lfm2_allow_fused_swiglu(num_experts_per_tok):
+            if config.verbose:
+                print(
+                    f"  [moe_mlp] LFM2 detected: fused SwiGLU disabled "
+                    f"(K={num_experts_per_tok})"
+                )
+            _use_fused_swiglu = False
         moe_stream_pool = _get_moe_stream_pool()
         moe_stream_reduce = None
         if moe_stream_pool is not None:
@@ -863,9 +942,15 @@ class _MoEMLPPattern:
         qwen_fused_downproj_combine_kvec = _qwen_allow_fused_downproj_combine_kvec()
         qwen_combine_mode = _qwen_combine_mode()
         if is_glm and glm_combine_mode != "off" and config.verbose:
-            print(f"  [moe_mlp] GLM combine override enabled (mode={glm_combine_mode})")
+            print(f"  [moe_mlp] GLM combine mode active (mode={glm_combine_mode})")
         if is_qwen3 and qwen_combine_mode != "off" and config.verbose:
             print(f"  [moe_mlp] Qwen combine override enabled (mode={qwen_combine_mode})")
+        lfm2_gate = _lfm2_gate_mode() if is_lfm2 else None
+        lfm2_combine = _lfm2_combine_mode(num_experts_per_tok) if is_lfm2 else None
+        if is_lfm2 and config.verbose:
+            print(
+                f"  [moe_mlp] LFM2 mode: gate={lfm2_gate}, combine={lfm2_combine}"
+            )
 
         # Optional: overlap GLM/DeepSeek-style `shared_experts(x)` with routed
         # expert execution. This is experimental and may regress on some MLX
@@ -888,14 +973,32 @@ class _MoEMLPPattern:
                     shared_out = shared(x)
 
             # 1. Gating — preserve the model's original logic exactly.
-            indices, gate_weights = _gating(
-                self_mod,
-                x,
-                _gate_attr,
-                num_experts_per_tok,
-                is_qwen3=is_qwen3,
-                is_gpt_oss=is_gpt_oss,
-            )
+            if is_lfm2 and lfm2_gate == "native":
+                # LFM2 native gate: reproduce exact original MLX ops
+                # to guarantee fidelity (no custom kernel).
+                gate_fn = getattr(self_mod, _gate_attr)
+                gate_out = gate_fn(x).astype(mx.float32)
+                gate_out = mx.softmax(gate_out, axis=-1)
+                _eb = getattr(self_mod, "expert_bias", None)
+                if _eb is not None:
+                    gate_out = gate_out + _eb
+                _k = num_experts_per_tok
+                inds = mx.argpartition(gate_out, kth=-_k, axis=-1)[..., -_k:]
+                scores = mx.take_along_axis(gate_out, inds, axis=-1)
+                _ntp = getattr(self_mod, "norm_topk_prob", False)
+                if _ntp:
+                    scores = scores / (mx.sum(scores, axis=-1, keepdims=True) + 1e-20)
+                scores = scores.astype(x.dtype)
+                indices, gate_weights = inds, scores
+            else:
+                indices, gate_weights = _gating(
+                    self_mod,
+                    x,
+                    _gate_attr,
+                    num_experts_per_tok,
+                    is_qwen3=is_qwen3,
+                    is_gpt_oss=is_gpt_oss,
+                )
 
             # 2. Expert Execution
             expert_outputs = None
@@ -921,7 +1024,7 @@ class _MoEMLPPattern:
                         require_fp32=use_exact_combine,
                         vectorized_k=qwen_fused_downproj_combine_kvec,
                     )
-                elif is_lfm2:
+                elif is_lfm2 and _use_fused_swiglu:
                     fused_out = _try_fused_downproj_combine(
                         switch_mlp,
                         x,
@@ -958,7 +1061,7 @@ class _MoEMLPPattern:
                     for i, expert in enumerate(experts):
                         for k in range(K):
                             mask = indices[:, k] == i
-                            if mask.any():
+                            if mask.any():  # type: ignore[union-attr]
                                 expert_outputs[mask, k] = expert(x[mask])
                 else:
                     stream_count = len(moe_stream_pool)
@@ -999,6 +1102,22 @@ class _MoEMLPPattern:
                             else gate_weights.astype(mx.float32)
                         )
                         y = moe.moe_combine_fp32_no_fma(expert_outputs, gw)
+                        y = y.astype(expert_outputs.dtype)
+                    elif glm_combine_mode == "fp32_no_fma_row_tile":
+                        gw = (
+                            gate_weights
+                            if gate_weights.dtype == mx.float32
+                            else gate_weights.astype(mx.float32)
+                        )
+                        y = moe.moe_combine_fp32_no_fma_row_tile(expert_outputs, gw)
+                        y = y.astype(expert_outputs.dtype)
+                    elif glm_combine_mode == "fp32_no_fma_weighted_sum":
+                        gw = (
+                            gate_weights
+                            if gate_weights.dtype == mx.float32
+                            else gate_weights.astype(mx.float32)
+                        )
+                        y = moe.moe_combine_weighted_sum_fp32_no_fma(expert_outputs, gw)
                         y = y.astype(expert_outputs.dtype)
                     elif glm_combine_mode == "exact":
                         gw = (
@@ -1041,6 +1160,20 @@ class _MoEMLPPattern:
                         y = moe.moe_combine_exact(expert_outputs, gw)
                     else:
                         y = (expert_outputs * gate_weights[..., None]).sum(axis=-2)
+                elif is_lfm2:
+                    # LFM2-specific combine mode selection.
+                    if lfm2_combine == "native":
+                        y = (expert_outputs * gate_weights[..., None]).sum(axis=-2)
+                    elif lfm2_combine == "fp32_no_fma":
+                        gw = (
+                            gate_weights
+                            if gate_weights.dtype == mx.float32
+                            else gate_weights.astype(mx.float32)
+                        )
+                        y = moe.moe_combine_fp32_no_fma(expert_outputs, gw)
+                        y = y.astype(expert_outputs.dtype)
+                    else:
+                        y = moe.moe_combine(expert_outputs, gate_weights)
                 elif is_gpt_oss:
                     # GPT-OSS: match MLX's dtype promotion and sum order.
                     if gate_weights.dtype == mx.float32:

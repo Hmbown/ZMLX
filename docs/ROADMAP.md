@@ -372,7 +372,7 @@ Items 1, 2, 3, 5, and 6 can be developed in parallel. Item 4 feeds into Item 7. 
 - [MLX Documentation](https://ml-explore.github.io/mlx/build/html/index.html)
 - [MLX Custom Metal Kernels](https://ml-explore.github.io/mlx/build/html/dev/custom_metal_kernels.html)
 - [MLX GitHub Issues](https://github.com/ml-explore/mlx/issues)
-- [ZMLX Benchmarks](../benchmarks/results/TEST_SUMMARY.md)
+- [ZMLX Benchmarks](BENCHMARKS.md)
 
 ---
 

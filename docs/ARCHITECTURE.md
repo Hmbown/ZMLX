@@ -101,4 +101,4 @@ Good upstream candidates:
 - a tiny threadgroup heuristic helper
 - minimal correctness tests around `metal_kernel`
 
-See `docs/UPSTREAMING.md`.
+See [`UPSTREAM_PLAN.md`](../UPSTREAM_PLAN.md).

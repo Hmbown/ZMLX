@@ -291,6 +291,224 @@ def _topk_softmax_bias_simd_kernel(d: int, k: int, renorm: bool) -> Any:
     )
 
 @cache
+def _topk_softmax_bias_dsimd_kernel(d: int, k: int, renorm: bool) -> Any:
+    """Optimized kernel for D in (32, 64] using exactly D threads.
+
+    Uses 2 SIMD groups (32 threads each) with minimal cross-group barriers.
+    Much faster than the generic TG=256 path for D=64 (4 barriers vs 24+).
+    """
+    D = int(d)
+    K = int(k)
+    if D <= 32 or D > 64:
+        raise ValueError("_topk_softmax_bias_dsimd_kernel: requires 32 < D <= 64")
+    if K <= 0 or K > _MAX_FUSED_TOPK:
+        raise ValueError("_topk_softmax_bias_dsimd_kernel: invalid K")
+
+    renorm_literal = str(bool(renorm)).lower()
+
+    # TG = D rounded up to next multiple of 32 (always 64 for D in (32,64])
+    TG = ((D + 31) // 32) * 32
+
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint K = {K};
+        constexpr uint TG = {TG};
+        constexpr uint SG = 32;
+        constexpr bool RENORM = {renorm_literal};
+
+        uint gid = thread_position_in_grid.x;
+        uint tid = thread_position_in_threadgroup.x;
+        uint row = gid / TG;
+        uint base = row * D;
+        uint sg_id = tid / SG;     // SIMD group index (0 or 1)
+        uint lane = tid % SG;      // lane within SIMD group
+
+        // --- Load one element per thread ---
+        float v = -INFINITY;
+        if (tid < D) {{
+            v = (float)inp[base + tid];
+        }}
+
+        // --- Softmax: cross-SIMD max ---
+        float sg_max = simd_max(v);
+        threadgroup float cross_f[2];
+        if (lane == 0) cross_f[sg_id] = sg_max;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        float row_max = metal::max(cross_f[0], cross_f[1]);
+
+        // --- Softmax: cross-SIMD exp-sum ---
+        float exp_v = (tid < D) ? metal::exp(v - row_max) : 0.0f;
+        float sg_sum = simd_sum(exp_v);
+        if (lane == 0) cross_f[sg_id] = sg_sum;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        float row_sum = cross_f[0] + cross_f[1];
+
+        // --- Probability + bias ---
+        float p = (tid < D) ? (exp_v / row_sum + (float)bias[tid]) : -INFINITY;
+
+        // --- Top-K via iterative cross-SIMD max extraction ---
+        // Each iteration: 1 simd_max + 1 simd_min + 2 barriers = 4 ops
+        threadgroup uint cross_u[2];
+
+        thread float topk_vals[K];
+        thread uint topk_idx[K];
+
+        float cur = p;
+        for (uint i = 0; i < K; ++i) {{
+            // Find global max across both SIMD groups
+            float sg_cur_max = simd_max(cur);
+            if (lane == 0) cross_f[sg_id] = sg_cur_max;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            float global_max = metal::max(cross_f[0], cross_f[1]);
+
+            // Find winner: lowest-index thread holding global_max
+            uint candidate = (cur == global_max && tid < D) ? tid : 0xFFFFu;
+            uint sg_winner = simd_min(candidate);
+            if (lane == 0) cross_u[sg_id] = sg_winner;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            uint winner = metal::min(cross_u[0], cross_u[1]);
+
+            if (tid == 0) {{
+                topk_vals[i] = global_max;
+                topk_idx[i] = winner;
+            }}
+            // Mark winner as consumed
+            if (tid == winner) cur = -INFINITY;
+        }}
+
+        // --- Renormalize and write output (ascending value order) ---
+        // MLX argpartition returns top-K in ascending value order;
+        // we write in reverse so slot 0 = smallest top-K value.
+        if (tid == 0) {{
+            float denom = 1.0f;
+            if (RENORM) {{
+                float sum_k = 0.0f;
+                for (uint i = 0; i < K; ++i) {{
+                    sum_k += topk_vals[i];
+                }}
+                denom = sum_k + 1e-20f;
+            }}
+            uint out_base = row * K;
+            for (uint i = 0; i < K; ++i) {{
+                uint ri = K - 1 - i;  // reverse: descending -> ascending
+                float v_out = topk_vals[ri];
+                weights[out_base + i] = (T)(RENORM ? (v_out / denom) : v_out);
+                indices[out_base + i] = topk_idx[ri];
+            }}
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_topk_softmax_bias_dsimd_D{D}_K{K}_R{int(bool(renorm))}",
+        input_names=["inp", "bias"],
+        output_names=["weights", "indices"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+@cache
+def _topk_softmax_dsimd_kernel(d: int, k: int, renorm: bool) -> Any:
+    """Optimized kernel for D in (32, 64] WITHOUT bias."""
+    D = int(d)
+    K = int(k)
+    if D <= 32 or D > 64:
+        raise ValueError("_topk_softmax_dsimd_kernel: requires 32 < D <= 64")
+    if K <= 0 or K > _MAX_FUSED_TOPK:
+        raise ValueError("_topk_softmax_dsimd_kernel: invalid K")
+
+    renorm_literal = str(bool(renorm)).lower()
+    TG = ((D + 31) // 32) * 32
+
+    source = f"""
+        constexpr uint D = {D};
+        constexpr uint K = {K};
+        constexpr uint TG = {TG};
+        constexpr uint SG = 32;
+        constexpr bool RENORM = {renorm_literal};
+
+        uint gid = thread_position_in_grid.x;
+        uint tid = thread_position_in_threadgroup.x;
+        uint row = gid / TG;
+        uint base = row * D;
+        uint sg_id = tid / SG;
+        uint lane = tid % SG;
+
+        float v = -INFINITY;
+        if (tid < D) {{
+            v = (float)inp[base + tid];
+        }}
+
+        float sg_max = simd_max(v);
+        threadgroup float cross_f[2];
+        if (lane == 0) cross_f[sg_id] = sg_max;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        float row_max = metal::max(cross_f[0], cross_f[1]);
+
+        float exp_v = (tid < D) ? metal::exp(v - row_max) : 0.0f;
+        float sg_sum = simd_sum(exp_v);
+        if (lane == 0) cross_f[sg_id] = sg_sum;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        float row_sum = cross_f[0] + cross_f[1];
+
+        float p = (tid < D) ? (exp_v / row_sum) : -INFINITY;
+
+        threadgroup uint cross_u[2];
+        thread float topk_vals[K];
+        thread uint topk_idx[K];
+
+        float cur = p;
+        for (uint i = 0; i < K; ++i) {{
+            float sg_cur_max = simd_max(cur);
+            if (lane == 0) cross_f[sg_id] = sg_cur_max;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            float global_max = metal::max(cross_f[0], cross_f[1]);
+
+            uint candidate = (cur == global_max && tid < D) ? tid : 0xFFFFu;
+            uint sg_winner = simd_min(candidate);
+            if (lane == 0) cross_u[sg_id] = sg_winner;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            uint winner = metal::min(cross_u[0], cross_u[1]);
+
+            if (tid == 0) {{
+                topk_vals[i] = global_max;
+                topk_idx[i] = winner;
+            }}
+            if (tid == winner) cur = -INFINITY;
+        }}
+
+        // Write output in ascending value order (matching argpartition)
+        if (tid == 0) {{
+            float denom = 1.0f;
+            if (RENORM) {{
+                float sum_k = 0.0f;
+                for (uint i = 0; i < K; ++i) {{
+                    sum_k += topk_vals[i];
+                }}
+                denom = sum_k + 1e-20f;
+            }}
+            uint out_base = row * K;
+            for (uint i = 0; i < K; ++i) {{
+                uint ri = K - 1 - i;  // reverse: descending -> ascending
+                float v_out = topk_vals[ri];
+                weights[out_base + i] = (T)(RENORM ? (v_out / denom) : v_out);
+                indices[out_base + i] = topk_idx[ri];
+            }}
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_topk_softmax_dsimd_D{D}_K{K}_R{int(bool(renorm))}",
+        input_names=["inp"],
+        output_names=["weights", "indices"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+@cache
 def _top2_gating_kernel(d: int, tg: int) -> Any:
     D = int(d)
     TG = _validate_tg(tg)
@@ -1105,6 +1323,138 @@ def _moe_combine_kernel_fp32_no_fma(d: int, k: int) -> Any:
     )
 
 
+def _row_tile_launch_params(d: int) -> tuple[int, int]:
+    """Return (threadgroup_size, unroll) for row-tiled combine kernels."""
+    D = int(d)
+    if D >= 256:
+        tg = 256
+    elif D >= 128:
+        tg = 128
+    elif D >= 64:
+        tg = 64
+    elif D >= 32:
+        tg = 32
+    else:
+        tg = max(1, D)
+
+    if D >= tg * 4:
+        unroll = 4
+    elif D >= tg * 2:
+        unroll = 2
+    else:
+        unroll = 1
+    return tg, unroll
+
+
+@cache
+def _moe_combine_kernel_fp32_no_fma_row_tile(
+    d: int,
+    k: int,
+    tg_size: int,
+    unroll: int,
+) -> Any:
+    """FP32 no-FMA combine with row tiling adapted from foundry t2_row_tile."""
+    D = int(d)
+    K = int(k)
+    TG_SIZE = int(tg_size)
+    UNROLL = int(unroll)
+    source = f"""
+        #pragma clang fp contract(off)
+        constexpr uint D = {D};
+        constexpr uint K = {K};
+        constexpr uint TG_SIZE = {TG_SIZE};
+        constexpr uint UNROLL = {UNROLL};
+        uint token_idx = thread_position_in_grid.y;
+        uint tid = thread_position_in_threadgroup.x;
+
+        threadgroup float wbuf[K];
+        for (uint i = tid; i < K; i += threads_per_threadgroup.x) {{
+            wbuf[i] = weights[token_idx * K + i];
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (uint col0 = tid; col0 < D; col0 += TG_SIZE * UNROLL) {{
+            #pragma unroll
+            for (uint u = 0; u < UNROLL; ++u) {{
+                uint d_idx = col0 + u * TG_SIZE;
+                if (d_idx < D) {{
+                    float acc = 0.0f;
+                    for (uint i = 0; i < K; ++i) {{
+                        float w = wbuf[i];
+                        float v = (float)expert_outputs[(token_idx * K + i) * D + d_idx];
+                        float prod = w * v;
+                        acc = acc + prod;
+                    }}
+                    out[token_idx * D + d_idx] = acc;
+                }}
+            }}
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_moe_combine_fp32_no_fma_row_tile_D{D}_K{K}_TG{TG_SIZE}_U{UNROLL}",
+        input_names=["expert_outputs", "weights"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
+@cache
+def _moe_combine_weighted_sum_kernel_fp32_no_fma_k8_row_tile(
+    d: int,
+    tg_size: int,
+    unroll: int,
+) -> Any:
+    """Specialized fp32/no-FMA weighted-sum combine for K=8."""
+    D = int(d)
+    TG_SIZE = int(tg_size)
+    UNROLL = int(unroll)
+    source = f"""
+        #pragma clang fp contract(off)
+        constexpr uint D = {D};
+        constexpr uint K = 8;
+        constexpr uint TG_SIZE = {TG_SIZE};
+        constexpr uint UNROLL = {UNROLL};
+        uint token_idx = thread_position_in_grid.y;
+        uint tid = thread_position_in_threadgroup.x;
+
+        threadgroup float wbuf[K];
+        for (uint i = tid; i < K; i += threads_per_threadgroup.x) {{
+            wbuf[i] = weights[token_idx * K + i];
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (uint col0 = tid; col0 < D; col0 += TG_SIZE * UNROLL) {{
+            #pragma unroll
+            for (uint u = 0; u < UNROLL; ++u) {{
+                uint d_idx = col0 + u * TG_SIZE;
+                if (d_idx < D) {{
+                    float acc = 0.0f;
+                    #pragma unroll
+                    for (uint i = 0; i < K; ++i) {{
+                        float w = wbuf[i];
+                        float v = (float)expert_outputs[(token_idx * K + i) * D + d_idx];
+                        float prod = w * v;
+                        acc = acc + prod;
+                    }}
+                    out[token_idx * D + d_idx] = acc;
+                }}
+            }}
+        }}
+    """
+    return metal_kernel(
+        name=f"kk_moe_combine_weighted_sum_fp32_no_fma_k8_D{D}_TG{TG_SIZE}_U{UNROLL}",
+        input_names=["expert_outputs", "weights"],
+        output_names=["out"],
+        source=source,
+        header=DEFAULT_HEADER,
+        ensure_row_contiguous=True,
+        cache=True,
+    )
+
+
 def moe_combine_fp32_no_fma(expert_outputs: Any, weights: Any) -> Any:
     """Like ``moe_combine_fp32`` but disables FMA contraction in accumulation."""
     original_shape = weights.shape[:-1]
@@ -1121,6 +1471,57 @@ def moe_combine_fp32_no_fma(expert_outputs: Any, weights: Any) -> Any:
         weights_flat,
         grid=(D, B, 1),
         threadgroup=(min(D, 256), 1, 1),
+        output_shapes=[(B, D)],
+        output_dtypes=[mx.float32],
+    )[0]
+    return out.reshape((*original_shape, D))
+
+
+def moe_combine_fp32_no_fma_row_tile(expert_outputs: Any, weights: Any) -> Any:
+    """FP32 no-FMA combine with t2-row-tile style column traversal."""
+    original_shape = weights.shape[:-1]
+    K = int(weights.shape[-1])
+    D = int(expert_outputs.shape[-1])
+
+    expert_outputs_flat = expert_outputs.reshape(-1, K, D)
+    weights_flat = weights.reshape(-1, K).astype(mx.float32)
+    B = int(weights_flat.shape[0])
+
+    tg_size, unroll = _row_tile_launch_params(D)
+    k = _moe_combine_kernel_fp32_no_fma_row_tile(D, K, tg_size, unroll)
+    out = k(
+        expert_outputs_flat,
+        weights_flat,
+        grid=(tg_size, B, 1),
+        threadgroup=(tg_size, 1, 1),
+        output_shapes=[(B, D)],
+        output_dtypes=[mx.float32],
+    )[0]
+    return out.reshape((*original_shape, D))
+
+
+def moe_combine_weighted_sum_fp32_no_fma(expert_outputs: Any, weights: Any) -> Any:
+    """Specialized fp32/no-FMA weighted sum for K=8 decode-like MoE combine.
+
+    Falls back to ``moe_combine_fp32_no_fma`` when K != 8.
+    """
+    K = int(weights.shape[-1])
+    if K != 8:
+        return moe_combine_fp32_no_fma(expert_outputs, weights)
+
+    original_shape = weights.shape[:-1]
+    D = int(expert_outputs.shape[-1])
+    expert_outputs_flat = expert_outputs.reshape(-1, K, D)
+    weights_flat = weights.reshape(-1, K).astype(mx.float32)
+    B = int(weights_flat.shape[0])
+
+    tg_size, unroll = _row_tile_launch_params(D)
+    k = _moe_combine_weighted_sum_kernel_fp32_no_fma_k8_row_tile(D, tg_size, unroll)
+    out = k(
+        expert_outputs_flat,
+        weights_flat,
+        grid=(tg_size, B, 1),
+        threadgroup=(tg_size, 1, 1),
         output_shapes=[(B, D)],
         output_dtypes=[mx.float32],
     )[0]
@@ -1340,6 +1741,35 @@ def topk_gating_softmax(
             else:
                 bias_cast = bias.astype(cd) if bias.dtype != cd else bias
                 kernel = _topk_softmax_bias_simd_kernel(D, K, norm)
+                weights, indices = kernel(
+                    x_cast,
+                    bias_cast,
+                    template=[("T", cd)],
+                    grid=(rows * TG, 1, 1),
+                    threadgroup=(TG, 1, 1),
+                    output_shapes=[x_cast.shape[:-1] + (K,), x_cast.shape[:-1] + (K,)],
+                    output_dtypes=[cd, mx.uint32],
+                )
+            return weights, indices
+
+        # D-SIMD fast path for 32 < D <= 64: uses exactly D threads (2 SIMD groups)
+        # instead of TG=256 with 75%+ idle threads. 4K barriers vs 24+.
+        use_dsimd = 32 < D <= 64 and K <= _MAX_FUSED_TOPK
+        if use_dsimd:
+            TG = ((D + 31) // 32) * 32  # 64 for D in (32, 64]
+            if bias is None:
+                kernel = _topk_softmax_dsimd_kernel(D, K, norm)
+                weights, indices = kernel(
+                    x_cast,
+                    template=[("T", cd)],
+                    grid=(rows * TG, 1, 1),
+                    threadgroup=(TG, 1, 1),
+                    output_shapes=[x_cast.shape[:-1] + (K,), x_cast.shape[:-1] + (K,)],
+                    output_dtypes=[cd, mx.uint32],
+                )
+            else:
+                bias_cast = bias.astype(cd) if bias.dtype != cd else bias
+                kernel = _topk_softmax_bias_dsimd_kernel(D, K, norm)
                 weights, indices = kernel(
                     x_cast,
                     bias_cast,
@@ -2185,6 +2615,8 @@ __all__ = [
     "moe_combine_exact",
     "moe_combine_fp32",
     "moe_combine_fp32_no_fma",
+    "moe_combine_fp32_no_fma_row_tile",
+    "moe_combine_weighted_sum_fp32_no_fma",
     "gather_mmk_combine",
     "gather_qmmk_combine_quantized",
     "gather_qmm_combine",

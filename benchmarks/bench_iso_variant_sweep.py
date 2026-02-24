@@ -82,6 +82,31 @@ def _load_capsule(path: Path) -> dict[str, Any]:
     }
 
 
+def _fmt_pct(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value * 100:+.2f}%"
+
+
+def _fmt_ratio(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.4f}x"
+
+
+def _fmt_num(value: float | None, *, digits: int = 1) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.{digits}f}"
+
+
+def _fidelity_str(fidelity: dict[str, Any]) -> str:
+    verdict = str(fidelity.get("verdict", "UNKNOWN")).upper()
+    matched = fidelity.get("matched", fidelity.get("matched_tokens", 0))
+    total = fidelity.get("total", fidelity.get("total_tokens", 0))
+    return f"{verdict} ({matched}/{total})"
+
+
 def _run_variant(
     *,
     repo_root: Path,
@@ -241,6 +266,33 @@ def main() -> None:
         if rc == 0 and capsule_path.exists():
             try:
                 result["metrics"] = _load_capsule(capsule_path)
+                metrics = result["metrics"]
+                fidelity = _fidelity_str(metrics.get("fidelity", {}))
+                decode = metrics.get("decode", {})
+                prefill = metrics.get("prefill", {})
+                memory = metrics.get("memory_gb", {})
+                decode_baseline = decode.get("baseline")
+                decode_patched = decode.get("patched")
+                prefill_baseline = prefill.get("baseline")
+                prefill_patched = prefill.get("patched")
+                mem_delta = None
+                if (
+                    memory.get("baseline") is not None
+                    and memory.get("patched") is not None
+                ):
+                    mem_delta = float(memory["patched"]) - float(memory["baseline"])
+                print(
+                    "  summary: "
+                    f"fidelity={fidelity}, "
+                    "decode="
+                    f"{_fmt_num(decode_baseline)}->{_fmt_num(decode_patched)} tok/s "
+                    f"({_fmt_ratio(decode.get('speedup'))}), "
+                    "prefill="
+                    f"{_fmt_num(prefill_baseline)}->{_fmt_num(prefill_patched)} tok/s "
+                    f"({_fmt_pct(prefill.get('change'))}), "
+                    "mem_delta_gb="
+                    f"{_fmt_num(mem_delta, digits=2) if mem_delta is not None else 'n/a'}"
+                )
             except Exception as exc:  # pragma: no cover - defensive fallback
                 result["metrics_error"] = str(exc)
         else:

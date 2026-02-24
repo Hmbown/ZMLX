@@ -1,0 +1,58 @@
+{
+  "experiment": "lfm2_24b_dsimd_gate_kernel",
+  "model": "LiquidAI/LFM2-24B-A2B-MLX-4bit",
+  "timestamp": "2026-02-24T10:29:17.816582",
+  "hardware": {
+    "chip": "Apple M4 Max",
+    "memory_gb": 36,
+    "os": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python": "3.14.3 (main, Feb  3 2026, 15:32:20) [Clang 17.0.0 (clang-1700.6.3.2)]"
+  },
+  "configuration": {
+    "gate_mode": "kernel (D-SIMD, 2 SIMD groups, ascending order)",
+    "combine_mode": "native",
+    "fused_swiglu": false,
+    "pattern": "moe_mlp",
+    "patched_modules": 38,
+    "kernel": "topk_softmax_bias_dsimd D=64 K=4 TG=64"
+  },
+  "quick_gate_200tok_3runs": {
+    "baseline_decode_median": 152.6,
+    "patched_decode_median": 162.8,
+    "speedup": 1.067,
+    "fidelity": "200/200 PASS",
+    "baseline_prompt_median": 491.9,
+    "patched_prompt_median": 499.6,
+    "peak_mem_gb": 13.45
+  },
+  "confirmation_500tok_5runs": {
+    "baseline_decode_median": 152.0,
+    "patched_decode_median": 161.1,
+    "speedup": 1.06,
+    "fidelity": "500/500 PASS",
+    "baseline_prompt_median": 490.7,
+    "patched_prompt_median": 501.8,
+    "peak_mem_gb": 13.45,
+    "baseline_runs": [
+      151.0,
+      152.4,
+      150.1,
+      152.0,
+      152.7
+    ],
+    "patched_runs": [
+      163.7,
+      161.1,
+      160.6,
+      162.8,
+      160.6
+    ]
+  },
+  "key_findings": [
+    "D-SIMD kernel fuses softmax+bias+topK into 1 Metal dispatch (replaces ~10 dispatches)",
+    "Uses 2 SIMD groups (64 threads) with cross-group reductions (only 4K barriers vs 24+ in TG=256)",
+    "Ascending value order output matches MLX argpartition ordering (critical for fidelity)",
+    "gather_qmm_swiglu HURTS LFM2-24B (K=4): ~0.77x regression + fidelity failure",
+    "Fused SwiGLU designed for K=2 (LFM2-8B); K=4 experts overwhelm the fused dispatch"
+  ]
+}

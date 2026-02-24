@@ -1,0 +1,24 @@
+model: mlx-community/Qwen3-1.7B-4bit
+train: true
+fine_tune_type: lora
+optimizer: adamw
+data: training_data/kernel_sft_qwen3_1p7b
+mask_prompt: true
+num_layers: 12
+batch_size: 1
+iters: 6000
+val_batches: 64
+learning_rate: 5.0e-5
+steps_per_report: 20
+steps_per_eval: 200
+grad_accumulation_steps: 8
+save_every: 200
+test: true
+test_batches: 64
+max_seq_length: 1024
+grad_checkpoint: true
+seed: 42
+lora_parameters:
+  rank: 16
+  dropout: 0.05
+  scale: 32.0

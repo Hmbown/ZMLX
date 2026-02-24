@@ -113,6 +113,24 @@ def test_glm_combine_mode_default_fp32_no_fma(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.cpu
+def test_glm_combine_mode_off(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ZMLX_GLM_COMBINE_MODE", "off")
+    assert moe_mlp._glm_combine_mode() == "off"
+
+
+@pytest.mark.cpu
+def test_glm_combine_mode_row_tile(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ZMLX_GLM_COMBINE_MODE", "fp32_no_fma_row_tile")
+    assert moe_mlp._glm_combine_mode() == "fp32_no_fma_row_tile"
+
+
+@pytest.mark.cpu
+def test_glm_combine_mode_weighted_sum(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ZMLX_GLM_COMBINE_MODE", "fp32_no_fma_weighted_sum")
+    assert moe_mlp._glm_combine_mode() == "fp32_no_fma_weighted_sum"
+
+
+@pytest.mark.cpu
 def test_glm_combine_mode_valid(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("ZMLX_GLM_COMBINE_MODE", "exact")
     assert moe_mlp._glm_combine_mode() == "exact"

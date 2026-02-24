@@ -37,7 +37,7 @@ MODELS = {
     "qwen3-32b": "mlx-community/Qwen3-32B-4bit",
     "lfm2-8b": "mlx-community/LFM2-8B-A1B-8bit-MLX",
     "lfm2-8b-4bit": "mlx-community/LFM2-8B-A1B-4bit",
-    "glm-4.7-flash": "mlx-community/GLM-4.7-Flash-4bit",
+    "glm-4.7-flash": "mlx-community/GLM-4.7-Flash-4bit-mxfp4",
     "gemma3-27b": "mlx-community/gemma-3-27b-it-qat-4bit",
     "deepseek-r1-32b": "mlx-community/DeepSeek-R1-Distill-Qwen-32B-4bit",
 }

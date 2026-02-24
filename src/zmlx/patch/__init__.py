@@ -37,7 +37,7 @@ import mlx.nn as nn
 
 from ._registry import _ensure_loaded, get_all_patterns, get_pattern, list_patterns
 from ._traversal import apply_patterns
-from ._types import PatchConfig, PatchResult
+from ._types import FusionConfig, PatchConfig, PatchResult
 
 # ---------------------------------------------------------------------------
 # Model-aware safety: auto-exclude patterns with known fidelity issues
@@ -136,6 +136,11 @@ def patch(
     compute_dtype: str = "float32",
     threadgroup: int | str = 256,
     moe_fused_swiglu_max_tokens: int | None = None,
+    fusion: bool = False,
+    fusion_validate: bool = True,
+    fusion_patterns: list[str] | None = None,
+    fusion_rtol: float = 1e-4,
+    fusion_atol: float = 1e-5,
     verbose: bool = False,
 ) -> nn.Module:
     """Patch an MLX model to use fused ZMLX Metal kernels.
@@ -159,6 +164,14 @@ def patch(
             to autotune on first invocation.
         moe_fused_swiglu_max_tokens: Override the max token count for the fused
             SwiGLU MoE path. ``None`` uses the built-in default threshold.
+        fusion: Opt-in JIT fusion integration for patched modules. Disabled by
+            default for safety.
+        fusion_validate: When fusion is enabled, validate fused vs unfused
+            outputs before enabling each signature/pattern.
+        fusion_patterns: Optional allowlist of pattern names eligible for fusion
+            integration. ``None`` means all patched patterns.
+        fusion_rtol: Relative tolerance for validation gate.
+        fusion_atol: Absolute tolerance for validation gate.
         verbose: Print each replacement as it happens.
 
     Returns:
@@ -191,6 +204,13 @@ def patch(
         compute_dtype=compute_dtype,
         threadgroup=threadgroup,
         moe_fused_swiglu_max_tokens=moe_fused_swiglu_max_tokens,
+        fusion=FusionConfig(
+            enabled=bool(fusion),
+            validate=bool(fusion_validate),
+            rtol=float(fusion_rtol),
+            atol=float(fusion_atol),
+            patterns=tuple(fusion_patterns or ()),
+        ),
         verbose=verbose,
     )
 
@@ -317,6 +337,14 @@ def unpatch(model: nn.Module) -> nn.Module:
         children = dict(model.children())
 
     for _name, child in children.items():
+        if hasattr(child, "_zmlx_fusion_original_class"):
+            try:
+                child.__class__ = child._zmlx_fusion_original_class
+            except Exception:
+                pass
+            del child._zmlx_fusion_original_class
+        if hasattr(child, "_zmlx_fusion_wrapped"):
+            del child._zmlx_fusion_wrapped
         if hasattr(child, "_zmlx_original_call") and child._zmlx_original_call is not None:
             child.__call__ = child._zmlx_original_call
             del child._zmlx_original_call

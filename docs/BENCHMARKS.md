@@ -9,6 +9,35 @@ All benchmarks use `python -m zmlx.validate` with the following defaults:
 - **Patched:** `patch(model)` with default settings (stable mode)
 - **Fidelity:** every generated token ID compared between patched and unpatched
 
+## Current large-model protocol (2026-02-13+)
+
+For GLM-4.7-Flash and Qwen3-30B-A3B, do not run multi-variant sweeps in a
+single Python process. Those runs can accumulate allocator pressure and OOM.
+
+Use isolation-first execution:
+- `benchmarks/bench_iso_variant_sweep.py` (one variant per subprocess).
+- AB/BA replicate blocks with cooldown windows for GLM consistency.
+- Qwen control anchor: `control_patterns_moe_mlp`.
+- Matrix control anchors with `python -m zmlx.matrix run ... --patterns none`.
+
+Phase-based entrypoint:
+
+```bash
+source .venv/bin/activate
+bash benchmarks/run_3hr_benchmark_campaign.sh <phase>
+```
+
+Supported phases:
+- `quick`
+- `glm_abba_200`
+- `glm_abba_1024`
+- `qwen_isolation_200`
+- `qwen_isolation_1024`
+- `glm_stress`
+- `matrix_controls`
+- `checks`
+- `all`
+
 ### Repro capsules
 
 Each benchmark result is backed by a repro capsule in `benchmarks/repro_capsules/` containing:

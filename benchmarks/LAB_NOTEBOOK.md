@@ -769,3 +769,312 @@ Decision update:
 - GLM long-context confirmation (`runs=5`, `max_tokens=1024`) remained fidelity-safe and decode-positive (`+0.93 pp` vs control), but with prefill regression in that block (`+2.35 pp` vs control).
 - GLM: keep `glm_combine_fp32_no_fma` as active default, with status `promote_candidate` (not fully promoted) pending tighter prefill variance.
 - Qwen: no promotion; keep baseline control behavior as the benchmark truth anchor.
+
+## EXP-20260211T164421Z-GLM-T2-ROW-TILE-TRANSFER
+
+Question:
+- Does foundry-inspired `t2_row_tile` transfer into production GLM combine and beat current `glm_combine_fp32_no_fma` with fidelity preserved?
+
+Code changes:
+- `src/zmlx/kernels/moe.py`
+  - Added `moe_combine_fp32_no_fma_row_tile()` plus row-tile kernel builder.
+- `src/zmlx/patch/patterns/moe_mlp.py`
+  - Added GLM combine mode `fp32_no_fma_row_tile`.
+- `benchmarks/bench_glm47_flash_experiments.py`
+  - Added benchmark variant `glm_combine_fp32_no_fma_row_tile`.
+
+Method:
+- `python benchmarks/bench_iso_variant_sweep.py --suite glm47 --variants control_swiglu_moe glm_combine_fp32_no_fma glm_combine_fp32_no_fma_row_tile --runs 3 --max-tokens 200 --prefix glm47_t2_row_tile_transfer_t200_r3_20260211`
+- `python benchmarks/bench_iso_variant_sweep.py --suite glm47 --variants control_swiglu_moe glm_combine_fp32_no_fma glm_combine_fp32_no_fma_row_tile --runs 3 --max-tokens 1024 --prefix glm47_t2_row_tile_transfer_t1024_r3_20260211`
+
+Artifacts:
+- `benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t200_r3_20260211_summary.json`
+- `benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t200_r3_20260211_control_swiglu_moe.json`
+- `benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t200_r3_20260211_glm_combine_fp32_no_fma.json`
+- `benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t200_r3_20260211_glm_combine_fp32_no_fma_row_tile.json`
+- `benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t1024_r3_20260211_summary.json`
+- `benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t1024_r3_20260211_control_swiglu_moe.json`
+- `benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t1024_r3_20260211_glm_combine_fp32_no_fma.json`
+- `benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t1024_r3_20260211_glm_combine_fp32_no_fma_row_tile.json`
+
+Results:
+- `t=200`:
+  - `control_swiglu_moe`: fidelity `PASS` (`200/200`), decode speedup `0.9594x`, prefill change `-0.46%`
+  - `glm_combine_fp32_no_fma`: fidelity `PASS` (`200/200`), decode speedup `0.9582x`, prefill change `-1.44%`
+  - `glm_combine_fp32_no_fma_row_tile`: fidelity `PASS` (`200/200`), decode speedup `0.9283x`, prefill change `-7.88%`
+- `t=1024`:
+  - `control_swiglu_moe`: fidelity `PASS` (`1024/1024`), decode speedup `0.9308x`, prefill change `+1.12%`
+  - `glm_combine_fp32_no_fma`: fidelity `PASS` (`1024/1024`), decode speedup `0.9688x`, prefill change `-0.79%`
+  - `glm_combine_fp32_no_fma_row_tile`: fidelity `PASS` (`1024/1024`), decode speedup `0.9537x`, prefill change `-2.91%`
+
+Interpretation:
+- Fidelity gate passes for row-tile at both lengths.
+- Transfer does not beat current best:
+  - decode is materially worse at `t=200` and still worse at `t=1024` vs `glm_combine_fp32_no_fma`.
+
+Decision:
+- Do not promote `fp32_no_fma_row_tile` into GLM default path.
+- Keep `glm_combine_fp32_no_fma` as current best production combine mode.
+
+## EXP-20260211T165600Z-GLM-PREFILL-CONSISTENCY-REPC-REPD
+
+Question:
+- Do two additional long-context ABBA blocks (`t=1024`, `runs=5`) stabilize GLM prefill deltas within `+/-1 pp` and allow promotion from `promote_candidate` to `promoted`?
+
+Method:
+- Block C (AB order):
+  - `python benchmarks/bench_iso_variant_sweep.py --suite glm47 --variants control_swiglu_moe glm_combine_fp32_no_fma --runs 5 --max-tokens 1024 --prefix glm47_prefill_consistency_abba_t1024_r5_repC_AB_20260211`
+- Explicit cooldown between blocks:
+  - `sleep 45`
+- Block D (BA order):
+  - `python benchmarks/bench_iso_variant_sweep.py --suite glm47 --variants glm_combine_fp32_no_fma control_swiglu_moe --runs 5 --max-tokens 1024 --prefix glm47_prefill_consistency_abba_t1024_r5_repD_BA_20260211`
+
+Artifacts:
+- `benchmarks/repro_capsules/glm47_prefill_consistency_abba_t1024_r5_repC_AB_20260211_summary.json`
+- `benchmarks/repro_capsules/glm47_prefill_consistency_abba_t1024_r5_repC_AB_20260211_control_swiglu_moe.json`
+- `benchmarks/repro_capsules/glm47_prefill_consistency_abba_t1024_r5_repC_AB_20260211_glm_combine_fp32_no_fma.json`
+- `benchmarks/repro_capsules/glm47_prefill_consistency_abba_t1024_r5_repD_BA_20260211_summary.json`
+- `benchmarks/repro_capsules/glm47_prefill_consistency_abba_t1024_r5_repD_BA_20260211_control_swiglu_moe.json`
+- `benchmarks/repro_capsules/glm47_prefill_consistency_abba_t1024_r5_repD_BA_20260211_glm_combine_fp32_no_fma.json`
+
+Results:
+- Block C:
+  - `control_swiglu_moe`: fidelity `PASS`, decode speedup `0.9458x`, prefill change `-1.45%`
+  - `glm_combine_fp32_no_fma`: fidelity `PASS`, decode speedup `0.9532x`, prefill change `-0.22%`
+- Block D:
+  - `glm_combine_fp32_no_fma`: fidelity `PASS`, decode speedup `0.9508x`, prefill change `-3.03%`
+  - `control_swiglu_moe`: fidelity `PASS`, decode speedup `1.0041x`, prefill change `+1.98%`
+- Across all four `t=1024,r=5` AB/BA blocks (`repA`,`repB`,`repC`,`repD`), prefill delta (candidate vs control) ranges from `-1.26 pp` to `+0.79 pp` (spread `2.05 pp`), exceeding the `+/-1 pp` stabilization target.
+
+Interpretation:
+- Fidelity stays stable (`PASS`) across all additional blocks.
+- Prefill variance remains slightly outside the promotion envelope due the `repD` outlier (`-1.26 pp`).
+- Decode signal is mostly positive but not monotonic (`repD` decode delta vs control is negative).
+
+Promotion decision:
+- Keep GLM `glm_combine_fp32_no_fma` status as `promote_candidate`.
+- Do not flip to `promoted` yet.
+
+## EXP-20260211T171500Z-WEIGHTED-SUM-FP32-NOFMA-K8-SPECIALIZATION
+
+Question:
+- Can a new production `moe_combine_weighted_sum_fp32_no_fma` (`k=8` specialization) beat current `moe_combine_fp32_no_fma` in isolation and then at model level?
+
+Code changes:
+- `src/zmlx/kernels/moe.py`
+  - Added `moe_combine_weighted_sum_fp32_no_fma()` and dedicated `K=8` row-tile/no-FMA kernel.
+- `src/zmlx/patch/patterns/moe_mlp.py`
+  - Added GLM combine mode `fp32_no_fma_weighted_sum`.
+- `benchmarks/bench_glm47_flash_experiments.py`
+  - Added benchmark variant `glm_combine_fp32_no_fma_weighted_sum`.
+- `benchmarks/bench_moe_combine_weighted_sum_fp32_no_fma.py` (new)
+  - Added reproducible microbench entrypoint for this specialization.
+
+Isolation microbench method:
+- `python benchmarks/bench_moe_combine_weighted_sum_fp32_no_fma.py --json-out benchmarks/repro_capsules/moe_combine_weighted_sum_fp32_no_fma_microbench_20260211.json --warmup 6 --repeats 50`
+
+Isolation microbench artifact:
+- `benchmarks/repro_capsules/moe_combine_weighted_sum_fp32_no_fma_microbench_20260211.json`
+
+Isolation microbench result:
+- median `specialized/base` ratio: `1.012044` (slightly slower)
+- wins: `2/5` cases
+- max abs diff vs baseline kernel: `0.0`
+
+Model-level method:
+- `python benchmarks/bench_iso_variant_sweep.py --suite glm47 --variants control_swiglu_moe glm_combine_fp32_no_fma glm_combine_fp32_no_fma_weighted_sum --runs 3 --max-tokens 200 --prefix glm47_weighted_sum_fp32_no_fma_t200_r3_20260211`
+- `python benchmarks/bench_iso_variant_sweep.py --suite glm47 --variants control_swiglu_moe glm_combine_fp32_no_fma glm_combine_fp32_no_fma_weighted_sum --runs 3 --max-tokens 1024 --prefix glm47_weighted_sum_fp32_no_fma_t1024_r3_20260211`
+
+Model-level artifacts:
+- `benchmarks/repro_capsules/glm47_weighted_sum_fp32_no_fma_t200_r3_20260211_summary.json`
+- `benchmarks/repro_capsules/glm47_weighted_sum_fp32_no_fma_t200_r3_20260211_control_swiglu_moe.json`
+- `benchmarks/repro_capsules/glm47_weighted_sum_fp32_no_fma_t200_r3_20260211_glm_combine_fp32_no_fma.json`
+- `benchmarks/repro_capsules/glm47_weighted_sum_fp32_no_fma_t200_r3_20260211_glm_combine_fp32_no_fma_weighted_sum.json`
+- `benchmarks/repro_capsules/glm47_weighted_sum_fp32_no_fma_t1024_r3_20260211_summary.json`
+- `benchmarks/repro_capsules/glm47_weighted_sum_fp32_no_fma_t1024_r3_20260211_control_swiglu_moe.json`
+- `benchmarks/repro_capsules/glm47_weighted_sum_fp32_no_fma_t1024_r3_20260211_glm_combine_fp32_no_fma.json`
+- `benchmarks/repro_capsules/glm47_weighted_sum_fp32_no_fma_t1024_r3_20260211_glm_combine_fp32_no_fma_weighted_sum.json`
+
+Model-level results:
+- `t=200`:
+  - `glm_combine_fp32_no_fma`: fidelity `PASS`, decode speedup `0.9518x`
+  - `glm_combine_fp32_no_fma_weighted_sum`: fidelity `PASS`, decode speedup `0.9389x`
+- `t=1024`:
+  - `glm_combine_fp32_no_fma`: fidelity `PASS`, decode speedup `0.9563x`
+  - `glm_combine_fp32_no_fma_weighted_sum`: fidelity `PASS`, decode speedup `0.9641x` (better than control, but still below current mode's patched decode tok/s in this run set)
+
+Decision:
+- Keep weighted-sum specialization as experimental only.
+- No promotion over `glm_combine_fp32_no_fma` at this stage.
+
+## EXP-20260212T210500Z-JIT-FUSION-16GB-GUARDED-MODEL-SWEEP
+
+Question:
+- Under a hard 16GB RSS guard, which currently cached models show real decode/prefill/memory improvement from fusion-related patch paths?
+
+Method:
+- Activated project venv before all Python runs: `source .venv/bin/activate`.
+- Used a guarded runner that sampled process-tree RSS (`ps -o rss` + child aggregation) and killed at `16*1024*1024` KB.
+- Ran `python -m zmlx.matrix run ... --max-tokens 64` with an initial sweep (`runs=1`) and targeted confirmations (`runs=3`).
+- Used `--patterns none` controls per model to correct baseline-first ordering bias in `zmlx.matrix run`.
+
+Artifacts:
+- `runs/fusion_guard_20260212/matrix.jsonl`
+- `runs/fusion_guard_20260212/guard_summary.tsv`
+- `runs/fusion_guard_20260212_confirm/matrix.jsonl`
+- `runs/fusion_guard_20260212_confirm/guard_summary.tsv`
+- `runs/fusion_guard_20260212_extra/matrix.jsonl`
+- `runs/fusion_guard_20260212_extra/guard_summary.tsv`
+
+Key results:
+- `mlx-community/LFM2-8B-A1B-4bit`:
+  - Control (`--patterns none`, `runs=3`): patched decode median `226.66 tok/s`, prefill `746.10 tok/s`, mem `5.30 GB`, guard peak `5.30 GB`, fidelity `PASS`.
+  - Candidate (`--patterns moe_mlp`, `runs=3`): patched decode median `236.52 tok/s`, prefill `733.77 tok/s`, mem `5.30 GB`, guard peak `5.33 GB`, fidelity `PASS`.
+  - Candidate delta vs control (patched throughput): decode `+4.35%`, prefill `-1.65%`, memory `+0.00 GB`.
+- `mlx-community/LFM2-8B-A1B-8bit-MLX`:
+  - Control (`--patterns none`, `runs=3`): patched decode median `156.8 tok/s`, mem `9.45 GB`.
+  - Candidate (`--patterns moe_mlp`, `runs=3`): patched decode median `150.7 tok/s`, mem `9.45 GB`.
+  - Candidate delta vs control: decode `-3.89%`, prefill `-3.46%`, memory `+0.00 GB` (reject).
+- `mlx-community/Qwen3-8B-4bit`:
+  - Control (`--patterns none`, `runs=3`): patched decode median `76.93 tok/s`, mem `4.71 GB`.
+  - Candidate (`--patterns swiglu_mlp`, `runs=3`): patched decode median `75.82 tok/s`, mem `4.72 GB`.
+  - Candidate delta vs control: decode `-1.44%`, prefill not improved, memory `+0.01 GB` (reject).
+- `mlx-community/GLM-4.7-Flash-4bit`:
+  - Initial sweep (`runs=1`, default patch) showed patched decode `90.7 tok/s` and model peak memory `16.91 GB`.
+  - Guarded confirm control (`--patterns none`, `runs=3`) was killed at `16,978,416 KB` RSS:
+    - `[FAIL] glm47_control_none_r3: exceeded 16GB RSS (16978416 KB). Killing.`
+  - Under hard 16GB cap, GLM path is not admissible in this run set.
+
+Decision:
+- Keep `moe_mlp` on `LFM2-8B-A1B-4bit` as the only currently validated decode-positive fusion path under the 16GB guard.
+- Do not enable tested fusion candidates for `LFM2-8B-A1B-8bit-MLX` or `Qwen3-8B-4bit`.
+- Treat GLM-4.7-Flash as out-of-budget for strict 16GB-cap validation unless a lower-memory configuration is introduced.
+
+## EXP-20260213T223500Z-CAMPAIGN-PROTOCOL-CORRECTION
+
+Question:
+- Which benchmark instructions became stale or operationally unsafe, and what is
+  the corrected execution protocol?
+
+Observed issues:
+- The previous `benchmarks/run_3hr_benchmark_campaign.sh` used multi-variant
+  single-process sweeps for GLM/Qwen3-sized runs. This conflicts with the
+  earlier pivot to one-variant-per-process isolation after OOM incidents.
+- The previous campaign flow treated `qwen_combine_exact` as a promoted
+  benchmark target, while the latest follow-up snapshot kept Qwen control as
+  the benchmark anchor and marked tested Qwen custom variants as non-promoted.
+- The previous matrix phase did not enforce `--patterns none` control anchors
+  that were adopted to reduce ordering bias in matrix runs.
+
+Code + docs updates:
+- Reworked `benchmarks/run_3hr_benchmark_campaign.sh` into a phase-based,
+  isolation-first runner:
+  - explicit phase selector (`quick`, `glm_abba_200`, `glm_abba_1024`,
+    `qwen_isolation_200`, `qwen_isolation_1024`, `glm_stress`,
+    `matrix_controls`, `checks`, `all`)
+  - subprocess-isolated variant sweeps via
+    `benchmarks/bench_iso_variant_sweep.py`
+  - AB/BA GLM blocks with cooldown windows
+  - matrix control anchors with `--patterns none`
+- Updated benchmark workflow documentation:
+  - `docs/BENCHMARKS.md`
+  - `README.md`
+  - `CLAUDE.md`
+  - `benchmarks/NEXT_AI_PIVOT_PROMPT.md`
+
+Decision:
+- Keep isolation-first execution as the default protocol for GLM/Qwen3 campaign
+  work.
+- Keep Qwen control (`control_patterns_moe_mlp`) as benchmark truth anchor
+  until a custom variant is reproduced decode-positive under isolation runs.
+
+## EXP-20260214T013000Z-ISOLATION-FIRST-CAMPAIGN-CONTINUATION
+
+Question:
+- Continue the corrected isolation-first GLM/Qwen campaign phase-by-phase, collect capsule-backed decode/prefill/fidelity/memory evidence, and decide variant status.
+
+Method:
+- Exact phase commands executed:
+  - `source .venv/bin/activate && bash benchmarks/run_3hr_benchmark_campaign.sh quick`
+  - `source .venv/bin/activate && bash benchmarks/run_3hr_benchmark_campaign.sh glm_abba_200`
+  - `source .venv/bin/activate && bash benchmarks/run_3hr_benchmark_campaign.sh glm_abba_1024`
+  - `source .venv/bin/activate && bash benchmarks/run_3hr_benchmark_campaign.sh qwen_isolation_200`
+  - `source .venv/bin/activate && bash benchmarks/run_3hr_benchmark_campaign.sh qwen_isolation_1024`
+  - `source .venv/bin/activate && bash benchmarks/run_3hr_benchmark_campaign.sh glm_stress`
+  - `source .venv/bin/activate && bash benchmarks/run_3hr_benchmark_campaign.sh matrix_controls`
+- Pause handling:
+  - `glm_stress` was manually interrupted with `Ctrl-C` and rerun with the same command to completion.
+- Aggregation approach for GLM/Qwen comparison tables:
+  - GLM: averaged AB/BA summaries per token length.
+  - Qwen: averaged repA/repB summaries per token length.
+  - Control anchor:
+    - GLM: `control_swiglu_moe`
+    - Qwen: `control_patterns_moe_mlp`
+
+Artifacts:
+- Phase summaries:
+  - `benchmarks/results/campaign_20260213_quick_summary.txt`
+  - `benchmarks/results/campaign_20260213_glm_abba_200_summary.txt`
+  - `benchmarks/results/campaign_20260213_glm_abba_1024_summary.txt`
+  - `benchmarks/results/campaign_20260213_qwen_isolation_200_summary.txt`
+  - `benchmarks/results/campaign_20260213_qwen_isolation_1024_summary.txt`
+  - `benchmarks/results/campaign_20260213_glm_stress_summary.txt`
+  - `benchmarks/results/campaign_20260213_matrix_controls_summary.txt`
+- GLM summaries:
+  - `benchmarks/repro_capsules/glm47_consistency_ab_t200_r5_20260213_summary.json`
+  - `benchmarks/repro_capsules/glm47_consistency_ba_t200_r5_20260213_summary.json`
+  - `benchmarks/repro_capsules/glm47_consistency_ab_t1024_r5_20260213_summary.json`
+  - `benchmarks/repro_capsules/glm47_consistency_ba_t1024_r5_20260213_summary.json`
+- Qwen summaries:
+  - `benchmarks/repro_capsules/qwen3_isolation_ordered_t200_r5_repA_20260213_summary.json`
+  - `benchmarks/repro_capsules/qwen3_isolation_ordered_t200_r5_repB_20260213_summary.json`
+  - `benchmarks/repro_capsules/qwen3_isolation_ordered_t1024_r5_repA_20260213_summary.json`
+  - `benchmarks/repro_capsules/qwen3_isolation_ordered_t1024_r5_repB_20260213_summary.json`
+- Stress artifacts:
+  - `benchmarks/repro_capsules/glm47_stress_full_20260213.json`
+  - `benchmarks/results/glm_stress/glm_stress_full_20260213_185549.log`
+- Matrix control anchors (`--patterns none`) recorded in:
+  - `benchmarks/matrix.jsonl`
+
+Results:
+- GLM-4.7-Flash-4bit-mxfp4 (control vs candidate medians, AB/BA averaged):
+
+| Tokens | Candidate | Control decode (tok/s) | Candidate decode (tok/s) | Decode delta vs control | Control prefill (tok/s) | Candidate prefill (tok/s) | Prefill delta vs control | Fidelity | Peak mem delta (GB) | Label | Reason |
+|---|---|---:|---:|---:|---:|---:|---:|---|---:|---|---|
+| 200 | `glm_combine_fp32_no_fma` | 73.95 | 76.65 | +3.65% | 268.35 | 278.50 | +3.78% | PASS | +0.00 | hold | Beats control anchor, but both control and candidate remain decode-negative vs own baselines in this environment snapshot. |
+| 1024 | `glm_combine_fp32_no_fma` | 70.45 | 70.50 | +0.07% | 167.45 | 169.25 | +1.07% | PASS | +0.00 | hold | Near-tie vs control; still decode-negative vs own baseline and not strong enough for promotion. |
+
+- Qwen3-30B-A3B-4bit (control vs candidate medians, repA/repB averaged):
+
+| Tokens | Candidate | Control decode (tok/s) | Candidate decode (tok/s) | Decode delta vs control | Control prefill (tok/s) | Candidate prefill (tok/s) | Prefill delta vs control | Fidelity | Peak mem delta (GB) | Label | Reason |
+|---|---|---:|---:|---:|---:|---:|---:|---|---:|---|---|
+| 200 | `qwen_combine_exact` | 107.10 | 106.10 | -0.93% | 331.70 | 329.15 | -0.77% | PASS | +0.00 | reject | Decode regresses vs control at short context; not promotable. |
+| 200 | `qwen_router_argpartition_logits` | 107.10 | 105.50 | -1.49% | 331.70 | 329.65 | -0.62% | PASS | +0.00 | reject | Largest short-context decode regression vs control. |
+| 200 | `qwen_router_argpartition_logits_topk_combine_exact` | 107.10 | 106.65 | -0.42% | 331.70 | 329.00 | -0.81% | PASS | +0.00 | reject | Still decode-negative at short context; inconsistent. |
+| 1024 | `qwen_combine_exact` | 101.75 | 101.65 | -0.10% | 324.80 | 321.20 | -1.11% | PASS | -0.01 | reject | No decode win vs control and prefill regression. |
+| 1024 | `qwen_router_argpartition_logits` | 101.75 | 102.80 | +1.03% | 324.80 | 324.40 | -0.12% | PASS | +0.00 | reject | Long-context decode improvement is not enough to offset short-context regression. |
+| 1024 | `qwen_router_argpartition_logits_topk_combine_exact` | 101.75 | 102.45 | +0.69% | 324.80 | 322.95 | -0.57% | PASS | +0.00 | reject | Same pattern as router-only: mixed by length, not robust enough. |
+
+- GLM stress (`glm47_stress_full_20260213.json`):
+  - Fidelity: all PASS.
+  - Average decode speedup by length: `256=1.006x`, `1024=1.002x`, `2048=1.008x`.
+  - Average decode speedup by prompt family: `english_technical=0.990x`, `chinese=0.993x`, `code=0.993x`, `math_reasoning=1.033x`, `creative=1.018x`.
+  - Peak memory remained stable (`baseline max=16.07 GB`, `patched max=16.07 GB`).
+
+- Matrix control anchors (`--patterns none`, `patterns_applied=[]`, PASS):
+  - `mlx-community/GLM-4.7-Flash-4bit-mxfp4`: decode `84.12 tok/s`, prefill `288.5 tok/s`, mem `15.98 GB`.
+  - `mlx-community/Qwen3-30B-A3B-4bit`: decode `113.88 tok/s`, prefill `336.57 tok/s`, mem `17.24 GB`.
+  - `mlx-community/LFM2-8B-A1B-4bit`: decode `223.67 tok/s`, prefill `737.92 tok/s`, mem `5.30 GB`.
+
+Variant decisions:
+- `control_swiglu_moe`: hold (control anchor; no promotion semantics).
+- `glm_combine_fp32_no_fma`: hold.
+- `control_patterns_moe_mlp`: hold (control anchor; Qwen benchmark truth anchor).
+- `qwen_combine_exact`: reject.
+- `qwen_router_argpartition_logits`: reject.
+- `qwen_router_argpartition_logits_topk_combine_exact`: reject.
+
+Decision:
+- Keep isolation-first, subprocess-separated variant sweeps as mandatory for GLM/Qwen.
+- Keep Qwen benchmark anchor at `control_patterns_moe_mlp`; do not promote `qwen_combine_exact`.
+- Keep GLM `glm_combine_fp32_no_fma` at `hold` pending a cleaner environment where control/candidate are decode-positive vs own baselines.
