@@ -13,7 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- GLM combine-mode default now resolves to `fp32_no_fma` when `ZMLX_GLM_COMBINE_MODE` is unset/invalid, aligning runtime behavior with the documented default path.
+## [0.9.0] - 2026-02-24
+
+### Added
+
+- **LFM2-24B-A2B-MLX-4bit decode speedup**: +6–7% on stock MLX (M4 Max), 500/500 token-identical fidelity. D-SIMD gate kernel fuses softmax+bias+topK into 1 Metal dispatch for D=64 expert gating.
+- **D-SIMD gate kernel** (`moe.py`): 2 SIMD groups (64 threads) with cross-group reductions for 32<D<=64, ascending value output matching MLX argpartition ordering.
+- **Smart K-based defaults**: K<=2 (LFM2-8B) enables fused SwiGLU + kernel combine (+12%); K>=3 (LFM2-24B) uses D-SIMD gate + native combine (+7%). No env vars needed.
+- **Foundry module** (`src/zmlx/foundry/`): kernel template evaluation, SFT dataset generation, 16 ops across 9 kernel classes. CLI: `python -m zmlx.foundry`.
+- **Fusion module** (`src/zmlx/fusion/`): JIT graph tracing and Metal codegen for fused op sequences.
+- **Benchmark repro capsule** for LFM2-24B D-SIMD gate results.
+
+### Fixed
+
+- GLM combine-mode default now resolves to `fp32_no_fma` when `ZMLX_GLM_COMBINE_MODE` is unset/invalid.
+- mypy overrides added for `zmlx.foundry.*` and `zmlx.fusion.*` modules.
+
+### Changed
+
+- Project description updated to reflect LFM2 8B/24B decode wins.
+- README quick start now shows LFM2-24B example with `patch(model)` one-liner.
+
 ## [0.8.5] - 2026-02-11
 
 ### Added
@@ -425,7 +445,15 @@ First public release.
 - **Release workflow** (`.github/workflows/release.yml`) for PyPI trusted publishing.
 - **Benchmarks** (`benchmarks/microbench.py`) with timing comparisons vs MLX reference ops.
 
-[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Hmbown/ZMLX/compare/v0.8.5...v0.9.0
+[0.8.5]: https://github.com/Hmbown/ZMLX/compare/v0.8.4...v0.8.5
+[0.8.4]: https://github.com/Hmbown/ZMLX/compare/v0.8.3...v0.8.4
+[0.8.3]: https://github.com/Hmbown/ZMLX/compare/v0.8.2...v0.8.3
+[0.8.2]: https://github.com/Hmbown/ZMLX/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/Hmbown/ZMLX/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/Hmbown/ZMLX/compare/v0.7.13...v0.8.0
+[0.7.13]: https://github.com/Hmbown/ZMLX/compare/v0.6.2...v0.7.13
 [0.6.2]: https://github.com/Hmbown/ZMLX/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Hmbown/ZMLX/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Hmbown/ZMLX/compare/v0.5.0...v0.6.0
