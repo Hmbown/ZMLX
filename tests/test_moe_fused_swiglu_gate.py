@@ -131,6 +131,12 @@ def test_glm_combine_mode_weighted_sum(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.cpu
+def test_glm_combine_mode_valid(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ZMLX_GLM_COMBINE_MODE", "exact")
+    assert moe_mlp._glm_combine_mode() == "exact"
+
+
+@pytest.mark.cpu
 def test_glm_combine_mode_invalid_falls_back(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("ZMLX_GLM_COMBINE_MODE", "weird")
     assert moe_mlp._glm_combine_mode() == "fp32_no_fma"

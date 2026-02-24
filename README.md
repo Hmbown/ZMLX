@@ -41,19 +41,28 @@ Why these are lower than earlier 8-12% headlines on GLM/Qwen3:
 Near-term roadmap:
 - Prepare Qwen3.5 model aliases/presets once official `Qwen/*` checkpoints are published on Hugging Face, then validate with `python -m zmlx.validate <model> --max-tokens 200 --runs 3` before long-run matrix entries.
 
-## What To Use Right Now (2026-02-11)
+## Default Speed Expectations (2026-02-11)
 
-Custom-MLX setup:
+GLM headline number (custom MLX + default `patch(model)` path):
+- **~`+6.4%` decode overall vs unpatched baseline** (from `+6.2%` at 200 tokens and `+6.7%` at 1024 tokens).
+
+If you are using GLM with custom MLX, this is already the default behavior:
 - custom MLX primitive: `gather_qmm_swiglu`
-- GLM default combine path: `glm_combine_fp32_no_fma`
+- GLM default combine path in `patch(model)`: `glm_combine_fp32_no_fma`
 
-| Model | Use this config | Decode vs control | Prefill vs control | Fidelity | Evidence |
+| Model | Default behavior | Overall decode gain vs unpatched baseline | Incremental decode gain vs current ZMLX control | Fidelity | Evidence |
 |:--|:--|--:|--:|:--|:--|
-| GLM-4.7-Flash-4bit-mxfp4 | `glm_combine_fp32_no_fma` | `+2.31 pp` mean (`+0.31..+6.73`) | `-0.88 pp` mean (`-2.94..+1.85`) | PASS | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
-| Qwen3-30B-A3B-4bit | keep control baseline | no reliable decode gain from tested variants | n/a | PASS | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
+| GLM-4.7-Flash-4bit-mxfp4 | `patch(model)` default (`glm_combine_fp32_no_fma`) | `+6.2%` (200), `+6.7%` (1024), `~+6.4%` average | `+2.3%` average (`+0.3%..+6.7%`) | PASS | `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t200_r2_summary.json`, `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t1024_r2_summary.json`, `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
+| Qwen3-30B-A3B-4bit | keep control baseline | no promoted overall gain claim | no reliable decode gain yet | PASS | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
 
-GLM long-context confirmation (`runs=5`, `max_tokens=1024`): decode `+0.93 pp` vs control (PASS fidelity).  
+GLM long-context confirmation (`runs=5`, `max_tokens=1024`): decode `+0.93%` vs control (PASS fidelity).
 Capsule: `benchmarks/repro_capsules/glm47_final_longconfirm_t1024_r5_20260211_summary.json`.
+
+How to actually get the extra GLM speedup:
+1. Build the optional custom MLX primitive (`gather_qmm_swiglu`) using `docs/EXPERIMENTAL_MLX.md`.
+2. Install/reinstall this repo after that build (`bash setup_zmlx.sh` for exo flow, or `pip install -e ".[dev]"` locally).
+3. Call `patch(model)` normally (no extra GLM flags needed).
+4. Verify on your machine: `python -m zmlx.validate mlx-community/GLM-4.7-Flash-4bit-mxfp4 --max-tokens 200 --runs 3`.
 
 For full protocol and per-variant detail, see `benchmarks/LAB_NOTEBOOK.md`.
 
@@ -275,9 +284,9 @@ ZMLX provides the model-side integration: auto-detecting MoE architectures, rewi
 
 **On stock MLX (released 0.30.4/0.30.5), ZMLX auto-skips these models** (0 modules patched, 0% change) to avoid regressions. `patch()` is always safe to call.
 
-| Model | Recommended config | Decode vs control | Fidelity | Evidence |
+| Model | Recommended config | Overall decode gain vs unpatched baseline | Fidelity | Evidence |
 |:--|:--|--:|:--|:--|
-| GLM-4.7-Flash-4bit-mxfp4 | `glm_combine_fp32_no_fma` | `+2.31 pp` mean (`+0.31..+6.73`) | PASS | `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
+| GLM-4.7-Flash-4bit-mxfp4 | `glm_combine_fp32_no_fma` | `+6.2%` (200), `+6.7%` (1024), `~+6.4%` average | PASS | `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t200_r2_summary.json`, `benchmarks/repro_capsules/glm47_combo_v8_fp32nofmaonly_t1024_r2_summary.json`, `benchmarks/repro_capsules/benchmark_vs_baseline_followup_20260211.json` |
 
 Qwen note: no candidate is promoted yet; keep control baseline until a clear decode-positive variant is reproduced.
 
