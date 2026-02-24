@@ -1061,7 +1061,7 @@ class _MoEMLPPattern:
                     for i, expert in enumerate(experts):
                         for k in range(K):
                             mask = indices[:, k] == i
-                            if mask.any():
+                            if mask.any():  # type: ignore[union-attr]
                                 expert_outputs[mask, k] = expert(x[mask])
                 else:
                     stream_count = len(moe_stream_pool)

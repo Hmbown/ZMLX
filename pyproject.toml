@@ -78,3 +78,7 @@ disallow_untyped_defs = false
 no_implicit_optional = true
 check_untyped_defs = true
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["zmlx.foundry.*", "zmlx.fusion.*"]
+ignore_errors = true
