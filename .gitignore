@@ -35,6 +35,7 @@ zig/.zig-cache/
 zig/zig-out/
 
 # Session-specific prompt files (local handoff docs, not general documentation)
+CAMPAIGN_PLAN.md
 HANDOFF_PROMPT.md
 REVIEW_PROMPT.md
 IMPLEMENTATION_SUMMARY.md

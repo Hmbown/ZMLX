@@ -53,7 +53,7 @@ def __getattr__(name: str):
     # Submodules (includes elementwise as a module for backward compat)
     if name in {
         "autograd", "elementwise", "kernels", "metal", "registry", "rowwise", "msl",
-        "patch", "codegen", "autotune", "optimizers", "nn", "kv_cache",
+        "patch", "codegen", "autotune", "optimizers", "nn", "kv_cache", "fusion",
         "testing", "bench", "profile", "device_profile", "kd", "kb",
     }:
         import importlib
@@ -95,6 +95,7 @@ __all__ = [
     "nn",
     "device_profile",
     "kv_cache",
+    "fusion",
     # Backend compatibility
     "_compat",
     # Kernel authoring (from zmlx.api)

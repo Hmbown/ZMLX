@@ -38,7 +38,7 @@ from typing import Any, TextIO
 
 import mlx.core as mx
 
-DEFAULT_MODEL = "mlx-community/GLM-4.7-Flash-4bit"
+DEFAULT_MODEL = "mlx-community/GLM-4.7-Flash-4bit-mxfp4"
 DEFAULT_PROMPTS = "english_technical,chinese,code,math_reasoning,creative"
 DEFAULT_LENGTHS = "256,1024,2048"
 

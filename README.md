@@ -11,8 +11,8 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 
 - **Metal kernels from Python:** write `elementwise("x * tanh(log(1 + exp(x)))")` and get a compiled Metal kernel with caching, autograd support, and the 70+ kernel catalog.
 - **Model patching:** `patch(model)` replaces MoE gating/combine/activation sequences with fused Metal kernels, reducing dispatch overhead during decode. Token-identical output; verify with `python -m zmlx.validate`.
+- **Works with stock MLX:** LFM2-8B (+12%) and LFM2-24B (+7%) show consistent decode gains with `pip install mlx` — no custom builds required.
 - **Optional custom primitive (GLM/Qwen3):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash and Qwen3-30B-A3B. See the GLM-4.7-Flash stress benchmark results below + [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md). On stock MLX these models auto-skip safely.
-- **Proven on current MLX:** LFM2-8B-A1B-4bit shows consistent decode gains in current matrix runs with token-identical output.
 
 ## Benchmark Snapshot (2026-02-08)
 
@@ -56,6 +56,28 @@ GLM long-context confirmation (`runs=5`, `max_tokens=1024`): decode `+0.93 pp` v
 Capsule: `benchmarks/repro_capsules/glm47_final_longconfirm_t1024_r5_20260211_summary.json`.
 
 For full protocol and per-variant detail, see `benchmarks/LAB_NOTEBOOK.md`.
+
+### Benchmark Execution Protocol (2026-02-13)
+
+Use the isolation-first benchmark flow for GLM/Qwen3:
+- Run one variant per process via `benchmarks/bench_iso_variant_sweep.py`.
+- Use AB/BA replicate blocks (with cooldown) for GLM consistency checks.
+- Treat Qwen custom-kernel variants as experimental only until a decode-positive
+  signal is reproduced against `control_patterns_moe_mlp`.
+
+Phase runner (explicit phase selection, no hidden background fanout):
+
+```bash
+source .venv/bin/activate
+
+# Run a single phase (recommended)
+bash benchmarks/run_3hr_benchmark_campaign.sh quick
+bash benchmarks/run_3hr_benchmark_campaign.sh glm_abba_200
+bash benchmarks/run_3hr_benchmark_campaign.sh glm_abba_1024
+
+# Optional full sequence
+bash benchmarks/run_3hr_benchmark_campaign.sh all
+```
 
 ## GLM-4.7-Flash Stress Benchmark (Historical Reference)
 
@@ -121,8 +143,9 @@ pip install "zmlx[lm]"       # includes mlx-lm for model patching
 import mlx_lm
 from zmlx.patch import patch
 
-model, tokenizer = mlx_lm.load("mlx-community/LFM2-8B-A1B-4bit")
-patch(model)  # safe inference defaults for supported model families
+# Works with any supported model — just change the model ID
+model, tokenizer = mlx_lm.load("LiquidAI/LFM2-24B-A2B-MLX-4bit")
+patch(model)  # auto-detects model family, applies safe optimizations
 
 print(
     mlx_lm.generate(
@@ -134,11 +157,30 @@ print(
 )
 ```
 
+That's it. `patch(model)` handles everything automatically — model detection, kernel selection, and safety checks. No env vars or configuration needed.
+
 3. Verify token fidelity + throughput on your hardware:
 
 ```bash
+# LFM2-24B (+7% on M4 Max)
+python -m zmlx.validate LiquidAI/LFM2-24B-A2B-MLX-4bit --max-tokens 200 --runs 3
+
+# LFM2-8B (+12% on M4 Max)
 python -m zmlx.validate mlx-community/LFM2-8B-A1B-4bit --max-tokens 200 --runs 3
 ```
+
+One-command smoke inference (loads model, applies `zmlx.patch.patch(model)`, then generates):
+
+```bash
+source .venv/bin/activate && python examples/inference_smoke.py --model-id <model> --prompt "<prompt>" --max-tokens 64
+```
+
+Expected output shape:
+- `[load] model=<model>`
+- `[patch] Applying zmlx.patch.patch(model) with safe defaults`
+- `[patch] Patched ...`
+- `[generate] prompt='...' max_tokens=64`
+- `[output]` followed by generated text
 
 Tip: large model downloads use the Hugging Face cache; set `HF_HOME` to control its location.
 
@@ -213,6 +255,7 @@ Full methodology and raw data: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 |:--|:--|--:|--:|:--|:--|
 | LFM2-8B-A1B-4bit | M4 Max 36 GB | 197.8 tok/s -> 223.2 tok/s | **+12.8%** | token-identical | [`benchmarks/repro_capsules/lfm2_m4max_20260205_rerun_mlx0304dev2f324cc.json`](benchmarks/repro_capsules/lfm2_m4max_20260205_rerun_mlx0304dev2f324cc.json) |
 | LFM2-8B-A1B-4bit | M1 Pro 16 GB | 105.5 tok/s -> 115.3 tok/s | +9.3% | token-identical | [`benchmarks/repro_capsules/lfm2_m1pro_20260131.json`](benchmarks/repro_capsules/lfm2_m1pro_20260131.json) |
+| LFM2-24B-A2B-4bit | M4 Max 36 GB | 152.0 tok/s -> 161.1 tok/s | **+6.0%** | token-identical (500 tok) | [`benchmarks/repro_capsules/lfm2_24b_dsimd_gate_m4max_20260224.json`](benchmarks/repro_capsules/lfm2_24b_dsimd_gate_m4max_20260224.json) |
 | GPT-OSS-20B-4bit | M4 Max 36 GB | 121.8 tok/s -> 122.9 tok/s | +1.0% | token-identical | — |
 
 To print a report from a capsule:
@@ -253,7 +296,8 @@ See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md) for build instruction
 
 | Model | Stock MLX | + Custom primitive | What ZMLX does |
 |:--|:--|:--|:--|
-| LFM2-8B-A1B | speedup (see stock MLX table) | same | ZMLX Metal kernels: fused MoE gating + combine + SwiGLU |
+| LFM2-8B-A1B | **+12% decode** | same | Fused MoE gating + combine + SwiGLU activation |
+| LFM2-24B-A2B | **+6-7% decode** | same | D-SIMD fused gating kernel (64 experts, K=4) |
 | GLM-4.7-Flash | 0% (auto-skipped) | speedup (see custom primitive table) | ZMLX patching + custom `gather_qmm_swiglu` primitive |
 | Qwen3-30B-A3B | 0% (auto-skipped) | speedup (see custom primitive table) | ZMLX patching + custom `gather_qmm_swiglu` primitive |
 | GPT-OSS-20B | fused SwiGLU activation | same | ZMLX Metal kernel: fused SwiGLU activation |

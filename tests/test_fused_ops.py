@@ -361,6 +361,57 @@ class TestMoECombine:
             mx.eval(ref, out)
             assert mx.array_equal(ref, out)
 
+    def test_moe_combine_fp32_no_fma_row_tile_matches_base(self):
+        """Row-tiled fp32/no-FMA variant should match current fp32/no-FMA combine."""
+        from zmlx.kernels.moe import (
+            moe_combine_fp32_no_fma,
+            moe_combine_fp32_no_fma_row_tile,
+        )
+
+        mx.random.seed(3)
+        B, K, D = 4, 4, 3072
+        expert_outputs = mx.random.normal((B, K, D)).astype(mx.float16)
+        weights = mx.softmax(mx.random.normal((B, K)), axis=-1).astype(mx.float32)
+
+        ref = moe_combine_fp32_no_fma(expert_outputs, weights)
+        got = moe_combine_fp32_no_fma_row_tile(expert_outputs, weights)
+        mx.eval(ref, got)
+        assert_allclose(got, ref, rtol=1e-6, atol=1e-6)
+
+    def test_moe_combine_weighted_sum_fp32_no_fma_matches_base_for_k8(self):
+        """K=8 weighted-sum specialization should match fp32/no-FMA reference."""
+        from zmlx.kernels.moe import (
+            moe_combine_fp32_no_fma,
+            moe_combine_weighted_sum_fp32_no_fma,
+        )
+
+        mx.random.seed(7)
+        B, K, D = 2, 8, 4096
+        expert_outputs = mx.random.normal((B, K, D)).astype(mx.float16)
+        weights = mx.softmax(mx.random.normal((B, K)), axis=-1).astype(mx.float32)
+
+        ref = moe_combine_fp32_no_fma(expert_outputs, weights)
+        got = moe_combine_weighted_sum_fp32_no_fma(expert_outputs, weights)
+        mx.eval(ref, got)
+        assert_allclose(got, ref, rtol=1e-6, atol=1e-6)
+
+    def test_moe_combine_weighted_sum_fp32_no_fma_falls_back_when_not_k8(self):
+        """Weighted-sum specialization should fall back safely when K != 8."""
+        from zmlx.kernels.moe import (
+            moe_combine_fp32_no_fma,
+            moe_combine_weighted_sum_fp32_no_fma,
+        )
+
+        mx.random.seed(11)
+        B, K, D = 3, 4, 1536
+        expert_outputs = mx.random.normal((B, K, D)).astype(mx.float16)
+        weights = mx.softmax(mx.random.normal((B, K)), axis=-1).astype(mx.float32)
+
+        ref = moe_combine_fp32_no_fma(expert_outputs, weights)
+        got = moe_combine_weighted_sum_fp32_no_fma(expert_outputs, weights)
+        mx.eval(ref, got)
+        assert_allclose(got, ref, rtol=1e-6, atol=1e-6)
+
 
 @pytest.mark.metal
 class TestMoEDispatch:

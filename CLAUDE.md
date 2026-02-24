@@ -6,16 +6,28 @@ Context for Claude Code when working in this repository.
 
 ZMLX is an open-source toolkit that extends [MLX](https://github.com/ml-explore/mlx) with custom Metal kernels for Apple silicon. It provides a kernel authoring API, automatic gradient support, a catalog of over 70 ready-to-use kernels, and a model patching system that replaces MLX model layers with fused kernel equivalents. Think "Triton for MLX": author kernels in Python, compile to Metal, and wire them into real models.
 
-**The big win:** ZMLX achieves measurable, token-identical decode speedups on real models shipping today:
+**Historical best-case wins:** ZMLX has achieved measurable, token-identical
+decode speedups on real models shipping today:
 
 | Model | Hardware | Speedup | MLX Required |
 |:--|:--|--:|:--|
 | LFM2-8B-A1B-4bit | M4 Max 36GB | **+11.6%** | stock (pip install) |
 | LFM2-8B-A1B-4bit | M1 Pro 16GB | **+9.3%** | stock (pip install) |
 | GLM-4.7-Flash-4bit | M4 Max 36GB | **+8.5%** | custom `gather_qmm_swiglu` |
+| LFM2-24B-A2B-4bit | M4 Max 36GB | **+7.2%** | stock (pip install) |
 | Qwen3-30B-A3B-4bit | M4 Max 36GB | **+5.5%** | custom `gather_qmm_swiglu` |
 
-All results verified token-identical under greedy decoding. Repro capsules in `benchmarks/repro_capsules/`.
+All results were verified token-identical under greedy decoding in their
+recorded run windows. Repro capsules live in `benchmarks/repro_capsules/`.
+
+**Current benchmark truth set (2026-02-24 update):**
+- LFM2-24B-A2B-MLX-4bit: D-SIMD gate kernel + native combine, fused SwiGLU
+  disabled. **+7.2% decode** on M4 Max, 500/500 fidelity PASS (stock MLX).
+  Auto-enabled for K>=3.
+- GLM-4.7-Flash: keep `glm_combine_fp32_no_fma` as active default
+  (`promote_candidate`; not fully promoted).
+- Qwen3-30B-A3B: keep `control_patterns_moe_mlp` as benchmark anchor; no
+  custom-kernel variant is currently promoted.
 
 ### How It Works
 
@@ -62,6 +74,30 @@ python -m zmlx.bench.report benchmarks/repro_capsules/lfm2_m4max_20260131.json
 ```
 
 Tests auto-skip on platforms without Apple silicon or Metal GPU support (see `tests/conftest.py`).
+
+## Benchmark Guardrails
+
+For GLM/Qwen3-sized benchmarks:
+- Do not run multi-variant sweeps in one Python process.
+- Use `benchmarks/bench_iso_variant_sweep.py` so each variant runs in an
+  isolated subprocess.
+- For GLM consistency checks, run AB/BA blocks with cooldown windows.
+- For matrix controls, include `--patterns none` anchors.
+
+Campaign entrypoint (phase-based):
+
+```bash
+bash benchmarks/run_3hr_benchmark_campaign.sh <phase>
+```
+
+Recommended phase flow:
+1. `quick`
+2. `glm_abba_200`
+3. `glm_abba_1024`
+4. `qwen_isolation_200`
+5. `qwen_isolation_1024`
+6. `glm_stress`
+7. `matrix_controls`
 
 ## Test Matrix
 
@@ -140,9 +176,9 @@ LoRA fine-tuning CLI: `zmlx train`. Config, runner, callbacks, export.
 
 | Family | ZMLX Family Key | Architecture | Stock MLX | + Custom Primitive |
 |:--|:--|:--|:--|:--|
-| LFM2 | `lfm` | MoE | **+5-12% decode** | same |
-| GLM-4.7 | `glm` | MoE | 0% (auto-skipped) | **+8% decode** |
-| Qwen3-MoE | `qwen` | MoE | 0% (auto-skipped) | **+6% decode** |
+| LFM2 | `lfm` | MoE | **+6-12% decode** (8B: fused SwiGLU; 24B: D-SIMD gate) | same |
+| GLM-4.7 | `glm` | MoE | 0% (auto-skipped) | custom primitive path; current default `fp32_no_fma` (`promote_candidate`) |
+| Qwen3-MoE | `qwen` | MoE | 0% (auto-skipped) | no promoted custom-kernel variant in current truth set |
 | GPT-OSS | `gpt_oss` | MoE | ~+1% | same |
 | DeepSeek-V3 | `deepseek` | MoE | patterns apply | untested (needs >300GB) |
 | Kimi-K2.5 | `deepseek` | MoE | patterns apply | untested (needs >300GB) |

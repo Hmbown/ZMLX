@@ -58,11 +58,11 @@ class _ConfigResult:
 # Helpers
 # ---------------------------------------------------------------------------
 def _clear_gpu() -> None:
+    mx.synchronize()
     gc.collect()
-    if hasattr(mx, "clear_cache"):
-        mx.clear_cache()
-    elif hasattr(mx.metal, "clear_cache"):
-        mx.metal.clear_cache()
+    gc.collect()
+    mx.clear_cache()
+    gc.collect()
 
 
 def _generate_greedy(

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import mlx.core as mx
 
-DEFAULT_MODEL = "mlx-community/GLM-4.7-Flash-4bit"
+DEFAULT_MODEL = "mlx-community/GLM-4.7-Flash-4bit-mxfp4"
 DEFAULT_PROMPT = (
     "Explain the key differences between TCP and UDP protocols, "
     "including their use cases, reliability guarantees, and "
@@ -156,7 +156,11 @@ def main() -> None:
             "Variant names to run (default: all). "
             "Choices: control_swiglu_moe, control_swiglu_moe_residual_norm, "
             "control_swiglu_moe_downproj_combine, glm_combine_exact, "
-            "glm_combine_fp32, glm_combine_fp32_no_fma, glm47_rope, "
+            "glm_combine_fp32, glm_combine_fp32_no_fma, "
+            "glm_combine_fp32_no_fma_row_tile, "
+            "glm_combine_fp32_no_fma_weighted_sum, "
+            "glm_combine_fp32_no_fma_shared_overlap_streams2, "
+            "glm_combine_fp32_no_fma_glm47_rope, glm47_rope, "
             "shared_experts_overlap_streams2"
         ),
     )
@@ -225,13 +229,13 @@ def main() -> None:
         {
             "name": "control_swiglu_moe",
             "patterns": ["swiglu_mlp", "moe_mlp"],
-            "env": {},
-            "notes": "Control: current best patch set (no RoPE fusion).",
+            "env": {"ZMLX_GLM_COMBINE_MODE": "off"},
+            "notes": "Control: current best patch set (no RoPE fusion, combine off).",
         },
         {
             "name": "control_swiglu_moe_residual_norm",
             "patterns": ["swiglu_mlp", "moe_mlp", "residual_norm"],
-            "env": {},
+            "env": {"ZMLX_GLM_COMBINE_MODE": "off"},
             "notes": (
                 "Experimental: residual_norm fusion (breaks greedy token fidelity on "
                 "GLM-4.7-Flash in current testing)."
@@ -240,7 +244,10 @@ def main() -> None:
         {
             "name": "control_swiglu_moe_downproj_combine",
             "patterns": ["swiglu_mlp", "moe_mlp"],
-            "env": {"ZMLX_GLM_FUSED_DOWNPROJ_COMBINE": "1"},
+            "env": {
+                "ZMLX_GLM_FUSED_DOWNPROJ_COMBINE": "1",
+                "ZMLX_GLM_COMBINE_MODE": "off",
+            },
             "unsafe": True,
             "notes": (
                 "Experimental: fuse down-proj + combine for decode-like shapes "
@@ -275,6 +282,25 @@ def main() -> None:
             ),
         },
         {
+            "name": "glm_combine_fp32_no_fma_row_tile",
+            "patterns": ["swiglu_mlp", "moe_mlp"],
+            "env": {"ZMLX_GLM_COMBINE_MODE": "fp32_no_fma_row_tile"},
+            "notes": (
+                "Experimental: force GLM combine via t2-row-tile-inspired fp32 "
+                "no-FMA kernel (ZMLX_GLM_COMBINE_MODE=fp32_no_fma_row_tile)."
+            ),
+        },
+        {
+            "name": "glm_combine_fp32_no_fma_weighted_sum",
+            "patterns": ["swiglu_mlp", "moe_mlp"],
+            "env": {"ZMLX_GLM_COMBINE_MODE": "fp32_no_fma_weighted_sum"},
+            "notes": (
+                "Experimental: force GLM combine via K=8-specialized fp32 no-FMA "
+                "weighted-sum kernel "
+                "(ZMLX_GLM_COMBINE_MODE=fp32_no_fma_weighted_sum)."
+            ),
+        },
+        {
             "name": "glm47_rope",
             "patterns": ["swiglu_mlp", "moe_mlp", "glm47_rope"],
             "env": {},
@@ -284,10 +310,33 @@ def main() -> None:
             "name": "shared_experts_overlap_streams2",
             "patterns": ["swiglu_mlp", "moe_mlp"],
             "env": {
+                "ZMLX_GLM_COMBINE_MODE": "off",
                 "ZMLX_MOE_STREAMS": "2",
                 "ZMLX_MOE_SHARED_EXPERTS_OVERLAP": "1",
             },
             "notes": "Experimental: overlap shared_experts(x) on a separate stream.",
+        },
+        {
+            "name": "glm_combine_fp32_no_fma_shared_overlap_streams2",
+            "patterns": ["swiglu_mlp", "moe_mlp"],
+            "env": {
+                "ZMLX_GLM_COMBINE_MODE": "fp32_no_fma",
+                "ZMLX_MOE_STREAMS": "2",
+                "ZMLX_MOE_SHARED_EXPERTS_OVERLAP": "1",
+            },
+            "notes": (
+                "Experimental additive combo: fp32-no-fma combine + "
+                "shared_experts overlap streams=2."
+            ),
+        },
+        {
+            "name": "glm_combine_fp32_no_fma_glm47_rope",
+            "patterns": ["swiglu_mlp", "moe_mlp", "glm47_rope"],
+            "env": {"ZMLX_GLM_COMBINE_MODE": "fp32_no_fma"},
+            "notes": (
+                "Experimental additive combo: fp32-no-fma combine + "
+                "glm47_rope decode path."
+            ),
         },
     ]
     if args.variants is not None:
