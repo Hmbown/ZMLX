@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.9.2] - 2026-02-25
+
+### Added
+
+- Qwen3.5 auto-default parity capsule:
+  - `benchmarks/repro_capsules/qwen35_a3b_auto_defaults_vs_explicit_t128_r1_20260225.json`
+
+### Changed
+
+- `moe_mlp` now applies the promoted Qwen3.5/Qwen3-Next defaults automatically (no env vars required):
+  - fused SwiGLU enabled by default
+  - argpartition(logits) router fast path enabled by default
+  - argpartition(logits)+topk router path enabled by default
+- README updated to document automatic Qwen3.5 defaults and override env vars.
+
 ## [0.9.1] - 2026-02-25
 
 ### Added

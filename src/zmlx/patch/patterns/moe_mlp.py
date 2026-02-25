@@ -48,11 +48,30 @@ except Exception:
 
 
 def _is_qwen3_moe_block(mod: Any) -> bool:
-    """Return True if this module looks like Qwen3's MoE block."""
+    """Return True if this module looks like Qwen3's MoE block.
+
+    Also matches Qwen3.5 (qwen3_next) which uses the same gating pattern.
+    """
     cls = mod.__class__
-    if cls.__name__ == "Qwen3MoeSparseMoeBlock":
+    if cls.__name__ in ("Qwen3MoeSparseMoeBlock", "Qwen3NextSparseMoeBlock"):
         return True
-    return bool(cls.__module__.startswith("mlx_lm.models.qwen3_moe"))
+    mod_path = cls.__module__ or ""
+    return bool(
+        mod_path.startswith("mlx_lm.models.qwen3_moe")
+        or mod_path.startswith("mlx_lm.models.qwen3_next")
+    )
+
+
+def _is_qwen3_next_moe_block(mod: Any) -> bool:
+    """Return True if this module uses Qwen3-Next / Qwen3.5 MoE wiring."""
+    cls = mod.__class__
+    if cls.__name__ == "Qwen3NextSparseMoeBlock":
+        return True
+    mod_path = cls.__module__ or ""
+    return bool(
+        mod_path.startswith("mlx_lm.models.qwen3_next")
+        or mod_path.startswith("mlx_lm.models.qwen3_5")
+    )
 
 
 def _is_gpt_oss_block(mod: Any) -> bool:
@@ -93,14 +112,18 @@ def _glm_allow_fused_swiglu() -> bool:
         return True
 
 
-def _qwen_allow_fused_swiglu() -> bool:
+def _qwen_allow_fused_swiglu(*, default_on: bool = False) -> bool:
     """Return True if Qwen should use gather_qmm_swiglu fused SwiGLU.
 
-    Default: disabled. Set ``ZMLX_QWEN_FUSED_SWIGLU=1`` to opt in.
+    Default:
+    - enabled for Qwen3-Next / Qwen3.5 paths
+    - disabled for legacy Qwen3 MoE paths
+
+    Override via ``ZMLX_QWEN_FUSED_SWIGLU=0|1``.
     """
     raw = os.environ.get("ZMLX_QWEN_FUSED_SWIGLU")
     if raw is None:
-        return False
+        return default_on
     try:
         return int(raw) != 0
     except ValueError:
@@ -149,31 +172,39 @@ def _qwen_allow_fused_router_topk() -> bool:
         return raw.strip().lower() in {"true", "yes", "on"}
 
 
-def _qwen_allow_logit_argpartition_router() -> bool:
+def _qwen_allow_logit_argpartition_router(*, default_on: bool = False) -> bool:
     """Return True if Qwen should route via argpartition(logits) + top-k softmax.
 
     This preserves Qwen's argpartition index ordering but avoids the full
     softmax over all experts when ``norm_topk_prob=True``.
 
-    Default: disabled. Set ``ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1`` to opt in.
+    Default:
+    - enabled for Qwen3-Next / Qwen3.5 paths
+    - disabled for legacy Qwen3 MoE paths
+
+    Override via ``ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=0|1``.
     """
     raw = os.environ.get(_QWEN_ROUTER_ARGPARTITION_LOGITS_ENV)
     if raw is None:
-        return False
+        return default_on
     try:
         return int(raw) != 0
     except ValueError:
         return raw.strip().lower() in {"true", "yes", "on"}
 
 
-def _qwen_allow_logit_argpartition_router_topk() -> bool:
+def _qwen_allow_logit_argpartition_router_topk(*, default_on: bool = False) -> bool:
     """Return True if Qwen should fuse top-k softmax after argpartition(logits).
 
-    Default: disabled. Set ``ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=1``.
+    Default:
+    - enabled for Qwen3-Next / Qwen3.5 paths
+    - disabled for legacy Qwen3 MoE paths
+
+    Override via ``ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=0|1``.
     """
     raw = os.environ.get(_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK_ENV)
     if raw is None:
-        return False
+        return default_on
     try:
         return int(raw) != 0
     except ValueError:
@@ -264,6 +295,7 @@ def _gating(
     *,
     is_qwen3: bool = False,
     is_gpt_oss: bool = False,
+    qwen_next_defaults: bool = False,
 ) -> tuple[Any, Any]:
     """Run the model's gating logic faithfully, returning (indices, weights).
 
@@ -299,10 +331,12 @@ def _gating(
         # minimize numeric drift vs the exact reference path.
         if (
             norm_topk_prob
-            and _qwen_allow_logit_argpartition_router()
+            and _qwen_allow_logit_argpartition_router(default_on=qwen_next_defaults)
             and gate_out.dtype == mx.float32
         ):
-            if _qwen_allow_logit_argpartition_router_topk():
+            if _qwen_allow_logit_argpartition_router_topk(
+                default_on=qwen_next_defaults
+            ):
                 scores, inds = moe.router_argpartition_logits_topk(
                     gate_out,
                     k=k,
@@ -900,17 +934,26 @@ class _MoEMLPPattern:
                 )
 
         is_qwen3 = _is_qwen3_moe_block(module)
+        is_qwen3_next = _is_qwen3_next_moe_block(module)
         is_lfm2 = _is_lfm2_moe_block(module)
         is_gpt_oss = _is_gpt_oss_block(module)
         is_glm = _is_glm_moe_block(module)
         use_exact_combine = is_qwen3
-        if is_qwen3 and _use_fused_swiglu and not _qwen_allow_fused_swiglu():
-            if config.verbose:
-                print(
-                    "  [moe_mlp] Qwen detected: fused SwiGLU disabled by default; "
-                    "set ZMLX_QWEN_FUSED_SWIGLU=1 to opt in"
-                )
-            _use_fused_swiglu = False
+        if is_qwen3 and _use_fused_swiglu:
+            qwen_fused_swiglu = _qwen_allow_fused_swiglu(default_on=is_qwen3_next)
+            if not qwen_fused_swiglu:
+                if config.verbose:
+                    if is_qwen3_next:
+                        print(
+                            "  [moe_mlp] Qwen3-Next/Qwen3.5 detected: fused SwiGLU "
+                            "disabled via ZMLX_QWEN_FUSED_SWIGLU=0"
+                        )
+                    else:
+                        print(
+                            "  [moe_mlp] Qwen detected: fused SwiGLU disabled by "
+                            "default; set ZMLX_QWEN_FUSED_SWIGLU=1 to opt in"
+                        )
+                _use_fused_swiglu = False
         if is_glm and _use_fused_swiglu and not _glm_allow_fused_swiglu():
             if config.verbose:
                 print(
@@ -966,7 +1009,11 @@ class _MoEMLPPattern:
             shared_stream = moe_stream_pool[1]
 
         def patched_call(self_mod: Any, x: Any) -> Any:
+            # GLM/DeepSeek: shared_experts (plural, no gate)
             shared = getattr(self_mod, "shared_experts", None)
+            # Qwen3/3.5: shared_expert (singular) + shared_expert_gate
+            shared_single = getattr(self_mod, "shared_expert", None)
+            shared_gate = getattr(self_mod, "shared_expert_gate", None)
             shared_out = None
             if shared is not None and shared_stream is not None:
                 with mx.stream(shared_stream):
@@ -998,6 +1045,7 @@ class _MoEMLPPattern:
                     num_experts_per_tok,
                     is_qwen3=is_qwen3,
                     is_gpt_oss=is_gpt_oss,
+                    qwen_next_defaults=is_qwen3_next,
                 )
 
             # 2. Expert Execution
@@ -1189,9 +1237,16 @@ class _MoEMLPPattern:
                     # Fused Combine: weighted sum of expert outputs in one kernel
                     y = moe.moe_combine(expert_outputs, gate_weights)
 
-            # 4. Shared experts (GLM-4, DeepSeek-V3): additive dense path
+            # 4a. Shared experts (GLM-4, DeepSeek-V3): additive dense path
             if shared is not None:
                 y = y + (shared_out if shared_out is not None else shared(x))
+
+            # 4b. Gated shared expert (Qwen3, Qwen3.5): sigmoid-gated dense path
+            if shared_single is not None:
+                shared_y = shared_single(x)
+                if shared_gate is not None:
+                    shared_y = mx.sigmoid(shared_gate(x)) * shared_y
+                y = y + shared_y
 
             return y
 

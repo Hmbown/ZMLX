@@ -17,11 +17,17 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 ## Qwen3.5-35B-A3B (Front-and-Center Update, 2026-02-25)
 
 New measured result on `mlx-community/Qwen3.5-35B-A3B-4bit`:
-- **Prefill-first recommended setting:**
-  - `patch(model, patterns=["moe_mlp"])`
-  - `ZMLX_QWEN_FUSED_SWIGLU=1`
-  - `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1`
-  - `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=1`
+- **Prefill-first recommended setting (now automatic for Qwen3.5/Qwen3-Next):**
+  - `patch(model)` or `patch(model, patterns=["moe_mlp"])`
+  - No env vars required for the promoted path
+- **Automatic defaults on Qwen3.5/Qwen3-Next (`moe_mlp`):**
+  - `ZMLX_QWEN_FUSED_SWIGLU=1` behavior
+  - `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1` behavior
+  - `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=1` behavior
+- **Override controls (if needed):**
+  - `ZMLX_QWEN_FUSED_SWIGLU=0|1`
+  - `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=0|1`
+  - `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=0|1`
 - Multi-scenario validation (`runs=2`, short/long/code prompts; token-identical checks vs unpatched baseline):
   - **Decode:** `1.020x` average
   - **Prefill:** `1.040x` average
@@ -39,6 +45,7 @@ Latest spot-check confirmation (short prompt, 128 tokens):
 - `moe_mlp + ZMLX_QWEN_FUSED_SWIGLU=1`: `119.06 tok/s` decode (`1.017x`), PASS
 
 Evidence capsules:
+- `benchmarks/repro_capsules/qwen35_a3b_auto_defaults_vs_explicit_t128_r1_20260225.json`
 - `benchmarks/repro_capsules/qwen35_a3b_top_prefill_candidates_multiscenario_tmix_r2_20260225.json`
 - `benchmarks/repro_capsules/qwen35_a3b_prefill_focus_variant_sweep_t128_r1_20260225.json`
 - `benchmarks/repro_capsules/qwen35_a3b_multi_scenario_variants_tmix_r1_20260225.json`
