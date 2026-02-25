@@ -1,0 +1,39 @@
+{
+  "date": "2026-02-25",
+  "model": "mlx-community/Qwen3.5-35B-A3B-4bit",
+  "method": "zmlx.validate._bench_config with mlx_lm.load monkeypatched to load_model(strict=false)",
+  "reason_for_strict_false": "Model checkpoint includes vision_tower weights; strict loader in mlx_lm.load rejects extra parameters.",
+  "prompt": "Explain the key differences between TCP and UDP protocols, including their use cases, reliability guarantees, and performance characteristics. Be concise and technical.",
+  "max_tokens": 128,
+  "runs": 1,
+  "baseline": {
+    "patterns": [],
+    "env": {},
+    "prompt_tps": 376.39783908917764,
+    "gen_tps": 116.35584401321336,
+    "peak_mem_gb": 19.587826346
+  },
+  "candidate": {
+    "patterns": ["moe_mlp"],
+    "env": {
+      "ZMLX_QWEN_FUSED_SWIGLU": "1"
+    },
+    "patched_count": 40,
+    "pattern_counts": {
+      "moe_mlp": 40
+    },
+    "prompt_tps": 411.0913925701976,
+    "gen_tps": 119.71772800696333,
+    "peak_mem_gb": 19.58784489
+  },
+  "speedup": {
+    "decode_x": 1.0288931254142095,
+    "prefill_x": 1.0921725628525734
+  },
+  "fidelity": {
+    "matched": 128,
+    "total": 128,
+    "first_diverge": -1,
+    "verdict": "PASS"
+  }
+}

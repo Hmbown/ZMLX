@@ -1,0 +1,43 @@
+{
+  "date": "2026-02-25",
+  "model": "mlx-community/Qwen3.5-35B-A3B-4bit",
+  "scenario": "short_prompt_t128",
+  "prompt": "Explain TCP vs UDP in 5 concise technical bullet points.",
+  "max_tokens": 128,
+  "runs": 1,
+  "runtime": {
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "has_gather_qmm_swiglu": true,
+    "note": "Attempted `pip install mlx==0.30.7`; no matching distribution available on PyPI at run time."
+  },
+  "loader": {
+    "mode": "strict_false",
+    "reason": "Checkpoint includes vision_tower weights; strict mlx_lm loader rejects extra params."
+  },
+  "baseline": {
+    "patterns": [],
+    "env": {},
+    "prompt_tps": 231.67175677024525,
+    "gen_tps": 117.02982866275468,
+    "peak_mem_gb": 19.562564922
+  },
+  "candidate": {
+    "patterns": ["moe_mlp"],
+    "env": {
+      "ZMLX_QWEN_FUSED_SWIGLU": "1"
+    },
+    "prompt_tps": 261.5994609606835,
+    "gen_tps": 119.05751559257226,
+    "peak_mem_gb": 19.562639066
+  },
+  "speedup": {
+    "decode_x": 1.0173262402670071,
+    "prefill_x": 1.1291814963017623
+  },
+  "fidelity": {
+    "matched": 128,
+    "total": 128,
+    "first_diverge": -1,
+    "verdict": "PASS"
+  }
+}

@@ -1,0 +1,384 @@
+{
+  "timestamp": "2026-02-25T17:30:25.342218+00:00",
+  "model": "mlx-community/Qwen3.5-35B-A3B-4bit",
+  "runs_per_config": 2,
+  "scenarios": {
+    "short_prompt_t128": {
+      "max_tokens": 128,
+      "configs": {
+        "baseline": {
+          "env": {},
+          "patterns": [],
+          "runs": [
+            {
+              "prompt_tps": 231.7944742122661,
+              "gen_tps": 117.64696420904161,
+              "peak_mem_gb": 19.56256497
+            },
+            {
+              "prompt_tps": 261.31353433258397,
+              "gen_tps": 115.94505279944218,
+              "peak_mem_gb": 19.56256497
+            }
+          ],
+          "median_prompt_tps": 246.55400427242503,
+          "median_gen_tps": 116.7960085042419,
+          "max_peak_mem_gb": 19.56256497
+        },
+        "fused_swiglu": {
+          "env": {
+            "ZMLX_QWEN_FUSED_SWIGLU": "1"
+          },
+          "patterns": [
+            "moe_mlp"
+          ],
+          "runs": [
+            {
+              "prompt_tps": 264.6236364835696,
+              "gen_tps": 118.45243741436596,
+              "peak_mem_gb": 19.562639066
+            },
+            {
+              "prompt_tps": 258.6020388001764,
+              "gen_tps": 118.0428359477587,
+              "peak_mem_gb": 19.562639066
+            }
+          ],
+          "median_prompt_tps": 261.612837641873,
+          "median_gen_tps": 118.24763668106233,
+          "max_peak_mem_gb": 19.562639066,
+          "speedup_prefill_x_vs_baseline": 1.0610772208461436,
+          "speedup_decode_x_vs_baseline": 1.0124287481688017,
+          "fidelity_vs_baseline_run1": {
+            "matched": 128,
+            "total": 128,
+            "first_diverge": -1,
+            "verdict": "PASS"
+          }
+        },
+        "fused_swiglu_router_logits": {
+          "env": {
+            "ZMLX_QWEN_FUSED_SWIGLU": "1",
+            "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1"
+          },
+          "patterns": [
+            "moe_mlp"
+          ],
+          "runs": [
+            {
+              "prompt_tps": 235.2423132780841,
+              "gen_tps": 119.39145333043838,
+              "peak_mem_gb": 19.562639066
+            },
+            {
+              "prompt_tps": 240.16941330568628,
+              "gen_tps": 119.04116057832066,
+              "peak_mem_gb": 19.562639066
+            }
+          ],
+          "median_prompt_tps": 237.70586329188518,
+          "median_gen_tps": 119.21630695437952,
+          "max_peak_mem_gb": 19.562639066,
+          "speedup_prefill_x_vs_baseline": 0.9641127670724695,
+          "speedup_decode_x_vs_baseline": 1.0207224414698188,
+          "fidelity_vs_baseline_run1": {
+            "matched": 128,
+            "total": 128,
+            "first_diverge": -1,
+            "verdict": "PASS"
+          }
+        },
+        "fused_swiglu_router_logits_topk": {
+          "env": {
+            "ZMLX_QWEN_FUSED_SWIGLU": "1",
+            "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+            "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK": "1"
+          },
+          "patterns": [
+            "moe_mlp"
+          ],
+          "runs": [
+            {
+              "prompt_tps": 238.84545783598716,
+              "gen_tps": 116.71022594697868,
+              "peak_mem_gb": 19.562639066
+            },
+            {
+              "prompt_tps": 260.633338966399,
+              "gen_tps": 117.18630650047254,
+              "peak_mem_gb": 19.562639066
+            }
+          ],
+          "median_prompt_tps": 249.73939840119306,
+          "median_gen_tps": 116.94826622372561,
+          "max_peak_mem_gb": 19.562639066,
+          "speedup_prefill_x_vs_baseline": 1.0129196609001263,
+          "speedup_decode_x_vs_baseline": 1.0013036209150776,
+          "fidelity_vs_baseline_run1": {
+            "matched": 128,
+            "total": 128,
+            "first_diverge": -1,
+            "verdict": "PASS"
+          }
+        }
+      }
+    },
+    "long_prompt_t128": {
+      "max_tokens": 128,
+      "configs": {
+        "baseline": {
+          "env": {},
+          "patterns": [],
+          "runs": [
+            {
+              "prompt_tps": 576.3135145701488,
+              "gen_tps": 113.86009862998544,
+              "peak_mem_gb": 19.687182234
+            },
+            {
+              "prompt_tps": 629.4133177786131,
+              "gen_tps": 116.41918239049215,
+              "peak_mem_gb": 19.687198618
+            }
+          ],
+          "median_prompt_tps": 602.863416174381,
+          "median_gen_tps": 115.13964051023879,
+          "max_peak_mem_gb": 19.687198618
+        },
+        "fused_swiglu": {
+          "env": {
+            "ZMLX_QWEN_FUSED_SWIGLU": "1"
+          },
+          "patterns": [
+            "moe_mlp"
+          ],
+          "runs": [
+            {
+              "prompt_tps": 625.8681357512097,
+              "gen_tps": 118.63621640997634,
+              "peak_mem_gb": 19.687198618
+            },
+            {
+              "prompt_tps": 610.3371455394588,
+              "gen_tps": 118.80770902305305,
+              "peak_mem_gb": 19.687198618
+            }
+          ],
+          "median_prompt_tps": 618.1026406453343,
+          "median_gen_tps": 118.7219627165147,
+          "max_peak_mem_gb": 19.687198618,
+          "speedup_prefill_x_vs_baseline": 1.0252780713874754,
+          "speedup_decode_x_vs_baseline": 1.031112848627987,
+          "fidelity_vs_baseline_run1": {
+            "matched": 128,
+            "total": 128,
+            "first_diverge": -1,
+            "verdict": "PASS"
+          }
+        },
+        "fused_swiglu_router_logits": {
+          "env": {
+            "ZMLX_QWEN_FUSED_SWIGLU": "1",
+            "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1"
+          },
+          "patterns": [
+            "moe_mlp"
+          ],
+          "runs": [
+            {
+              "prompt_tps": 620.7171498224577,
+              "gen_tps": 119.36398111214412,
+              "peak_mem_gb": 19.687198618
+            },
+            {
+              "prompt_tps": 609.6693901223238,
+              "gen_tps": 118.46123932857002,
+              "peak_mem_gb": 19.687198618
+            }
+          ],
+          "median_prompt_tps": 615.1932699723907,
+          "median_gen_tps": 118.91261022035707,
+          "max_peak_mem_gb": 19.687198618,
+          "speedup_prefill_x_vs_baseline": 1.0204521512953164,
+          "speedup_decode_x_vs_baseline": 1.032768642436249,
+          "fidelity_vs_baseline_run1": {
+            "matched": 128,
+            "total": 128,
+            "first_diverge": -1,
+            "verdict": "PASS"
+          }
+        },
+        "fused_swiglu_router_logits_topk": {
+          "env": {
+            "ZMLX_QWEN_FUSED_SWIGLU": "1",
+            "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+            "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK": "1"
+          },
+          "patterns": [
+            "moe_mlp"
+          ],
+          "runs": [
+            {
+              "prompt_tps": 627.8587010914738,
+              "gen_tps": 117.37885676651213,
+              "peak_mem_gb": 19.687198618
+            },
+            {
+              "prompt_tps": 637.9201374779965,
+              "gen_tps": 118.25247322782404,
+              "peak_mem_gb": 19.687198618
+            }
+          ],
+          "median_prompt_tps": 632.8894192847351,
+          "median_gen_tps": 117.81566499716808,
+          "max_peak_mem_gb": 19.687198618,
+          "speedup_prefill_x_vs_baseline": 1.049805648020395,
+          "speedup_decode_x_vs_baseline": 1.0232415567312052,
+          "fidelity_vs_baseline_run1": {
+            "matched": 128,
+            "total": 128,
+            "first_diverge": -1,
+            "verdict": "PASS"
+          }
+        }
+      }
+    },
+    "code_prompt_t256": {
+      "max_tokens": 256,
+      "configs": {
+        "baseline": {
+          "env": {},
+          "patterns": [],
+          "runs": [
+            {
+              "prompt_tps": 384.04248606810125,
+              "gen_tps": 113.73970025430782,
+              "peak_mem_gb": 19.687198618
+            },
+            {
+              "prompt_tps": 425.65698300239796,
+              "gen_tps": 113.9880455981329,
+              "peak_mem_gb": 19.687198618
+            }
+          ],
+          "median_prompt_tps": 404.8497345352496,
+          "median_gen_tps": 113.86387292622035,
+          "max_peak_mem_gb": 19.687198618
+        },
+        "fused_swiglu": {
+          "env": {
+            "ZMLX_QWEN_FUSED_SWIGLU": "1"
+          },
+          "patterns": [
+            "moe_mlp"
+          ],
+          "runs": [
+            {
+              "prompt_tps": 428.5121820001573,
+              "gen_tps": 116.80694308257208,
+              "peak_mem_gb": 19.687198618
+            },
+            {
+              "prompt_tps": 395.7798559488118,
+              "gen_tps": 118.34490035801046,
+              "peak_mem_gb": 19.687198618
+            }
+          ],
+          "median_prompt_tps": 412.14601897448455,
+          "median_gen_tps": 117.57592172029126,
+          "max_peak_mem_gb": 19.687198618,
+          "speedup_prefill_x_vs_baseline": 1.0180222038372109,
+          "speedup_decode_x_vs_baseline": 1.0326007600011655,
+          "fidelity_vs_baseline_run1": {
+            "matched": 256,
+            "total": 256,
+            "first_diverge": -1,
+            "verdict": "PASS"
+          }
+        },
+        "fused_swiglu_router_logits": {
+          "env": {
+            "ZMLX_QWEN_FUSED_SWIGLU": "1",
+            "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1"
+          },
+          "patterns": [
+            "moe_mlp"
+          ],
+          "runs": [
+            {
+              "prompt_tps": 429.6710339414311,
+              "gen_tps": 118.1196595978881,
+              "peak_mem_gb": 19.687198618
+            },
+            {
+              "prompt_tps": 401.1804286843577,
+              "gen_tps": 118.33270603900769,
+              "peak_mem_gb": 19.687198618
+            }
+          ],
+          "median_prompt_tps": 415.4257313128944,
+          "median_gen_tps": 118.2261828184479,
+          "max_peak_mem_gb": 19.687198618,
+          "speedup_prefill_x_vs_baseline": 1.0261232646966798,
+          "speedup_decode_x_vs_baseline": 1.0383116240482542,
+          "fidelity_vs_baseline_run1": {
+            "matched": 256,
+            "total": 256,
+            "first_diverge": -1,
+            "verdict": "PASS"
+          }
+        },
+        "fused_swiglu_router_logits_topk": {
+          "env": {
+            "ZMLX_QWEN_FUSED_SWIGLU": "1",
+            "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+            "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK": "1"
+          },
+          "patterns": [
+            "moe_mlp"
+          ],
+          "runs": [
+            {
+              "prompt_tps": 427.34564773674947,
+              "gen_tps": 117.56942658585297,
+              "peak_mem_gb": 19.687198618
+            },
+            {
+              "prompt_tps": 428.06997695327874,
+              "gen_tps": 118.28929423856016,
+              "peak_mem_gb": 19.687198618
+            }
+          ],
+          "median_prompt_tps": 427.7078123450141,
+          "median_gen_tps": 117.92936041220656,
+          "max_peak_mem_gb": 19.687198618,
+          "speedup_prefill_x_vs_baseline": 1.0564606466545041,
+          "speedup_decode_x_vs_baseline": 1.0357048059362999,
+          "fidelity_vs_baseline_run1": {
+            "matched": 256,
+            "total": 256,
+            "first_diverge": -1,
+            "verdict": "PASS"
+          }
+        }
+      }
+    }
+  },
+  "aggregate": {
+    "fused_swiglu": {
+      "avg_decode_speedup_x": 1.025380785599318,
+      "avg_prefill_speedup_x": 1.0347924986902768,
+      "all_fidelity_pass": true
+    },
+    "fused_swiglu_router_logits": {
+      "avg_decode_speedup_x": 1.0306009026514407,
+      "avg_prefill_speedup_x": 1.0035627276881554,
+      "all_fidelity_pass": true
+    },
+    "fused_swiglu_router_logits_topk": {
+      "avg_decode_speedup_x": 1.020083327860861,
+      "avg_prefill_speedup_x": 1.0397286518583417,
+      "all_fidelity_pass": true
+    }
+  }
+}

@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.9.1] - 2026-02-25
+
+### Added
+
+- Qwen3.5-35B-A3B benchmark capsules for prefill/decode variant exploration and top-candidate validation:
+  - `benchmarks/repro_capsules/qwen35_a3b_prefill_focus_variant_sweep_t128_r1_20260225.json`
+  - `benchmarks/repro_capsules/qwen35_a3b_top_prefill_candidates_multiscenario_tmix_r2_20260225.json`
+  - `benchmarks/repro_capsules/qwen35_a3b_shortprompt_sanity_t128_r1_20260225_post_mlx_upgrade_attempt.json`
+  - `benchmarks/repro_capsules/qwen35_a3b_multi_scenario_variants_tmix_r1_20260225.json`
+  - `benchmarks/repro_capsules/qwen35_a3b_moe_mlp_fused_swiglu_t128_r1_20260225_summary.json`
+
+### Changed
+
+- README now features Qwen3.5-35B-A3B results front-and-center, including prefill-first and decode-first recommended configurations and promoted/rejected candidate summaries.
+- Package version bumped to `0.9.1`.
+
 ## [0.9.0] - 2026-02-24
 
 ### Added

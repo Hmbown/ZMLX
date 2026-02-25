@@ -12,7 +12,38 @@ ZMLX extends [MLX](https://github.com/ml-explore/mlx) with a Python-first Metal 
 - **Metal kernels from Python:** write `elementwise("x * tanh(log(1 + exp(x)))")` and get a compiled Metal kernel with caching, autograd support, and the 70+ kernel catalog.
 - **Model patching:** `patch(model)` replaces MoE gating/combine/activation sequences with fused Metal kernels, reducing dispatch overhead during decode. Token-identical output; verify with `python -m zmlx.validate`.
 - **Works with stock MLX:** LFM2-8B (+12%) and LFM2-24B (+7%) show consistent decode gains with `pip install mlx` — no custom builds required.
-- **Optional custom primitive (GLM/Qwen3):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash and Qwen3-30B-A3B. See the GLM-4.7-Flash stress benchmark results below + [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md). On stock MLX these models auto-skip safely.
+- **Optional custom primitive (GLM/Qwen3/Qwen3.5):** build the custom `gather_qmm_swiglu` primitive to fuse quantized expert projections for GLM-4.7-Flash, Qwen3-30B-A3B, and Qwen3.5-35B-A3B. See [`docs/EXPERIMENTAL_MLX.md`](docs/EXPERIMENTAL_MLX.md). On stock MLX these models auto-skip safely.
+
+## Qwen3.5-35B-A3B (Front-and-Center Update, 2026-02-25)
+
+New measured result on `mlx-community/Qwen3.5-35B-A3B-4bit`:
+- **Prefill-first recommended setting:**
+  - `patch(model, patterns=["moe_mlp"])`
+  - `ZMLX_QWEN_FUSED_SWIGLU=1`
+  - `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1`
+  - `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=1`
+- Multi-scenario validation (`runs=2`, short/long/code prompts; token-identical checks vs unpatched baseline):
+  - **Decode:** `1.020x` average
+  - **Prefill:** `1.040x` average
+  - **Fidelity:** PASS across all scenarios
+- **Decode-first alternative** (slightly lower prefill uplift):
+  - `ZMLX_QWEN_FUSED_SWIGLU=1` + `ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1`
+  - **Decode:** `1.031x` average
+  - **Prefill:** `1.004x` average
+- Rejected configs:
+  - `ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE=1` + `..._KVEC=1`: decode regression + fidelity failures
+  - `ZMLX_QWEN_COMBINE_MODE=fp32` / `fp32_no_fma`: severe regressions, fidelity failures on this model
+
+Latest spot-check confirmation (short prompt, 128 tokens):
+- Baseline: `117.03 tok/s` decode
+- `moe_mlp + ZMLX_QWEN_FUSED_SWIGLU=1`: `119.06 tok/s` decode (`1.017x`), PASS
+
+Evidence capsules:
+- `benchmarks/repro_capsules/qwen35_a3b_top_prefill_candidates_multiscenario_tmix_r2_20260225.json`
+- `benchmarks/repro_capsules/qwen35_a3b_prefill_focus_variant_sweep_t128_r1_20260225.json`
+- `benchmarks/repro_capsules/qwen35_a3b_multi_scenario_variants_tmix_r1_20260225.json`
+- `benchmarks/repro_capsules/qwen35_a3b_moe_mlp_fused_swiglu_t128_r1_20260225_summary.json`
+- `benchmarks/repro_capsules/qwen35_a3b_shortprompt_sanity_t128_r1_20260225_post_mlx_upgrade_attempt.json`
 
 ## Benchmark Snapshot (2026-02-08)
 
@@ -37,9 +68,6 @@ Source of truth:
 Why these are lower than earlier 8-12% headlines on GLM/Qwen3:
 - MLX baseline has improved in newer versions, shrinking relative uplift from the same ZMLX patch path.
 - Speedups vary with decode length and thermal state; use multiple runs for release-quality numbers.
-
-Near-term roadmap:
-- Prepare Qwen3.5 model aliases/presets once official `Qwen/*` checkpoints are published on Hugging Face, then validate with `python -m zmlx.validate <model> --max-tokens 200 --runs 3` before long-run matrix entries.
 
 ## Default Speed Expectations (2026-02-11)
 

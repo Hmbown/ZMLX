@@ -1,0 +1,207 @@
+{
+  "timestamp": "2026-02-25T17:29:39.944185+00:00",
+  "model": "mlx-community/Qwen3.5-35B-A3B-4bit",
+  "scenario": "long_prompt_t128_prefill_focus",
+  "prompt": "You are designing an ultra-low-latency multiplayer networking stack. Discuss transport-level tradeoffs across packet ordering, retransmission, jitter buffering, congestion behavior, and error recovery for realtime voice, state sync, and telemetry. Include concrete guidance for when to mix reliable and unreliable channels. Now expand with implementation notes for sequence numbering, ACK windows, and backpressure handling. Finally, propose a test plan with synthetic packet loss and burst latency.",
+  "max_tokens": 128,
+  "rows": [
+    {
+      "name": "baseline",
+      "patterns": [],
+      "env": {},
+      "prompt_tps": 622.0850933981313,
+      "gen_tps": 117.83433386228185,
+      "peak_mem_gb": 19.687198618,
+      "speedup_prefill_x_vs_baseline": 1.0,
+      "speedup_decode_x_vs_baseline": 1.0,
+      "fidelity_vs_baseline": {
+        "matched": 128,
+        "total": 128,
+        "first_diverge": -1,
+        "verdict": "PASS"
+      }
+    },
+    {
+      "name": "moe_control",
+      "patterns": [
+        "moe_mlp"
+      ],
+      "env": {},
+      "prompt_tps": 627.8853224948731,
+      "gen_tps": 108.88357796105916,
+      "peak_mem_gb": 19.687198618,
+      "speedup_prefill_x_vs_baseline": 1.0093238516053455,
+      "speedup_decode_x_vs_baseline": 0.9240394916503383,
+      "fidelity_vs_baseline": {
+        "matched": 128,
+        "total": 128,
+        "first_diverge": -1,
+        "verdict": "PASS"
+      }
+    },
+    {
+      "name": "fused_swiglu",
+      "patterns": [
+        "moe_mlp"
+      ],
+      "env": {
+        "ZMLX_QWEN_FUSED_SWIGLU": "1"
+      },
+      "prompt_tps": 499.4566485857715,
+      "gen_tps": 74.51776309934867,
+      "peak_mem_gb": 19.687198618,
+      "speedup_prefill_x_vs_baseline": 0.8028751273519453,
+      "speedup_decode_x_vs_baseline": 0.6323943171473336,
+      "fidelity_vs_baseline": {
+        "matched": 128,
+        "total": 128,
+        "first_diverge": -1,
+        "verdict": "PASS"
+      }
+    },
+    {
+      "name": "router_argpartition_logits",
+      "patterns": [
+        "moe_mlp"
+      ],
+      "env": {
+        "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1"
+      },
+      "prompt_tps": 632.733024835909,
+      "gen_tps": 109.94217234166194,
+      "peak_mem_gb": 19.687198618,
+      "speedup_prefill_x_vs_baseline": 1.017116519188096,
+      "speedup_decode_x_vs_baseline": 0.9330232432098795,
+      "fidelity_vs_baseline": {
+        "matched": 128,
+        "total": 128,
+        "first_diverge": -1,
+        "verdict": "PASS"
+      }
+    },
+    {
+      "name": "router_argpartition_logits_topk",
+      "patterns": [
+        "moe_mlp"
+      ],
+      "env": {
+        "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+        "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK": "1"
+      },
+      "prompt_tps": 623.131799834088,
+      "gen_tps": 107.28388048652722,
+      "peak_mem_gb": 19.687198618,
+      "speedup_prefill_x_vs_baseline": 1.0016825775879616,
+      "speedup_decode_x_vs_baseline": 0.9104636736175264,
+      "fidelity_vs_baseline": {
+        "matched": 128,
+        "total": 128,
+        "first_diverge": -1,
+        "verdict": "PASS"
+      }
+    },
+    {
+      "name": "fused_router_topk",
+      "patterns": [
+        "moe_mlp"
+      ],
+      "env": {
+        "ZMLX_QWEN_FUSED_ROUTER_TOPK": "1"
+      },
+      "prompt_tps": 387.80033631088645,
+      "gen_tps": 38.221258281838345,
+      "peak_mem_gb": 20.225754446,
+      "speedup_prefill_x_vs_baseline": 0.6233879262281184,
+      "speedup_decode_x_vs_baseline": 0.32436435993697055,
+      "fidelity_vs_baseline": {
+        "matched": 128,
+        "total": 128,
+        "first_diverge": -1,
+        "verdict": "PASS"
+      }
+    },
+    {
+      "name": "combine_fp32",
+      "patterns": [
+        "moe_mlp"
+      ],
+      "env": {
+        "ZMLX_QWEN_COMBINE_MODE": "fp32"
+      },
+      "prompt_tps": 435.2823894531191,
+      "gen_tps": 38.11573664773771,
+      "peak_mem_gb": 20.226356758,
+      "speedup_prefill_x_vs_baseline": 0.6997151902087784,
+      "speedup_decode_x_vs_baseline": 0.3234688515512401,
+      "fidelity_vs_baseline": {
+        "matched": 127,
+        "total": 128,
+        "first_diverge": 67,
+        "verdict": "FAIL"
+      }
+    },
+    {
+      "name": "combine_fp32_no_fma",
+      "patterns": [
+        "moe_mlp"
+      ],
+      "env": {
+        "ZMLX_QWEN_COMBINE_MODE": "fp32_no_fma"
+      },
+      "prompt_tps": 436.8974083060293,
+      "gen_tps": 37.81485621988871,
+      "peak_mem_gb": 20.226356758,
+      "speedup_prefill_x_vs_baseline": 0.7023113283738776,
+      "speedup_decode_x_vs_baseline": 0.3209154325434944,
+      "fidelity_vs_baseline": {
+        "matched": 115,
+        "total": 128,
+        "first_diverge": 108,
+        "verdict": "FAIL"
+      }
+    },
+    {
+      "name": "fused_swiglu_router_logits",
+      "patterns": [
+        "moe_mlp"
+      ],
+      "env": {
+        "ZMLX_QWEN_FUSED_SWIGLU": "1",
+        "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1"
+      },
+      "prompt_tps": 636.3153229712735,
+      "gen_tps": 119.03787182545018,
+      "peak_mem_gb": 20.226356758,
+      "speedup_prefill_x_vs_baseline": 1.0228750531465234,
+      "speedup_decode_x_vs_baseline": 1.0102138139515005,
+      "fidelity_vs_baseline": {
+        "matched": 128,
+        "total": 128,
+        "first_diverge": -1,
+        "verdict": "PASS"
+      }
+    },
+    {
+      "name": "fused_swiglu_router_logits_topk",
+      "patterns": [
+        "moe_mlp"
+      ],
+      "env": {
+        "ZMLX_QWEN_FUSED_SWIGLU": "1",
+        "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS": "1",
+        "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK": "1"
+      },
+      "prompt_tps": 636.23931376331,
+      "gen_tps": 119.54385144416408,
+      "peak_mem_gb": 20.226356758,
+      "speedup_prefill_x_vs_baseline": 1.0227528685631437,
+      "speedup_decode_x_vs_baseline": 1.0145078053725853,
+      "fidelity_vs_baseline": {
+        "matched": 128,
+        "total": 128,
+        "first_diverge": -1,
+        "verdict": "PASS"
+      }
+    }
+  ]
+}
