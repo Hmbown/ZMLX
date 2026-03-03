@@ -55,9 +55,8 @@ pip install "zmlx[lm]"       # includes mlx-lm for model patching
 import mlx_lm
 from zmlx.patch import patch
 
-# Works with any supported model — just change the model ID
-model, tokenizer = mlx_lm.load("LiquidAI/LFM2-24B-A2B-MLX-4bit")
-patch(model)  # auto-detects model family, applies safe optimizations
+model, tokenizer = mlx_lm.load("mlx-community/Qwen3.5-35B-A3B-MLX-4bit")
+patch(model)  # auto-detects architecture, applies fused MoE decode
 
 print(
     mlx_lm.generate(
@@ -69,30 +68,13 @@ print(
 )
 ```
 
-That's it. `patch(model)` handles everything automatically — model detection, kernel selection, and safety checks. No env vars or configuration needed.
+That's it. `patch(model)` handles everything automatically. No env vars or configuration needed.
 
 3. Verify token fidelity + throughput on your hardware:
 
 ```bash
-# LFM2-24B (+7% on M4 Max)
-python -m zmlx.validate LiquidAI/LFM2-24B-A2B-MLX-4bit --max-tokens 200 --runs 3
-
-# LFM2-8B (+12% on M4 Max)
-python -m zmlx.validate mlx-community/LFM2-8B-A1B-4bit --max-tokens 200 --runs 3
+python -m zmlx.validate mlx-community/Qwen3.5-35B-A3B-MLX-4bit --max-tokens 200 --runs 3
 ```
-
-One-command smoke inference (loads model, applies `zmlx.patch.patch(model)`, then generates):
-
-```bash
-source .venv/bin/activate && python examples/inference_smoke.py --model-id <model> --prompt "<prompt>" --max-tokens 64
-```
-
-Expected output shape:
-- `[load] model=<model>`
-- `[patch] Applying zmlx.patch.patch(model) with safe defaults`
-- `[patch] Patched ...`
-- `[generate] prompt='...' max_tokens=64`
-- `[output]` followed by generated text
 
 Tip: large model downloads use the Hugging Face cache; set `HF_HOME` to control its location.
 
