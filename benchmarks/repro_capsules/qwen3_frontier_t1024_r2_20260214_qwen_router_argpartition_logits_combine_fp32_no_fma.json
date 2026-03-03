@@ -1,0 +1,61 @@
+{
+  "meta": {
+    "date": "2026-02-13",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.5",
+    "git_commit": "3824ede",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_qwen_router_argpartition_logits_combine_fp32_no_fma": "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 ZMLX_QWEN_COMBINE_MODE=fp32_no_fma python -m zmlx.validate mlx-community/Qwen3-30B-A3B-4bit --runs 2 --max-tokens 1024 --patterns moe_mlp"
+  },
+  "qwen_router_argpartition_logits_combine_fp32_no_fma": {
+    "model": "mlx-community/Qwen3-30B-A3B-4bit",
+    "variant": "qwen_router_argpartition_logits_combine_fp32_no_fma",
+    "max_tokens": 1024,
+    "gen_tokens": 1024,
+    "runs": 2,
+    "fidelity": {
+      "matched": 7,
+      "total": 1024,
+      "verdict": "FAIL"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        182.8,
+        179.7
+      ],
+      "decode_tok_s": [
+        55.1,
+        59.5
+      ],
+      "median_prefill": 181.3,
+      "median_decode": 57.3,
+      "peak_mem_gb": 17.33
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp"
+      ],
+      "modules_patched": 48,
+      "prefill_tok_s": [
+        114.3,
+        128.3
+      ],
+      "decode_tok_s": [
+        25.7,
+        25.8
+      ],
+      "median_prefill": 121.3,
+      "median_decode": 25.8,
+      "peak_mem_gb": 17.89
+    },
+    "summary": {
+      "decode_speedup": 0.4503,
+      "prefill_change": -0.3309
+    },
+    "notes": "Experimental: Qwen router argpartition(logits)+topk softmax plus fp32 no-FMA combine kernel (ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 ZMLX_QWEN_COMBINE_MODE=fp32_no_fma)"
+  }
+}

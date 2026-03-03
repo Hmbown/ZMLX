@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "date": "2026-02-17",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.5",
+    "git_commit": "3824ede",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_qwen_router_argpartition_logits_topk_combine_exact": "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=1 ZMLX_QWEN_COMBINE_MODE=exact python -m zmlx.validate mlx-community/Qwen3-30B-A3B-4bit --runs 5 --max-tokens 1024 --patterns moe_mlp"
+  },
+  "qwen_router_argpartition_logits_topk_combine_exact": {
+    "model": "mlx-community/Qwen3-30B-A3B-4bit",
+    "variant": "qwen_router_argpartition_logits_topk_combine_exact",
+    "max_tokens": 1024,
+    "gen_tokens": 1024,
+    "runs": 5,
+    "fidelity": {
+      "matched": 1024,
+      "total": 1024,
+      "verdict": "PASS"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        221.6,
+        335.6,
+        336.4,
+        325.6,
+        334.4
+      ],
+      "decode_tok_s": [
+        110.0,
+        112.3,
+        112.1,
+        112.4,
+        105.4
+      ],
+      "median_prefill": 334.4,
+      "median_decode": 112.1,
+      "peak_mem_gb": 17.33
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp"
+      ],
+      "modules_patched": 48,
+      "prefill_tok_s": [
+        330.9,
+        325.9,
+        322.4,
+        326.1,
+        330.3
+      ],
+      "decode_tok_s": [
+        104.9,
+        104.2,
+        104.8,
+        109.1,
+        105.5
+      ],
+      "median_prefill": 326.1,
+      "median_decode": 104.9,
+      "peak_mem_gb": 17.33
+    },
+    "summary": {
+      "decode_speedup": 0.9358,
+      "prefill_change": -0.0248
+    },
+    "notes": "Experimental: Qwen argpartition(logits) fused top-k softmax plus exact combine kernel (ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK=1 ZMLX_QWEN_COMBINE_MODE=exact)"
+  }
+}

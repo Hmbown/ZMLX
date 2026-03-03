@@ -1,0 +1,98 @@
+{
+  "suite": "glm47",
+  "timestamp_utc": "20260210T210046Z",
+  "script": "bench_glm47_flash_experiments.py",
+  "runs": 2,
+  "max_tokens": 1024,
+  "variants": [
+    "control_swiglu_moe",
+    "glm_combine_fp32_no_fma"
+  ],
+  "env_overrides": {},
+  "results": [
+    {
+      "variant": "control_swiglu_moe",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_recal_t1024_r2_control_swiglu_moe.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_recal_t1024_r2_control_swiglu_moe.json",
+        "--variants",
+        "control_swiglu_moe",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "control_swiglu_moe",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 79.8,
+          "patched": 81.7,
+          "speedup": 1.0238
+        },
+        "prefill": {
+          "baseline": 239.2,
+          "patched": 241.7,
+          "change": 0.0105
+        },
+        "memory_gb": {
+          "baseline": 16.94,
+          "patched": 16.95
+        }
+      }
+    },
+    {
+      "variant": "glm_combine_fp32_no_fma",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_recal_t1024_r2_glm_combine_fp32_no_fma.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_recal_t1024_r2_glm_combine_fp32_no_fma.json",
+        "--variants",
+        "glm_combine_fp32_no_fma",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "glm_combine_fp32_no_fma",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 77.9,
+          "patched": 83.5,
+          "speedup": 1.0719
+        },
+        "prefill": {
+          "baseline": 235.1,
+          "patched": 243.4,
+          "change": 0.0353
+        },
+        "memory_gb": {
+          "baseline": 16.94,
+          "patched": 16.95
+        }
+      }
+    }
+  ]
+}

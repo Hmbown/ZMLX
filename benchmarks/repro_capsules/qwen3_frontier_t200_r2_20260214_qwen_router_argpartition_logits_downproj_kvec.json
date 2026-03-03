@@ -1,0 +1,61 @@
+{
+  "meta": {
+    "date": "2026-02-13",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.5",
+    "git_commit": "3824ede",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_qwen_router_argpartition_logits_downproj_kvec": "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE=1 ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC=1 python -m zmlx.validate mlx-community/Qwen3-30B-A3B-4bit --runs 2 --max-tokens 200 --patterns moe_mlp"
+  },
+  "qwen_router_argpartition_logits_downproj_kvec": {
+    "model": "mlx-community/Qwen3-30B-A3B-4bit",
+    "variant": "qwen_router_argpartition_logits_downproj_kvec",
+    "max_tokens": 200,
+    "gen_tokens": 200,
+    "runs": 2,
+    "fidelity": {
+      "matched": 9,
+      "total": 200,
+      "verdict": "FAIL"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        164.0,
+        177.4
+      ],
+      "decode_tok_s": [
+        54.4,
+        57.0
+      ],
+      "median_prefill": 170.7,
+      "median_decode": 55.7,
+      "peak_mem_gb": 17.24
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp"
+      ],
+      "modules_patched": 48,
+      "prefill_tok_s": [
+        182.8,
+        167.5
+      ],
+      "decode_tok_s": [
+        57.4,
+        56.9
+      ],
+      "median_prefill": 175.1,
+      "median_decode": 57.2,
+      "peak_mem_gb": 17.24
+    },
+    "summary": {
+      "decode_speedup": 1.0269,
+      "prefill_change": 0.0258
+    },
+    "notes": "Experimental: Qwen router argpartition(logits)+topk softmax plus fused down-proj+combine K-vectorized path (ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE=1 ZMLX_QWEN_FUSED_DOWNPROJ_COMBINE_KVEC=1)"
+  }
+}

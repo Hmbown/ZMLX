@@ -1,0 +1,66 @@
+{
+  "meta": {
+    "date": "2026-02-11",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.5",
+    "git_commit": "3824ede",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_glm_combine_fp32_no_fma_weighted_sum": "ZMLX_GLM_COMBINE_MODE=fp32_no_fma_weighted_sum python -m zmlx.validate mlx-community/GLM-4.7-Flash-4bit-mxfp4 --patterns swiglu_mlp moe_mlp --runs 3 --max-tokens 1024"
+  },
+  "glm_combine_fp32_no_fma_weighted_sum": {
+    "model": "mlx-community/GLM-4.7-Flash-4bit-mxfp4",
+    "variant": "glm_combine_fp32_no_fma_weighted_sum",
+    "max_tokens": 1024,
+    "gen_tokens": 1024,
+    "runs": 3,
+    "fidelity": {
+      "matched": 1024,
+      "total": 1024,
+      "verdict": "PASS"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        285.7,
+        162.3,
+        161.9
+      ],
+      "decode_tok_s": [
+        72.2,
+        72.5,
+        73.6
+      ],
+      "median_prefill": 162.3,
+      "median_decode": 72.5,
+      "peak_mem_gb": 16.0
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp",
+        "swiglu_mlp"
+      ],
+      "modules_patched": 93,
+      "prefill_tok_s": [
+        300.2,
+        162.1,
+        161.9
+      ],
+      "decode_tok_s": [
+        70.1,
+        69.9,
+        69.1
+      ],
+      "median_prefill": 162.1,
+      "median_decode": 69.9,
+      "peak_mem_gb": 16.0
+    },
+    "summary": {
+      "decode_speedup": 0.9641,
+      "prefill_change": -0.0012
+    },
+    "notes": "Experimental: force GLM combine via K=8-specialized fp32 no-FMA weighted-sum kernel (ZMLX_GLM_COMBINE_MODE=fp32_no_fma_weighted_sum)."
+  }
+}

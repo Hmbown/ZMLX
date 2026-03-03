@@ -2,6 +2,7 @@
 
 from . import (
     deepseek_router,
+    deltanet,
     geglu_mlp,
     glm47_skv,
     layernorm,
@@ -14,6 +15,7 @@ from . import (
 
 __all__ = [
     "deepseek_router",
+    "deltanet",
     "glm47_skv",
     "rmsnorm",
     "layernorm",

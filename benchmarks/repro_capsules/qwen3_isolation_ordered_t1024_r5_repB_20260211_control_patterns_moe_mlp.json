@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "date": "2026-02-10",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.4",
+    "git_commit": "eebfa6e",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_control_patterns_moe_mlp": "python -m zmlx.validate mlx-community/Qwen3-30B-A3B-4bit --runs 5 --max-tokens 1024 --patterns moe_mlp"
+  },
+  "control_patterns_moe_mlp": {
+    "model": "mlx-community/Qwen3-30B-A3B-4bit",
+    "variant": "control_patterns_moe_mlp",
+    "max_tokens": 1024,
+    "gen_tokens": 1024,
+    "runs": 5,
+    "fidelity": {
+      "matched": 1024,
+      "total": 1024,
+      "verdict": "PASS"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        315.6,
+        324.3,
+        326.9,
+        328.0,
+        329.5
+      ],
+      "decode_tok_s": [
+        107.8,
+        107.9,
+        107.7,
+        107.9,
+        107.9
+      ],
+      "median_prefill": 326.9,
+      "median_decode": 107.9,
+      "peak_mem_gb": 17.33
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp"
+      ],
+      "modules_patched": 48,
+      "prefill_tok_s": [
+        321.4,
+        322.9,
+        322.4,
+        307.3,
+        324.2
+      ],
+      "decode_tok_s": [
+        106.0,
+        106.0,
+        105.8,
+        104.8,
+        105.9
+      ],
+      "median_prefill": 322.4,
+      "median_decode": 105.9,
+      "peak_mem_gb": 17.33
+    },
+    "summary": {
+      "decode_speedup": 0.9815,
+      "prefill_change": -0.0138
+    },
+    "notes": "Control: patch(model, patterns=['moe_mlp'])"
+  }
+}

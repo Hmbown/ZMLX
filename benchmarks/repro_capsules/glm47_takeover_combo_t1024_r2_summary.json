@@ -1,0 +1,184 @@
+{
+  "suite": "glm47",
+  "timestamp_utc": "20260210T201826Z",
+  "script": "bench_glm47_flash_experiments.py",
+  "runs": 2,
+  "max_tokens": 1024,
+  "variants": [
+    "control_swiglu_moe",
+    "glm_combine_fp32_no_fma",
+    "shared_experts_overlap_streams2",
+    "glm47_rope"
+  ],
+  "env_overrides": {},
+  "results": [
+    {
+      "variant": "control_swiglu_moe",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_takeover_combo_t1024_r2_control_swiglu_moe.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_takeover_combo_t1024_r2_control_swiglu_moe.json",
+        "--variants",
+        "control_swiglu_moe",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "control_swiglu_moe",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 78.9,
+          "patched": 81.8,
+          "speedup": 1.0368
+        },
+        "prefill": {
+          "baseline": 237.6,
+          "patched": 243.5,
+          "change": 0.0248
+        },
+        "memory_gb": {
+          "baseline": 16.94,
+          "patched": 16.95
+        }
+      }
+    },
+    {
+      "variant": "glm_combine_fp32_no_fma",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_takeover_combo_t1024_r2_glm_combine_fp32_no_fma.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_takeover_combo_t1024_r2_glm_combine_fp32_no_fma.json",
+        "--variants",
+        "glm_combine_fp32_no_fma",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "glm_combine_fp32_no_fma",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 78.6,
+          "patched": 81.5,
+          "speedup": 1.0369
+        },
+        "prefill": {
+          "baseline": 237.4,
+          "patched": 238.4,
+          "change": 0.0042
+        },
+        "memory_gb": {
+          "baseline": 16.94,
+          "patched": 16.95
+        }
+      }
+    },
+    {
+      "variant": "shared_experts_overlap_streams2",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_takeover_combo_t1024_r2_shared_experts_overlap_streams2.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_takeover_combo_t1024_r2_shared_experts_overlap_streams2.json",
+        "--variants",
+        "shared_experts_overlap_streams2",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "shared_experts_overlap_streams2",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 78.6,
+          "patched": 54.6,
+          "speedup": 0.6947
+        },
+        "prefill": {
+          "baseline": 235.2,
+          "patched": 203.7,
+          "change": -0.1339
+        },
+        "memory_gb": {
+          "baseline": 16.94,
+          "patched": 16.95
+        }
+      }
+    },
+    {
+      "variant": "glm47_rope",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_takeover_combo_t1024_r2_glm47_rope.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_takeover_combo_t1024_r2_glm47_rope.json",
+        "--variants",
+        "glm47_rope",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "glm47_rope",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 78.4,
+          "patched": 77.1,
+          "speedup": 0.9834
+        },
+        "prefill": {
+          "baseline": 238.4,
+          "patched": 239.3,
+          "change": 0.0038
+        },
+        "memory_gb": {
+          "baseline": 16.94,
+          "patched": 16.95
+        }
+      }
+    }
+  ]
+}

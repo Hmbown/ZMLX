@@ -1,0 +1,141 @@
+{
+  "suite": "glm47",
+  "timestamp_utc": "20260210T202936Z",
+  "script": "bench_glm47_flash_experiments.py",
+  "runs": 2,
+  "max_tokens": 1024,
+  "variants": [
+    "control_swiglu_moe",
+    "glm_combine_fp32_no_fma_shared_overlap_streams2",
+    "glm_combine_fp32_no_fma_glm47_rope"
+  ],
+  "env_overrides": {},
+  "results": [
+    {
+      "variant": "control_swiglu_moe",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_takeover_additive_combo_t1024_r2_control_swiglu_moe.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_takeover_additive_combo_t1024_r2_control_swiglu_moe.json",
+        "--variants",
+        "control_swiglu_moe",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "control_swiglu_moe",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 78.0,
+          "patched": 80.2,
+          "speedup": 1.0282
+        },
+        "prefill": {
+          "baseline": 233.9,
+          "patched": 241.1,
+          "change": 0.0308
+        },
+        "memory_gb": {
+          "baseline": 16.94,
+          "patched": 16.95
+        }
+      }
+    },
+    {
+      "variant": "glm_combine_fp32_no_fma_shared_overlap_streams2",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_takeover_additive_combo_t1024_r2_glm_combine_fp32_no_fma_shared_overlap_streams2.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_takeover_additive_combo_t1024_r2_glm_combine_fp32_no_fma_shared_overlap_streams2.json",
+        "--variants",
+        "glm_combine_fp32_no_fma_shared_overlap_streams2",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "glm_combine_fp32_no_fma_shared_overlap_streams2",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 78.5,
+          "patched": 55.5,
+          "speedup": 0.707
+        },
+        "prefill": {
+          "baseline": 237.4,
+          "patched": 212.0,
+          "change": -0.107
+        },
+        "memory_gb": {
+          "baseline": 16.94,
+          "patched": 16.95
+        }
+      }
+    },
+    {
+      "variant": "glm_combine_fp32_no_fma_glm47_rope",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_takeover_additive_combo_t1024_r2_glm_combine_fp32_no_fma_glm47_rope.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_takeover_additive_combo_t1024_r2_glm_combine_fp32_no_fma_glm47_rope.json",
+        "--variants",
+        "glm_combine_fp32_no_fma_glm47_rope",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "glm_combine_fp32_no_fma_glm47_rope",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 78.8,
+          "patched": 77.1,
+          "speedup": 0.9784
+        },
+        "prefill": {
+          "baseline": 236.4,
+          "patched": 236.7,
+          "change": 0.0013
+        },
+        "memory_gb": {
+          "baseline": 16.94,
+          "patched": 16.95
+        }
+      }
+    }
+  ]
+}

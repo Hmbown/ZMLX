@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "date": "2026-02-17",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.5",
+    "git_commit": "3824ede",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_qwen_router_argpartition_logits": "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1 python -m zmlx.validate mlx-community/Qwen3-30B-A3B-4bit --runs 5 --max-tokens 1024 --patterns moe_mlp"
+  },
+  "qwen_router_argpartition_logits": {
+    "model": "mlx-community/Qwen3-30B-A3B-4bit",
+    "variant": "qwen_router_argpartition_logits",
+    "max_tokens": 1024,
+    "gen_tokens": 1024,
+    "runs": 5,
+    "fidelity": {
+      "matched": 1024,
+      "total": 1024,
+      "verdict": "PASS"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        239.8,
+        335.7,
+        333.1,
+        329.7,
+        334.4
+      ],
+      "decode_tok_s": [
+        110.1,
+        112.4,
+        109.5,
+        112.6,
+        113.3
+      ],
+      "median_prefill": 333.1,
+      "median_decode": 112.4,
+      "peak_mem_gb": 17.33
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp"
+      ],
+      "modules_patched": 48,
+      "prefill_tok_s": [
+        338.1,
+        333.6,
+        334.1,
+        335.3,
+        327.7
+      ],
+      "decode_tok_s": [
+        109.2,
+        109.2,
+        111.2,
+        110.9,
+        106.9
+      ],
+      "median_prefill": 334.1,
+      "median_decode": 109.2,
+      "peak_mem_gb": 17.33
+    },
+    "summary": {
+      "decode_speedup": 0.9715,
+      "prefill_change": 0.003
+    },
+    "notes": "Experimental: Qwen router fast path using argpartition on logits with top-k softmax (ZMLX_QWEN_ROUTER_ARGPARTITION_LOGITS=1)"
+  }
+}

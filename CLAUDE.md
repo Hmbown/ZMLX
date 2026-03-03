@@ -20,10 +20,12 @@ decode speedups on real models shipping today:
 All results were verified token-identical under greedy decoding in their
 recorded run windows. Repro capsules live in `benchmarks/repro_capsules/`.
 
-**Current benchmark truth set (2026-02-24 update):**
+**Current benchmark truth set (2026-03-03 update):**
 - LFM2-24B-A2B-MLX-4bit: D-SIMD gate kernel + native combine, fused SwiGLU
   disabled. **+7.2% decode** on M4 Max, 500/500 fidelity PASS (stock MLX).
   Auto-enabled for K>=3.
+- Qwen3.5-35B-A3B-4bit: moe_mlp + deltanet patterns. **~+2% decode** on
+  M4 Max, token-identical (stock MLX). Auto-enabled.
 - GLM-4.7-Flash: keep `glm_combine_fp32_no_fma` as active default
   (`promote_candidate`; not fully promoted).
 - Qwen3-30B-A3B: keep `control_patterns_moe_mlp` as benchmark anchor; no
@@ -141,6 +143,7 @@ The codebase is organized under `src/zmlx/`:
 Walks a model tree, detects the architecture, replaces matching layers with fused kernel equivalents. Each pattern is a single file in `patch/patterns/`:
 
 - `moe_mlp.py` — fused MoE expert dispatch (the main performance win)
+- `deltanet.py` — Qwen3.5 GatedDeltaNet decode fusion (conv1d+silu, decode-only)
 - `swiglu_mlp.py` — dense SwiGLU layer fusion
 - `geglu_mlp.py` — GeGLU activation fusion
 - `rmsnorm.py`, `layernorm.py` — norm kernel replacements
@@ -177,6 +180,7 @@ LoRA fine-tuning CLI: `zmlx train`. Config, runner, callbacks, export.
 | Family | ZMLX Family Key | Architecture | Stock MLX | + Custom Primitive |
 |:--|:--|:--|:--|:--|
 | LFM2 | `lfm` | MoE | **+6-12% decode** (8B: fused SwiGLU; 24B: D-SIMD gate) | same |
+| Qwen3.5 | `qwen` | Hybrid MoE (DeltaNet+Attn) | **~+2% decode** (moe_mlp + deltanet) | same |
 | GLM-4.7 | `glm` | MoE | 0% (auto-skipped) | custom primitive path; current default `fp32_no_fma` (`promote_candidate`) |
 | Qwen3-MoE | `qwen` | MoE | 0% (auto-skipped) | no promoted custom-kernel variant in current truth set |
 | GPT-OSS | `gpt_oss` | MoE | ~+1% | same |
@@ -235,7 +239,9 @@ export HF_HOME=/path/to/your/hf_cache
 |:--|:--|
 | `src/zmlx/patch/__init__.py` | Main `patch()` function, safety excludes, model family detection |
 | `src/zmlx/patch/patterns/moe_mlp.py` | Fused MoE pattern (the main performance win) |
+| `src/zmlx/patch/patterns/deltanet.py` | Qwen3.5 GatedDeltaNet decode fusion |
 | `src/zmlx/patch/patterns/swiglu_mlp.py` | Dense SwiGLU fusion |
+| `src/zmlx/kernels/deltanet.py` | DeltaNet fused kernels (conv1d+silu, gated_rmsnorm) |
 | `src/zmlx/kernels/fused_moe.py` | `gather_qmm_swiglu` detection and wrapper |
 | `src/zmlx/kernels/moe.py` | MoE combine kernels (`moe_combine_no_fma`, etc.) |
 | `src/zmlx/validate.py` | Fidelity + throughput validation CLI |

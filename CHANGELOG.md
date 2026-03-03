@@ -13,6 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [0.10.0] - 2026-03-03
+
+### Added
+
+- **Qwen3.5-35B-A3B support**: `patch(model)` now auto-detects Qwen3.5's hybrid DeltaNet+Attention MoE architecture (256 experts, K=8, 30 DeltaNet + 10 Attention layers). ~+2% decode on M4 Max 36GB, token-identical fidelity.
+- **DeltaNet pattern** (`src/zmlx/patch/patterns/deltanet.py`): decode-only (S=1) fusion for Qwen3.5 GatedDeltaNet layers. Fuses `conv1d + silu` into a single Metal kernel dispatch. Falls through to the standard code path during prefill.
+- **DeltaNet kernels** (`src/zmlx/kernels/deltanet.py`): `fused_conv1d_silu`, `gated_rmsnorm_silu`, and `fused_input_proj` Metal kernels for DeltaNet decode.
+- **Expert index sorting** (opt-in): `ZMLX_MOE_SORT_EXPERTS=1` sorts expert indices ascending before dispatch for DRAM locality. Benchmarked as neutral-to-negative on Qwen3.5 (dispatch overhead dominates), so default off.
+- New tests: `test_deltanet_kernels.py` (23 tests), `test_patch_deltanet.py` (8 tests), `test_fusion_jit.py`, `test_patch_fusion_integration.py`, `test_inference_smoke.py`.
+- `examples/inference_smoke.py`: end-to-end smoke test for load + patch + generate.
+- Benchmark repro capsules for GLM-4.7 and Qwen3 isolation sweeps, consistency checks, and frontier exploration (2026-02-10 through 2026-03-02).
+
+### Changed
+
+- `FUSED_ACTIVATIONS` preset now includes `deltanet` pattern.
+- `ALL_PATTERNS` preset now includes `deltanet` pattern.
+- README restructured: consolidated benchmark sections, added Qwen3.5 to model support table, removed verbose env-var documentation from front page.
+- CLAUDE.md updated with Qwen3.5 model support, DeltaNet pattern docs, and benchmark truth set.
+
 ## [0.9.2] - 2026-02-25
 
 ### Added
@@ -476,7 +495,10 @@ First public release.
 - **Release workflow** (`.github/workflows/release.yml`) for PyPI trusted publishing.
 - **Benchmarks** (`benchmarks/microbench.py`) with timing comparisons vs MLX reference ops.
 
-[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Hmbown/ZMLX/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Hmbown/ZMLX/compare/v0.9.2...v0.10.0
+[0.9.2]: https://github.com/Hmbown/ZMLX/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/Hmbown/ZMLX/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/Hmbown/ZMLX/compare/v0.8.5...v0.9.0
 [0.8.5]: https://github.com/Hmbown/ZMLX/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/Hmbown/ZMLX/compare/v0.8.3...v0.8.4

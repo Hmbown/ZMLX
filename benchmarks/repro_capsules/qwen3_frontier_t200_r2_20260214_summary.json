@@ -1,0 +1,356 @@
+{
+  "suite": "qwen3",
+  "timestamp_utc": "20260214T020741Z",
+  "script": "bench_qwen3_a3b_experiments.py",
+  "runs": 2,
+  "max_tokens": 200,
+  "variants": [
+    "control_patterns_moe_mlp",
+    "qwen_fused_router_topk",
+    "qwen_fused_downproj_combine",
+    "qwen_fused_downproj_combine_kvec",
+    "qwen_router_argpartition_logits_topk",
+    "qwen_router_argpartition_logits_combine_exact",
+    "qwen_router_argpartition_logits_combine_fp32_no_fma",
+    "qwen_router_argpartition_logits_downproj_kvec"
+  ],
+  "env_overrides": {},
+  "results": [
+    {
+      "variant": "control_patterns_moe_mlp",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_control_patterns_moe_mlp.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_control_patterns_moe_mlp.json",
+        "--variants",
+        "control_patterns_moe_mlp",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "control_patterns_moe_mlp",
+        "fidelity": {
+          "matched": 200,
+          "total": 200,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 118.1,
+          "patched": 117.0,
+          "speedup": 0.9907
+        },
+        "prefill": {
+          "baseline": 334.9,
+          "patched": 338.4,
+          "change": 0.0105
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.24
+        }
+      }
+    },
+    {
+      "variant": "qwen_fused_router_topk",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_fused_router_topk.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_fused_router_topk.json",
+        "--variants",
+        "qwen_fused_router_topk",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_fused_router_topk",
+        "fidelity": {
+          "matched": 163,
+          "total": 200,
+          "verdict": "FAIL"
+        },
+        "decode": {
+          "baseline": 115.8,
+          "patched": 42.8,
+          "speedup": 0.3696
+        },
+        "prefill": {
+          "baseline": 332.6,
+          "patched": 207.4,
+          "change": -0.3764
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.72
+        }
+      }
+    },
+    {
+      "variant": "qwen_fused_downproj_combine",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_fused_downproj_combine.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_fused_downproj_combine.json",
+        "--variants",
+        "qwen_fused_downproj_combine",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_fused_downproj_combine",
+        "fidelity": {
+          "matched": 11,
+          "total": 200,
+          "verdict": "FAIL"
+        },
+        "decode": {
+          "baseline": 112.8,
+          "patched": 65.9,
+          "speedup": 0.5842
+        },
+        "prefill": {
+          "baseline": 329.4,
+          "patched": 293.6,
+          "change": -0.1087
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.24
+        }
+      }
+    },
+    {
+      "variant": "qwen_fused_downproj_combine_kvec",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_fused_downproj_combine_kvec.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_fused_downproj_combine_kvec.json",
+        "--variants",
+        "qwen_fused_downproj_combine_kvec",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_fused_downproj_combine_kvec",
+        "fidelity": {
+          "matched": 9,
+          "total": 200,
+          "verdict": "FAIL"
+        },
+        "decode": {
+          "baseline": 117.3,
+          "patched": 107.0,
+          "speedup": 0.9122
+        },
+        "prefill": {
+          "baseline": 333.2,
+          "patched": 325.3,
+          "change": -0.0237
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.24
+        }
+      }
+    },
+    {
+      "variant": "qwen_router_argpartition_logits_topk",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_router_argpartition_logits_topk.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_router_argpartition_logits_topk.json",
+        "--variants",
+        "qwen_router_argpartition_logits_topk",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_router_argpartition_logits_topk",
+        "fidelity": {
+          "matched": 200,
+          "total": 200,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 116.8,
+          "patched": 56.3,
+          "speedup": 0.482
+        },
+        "prefill": {
+          "baseline": 335.1,
+          "patched": 188.3,
+          "change": -0.4381
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.24
+        }
+      }
+    },
+    {
+      "variant": "qwen_router_argpartition_logits_combine_exact",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_router_argpartition_logits_combine_exact.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_router_argpartition_logits_combine_exact.json",
+        "--variants",
+        "qwen_router_argpartition_logits_combine_exact",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_router_argpartition_logits_combine_exact",
+        "fidelity": {
+          "matched": 200,
+          "total": 200,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 56.5,
+          "patched": 54.8,
+          "speedup": 0.9699
+        },
+        "prefill": {
+          "baseline": 186.7,
+          "patched": 196.4,
+          "change": 0.052
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.24
+        }
+      }
+    },
+    {
+      "variant": "qwen_router_argpartition_logits_combine_fp32_no_fma",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_router_argpartition_logits_combine_fp32_no_fma.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_router_argpartition_logits_combine_fp32_no_fma.json",
+        "--variants",
+        "qwen_router_argpartition_logits_combine_fp32_no_fma",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_router_argpartition_logits_combine_fp32_no_fma",
+        "fidelity": {
+          "matched": 2,
+          "total": 200,
+          "verdict": "FAIL"
+        },
+        "decode": {
+          "baseline": 56.6,
+          "patched": 26.3,
+          "speedup": 0.4647
+        },
+        "prefill": {
+          "baseline": 177.8,
+          "patched": 122.4,
+          "change": -0.3116
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.72
+        }
+      }
+    },
+    {
+      "variant": "qwen_router_argpartition_logits_downproj_kvec",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_router_argpartition_logits_downproj_kvec.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_frontier_t200_r2_20260214_qwen_router_argpartition_logits_downproj_kvec.json",
+        "--variants",
+        "qwen_router_argpartition_logits_downproj_kvec",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_router_argpartition_logits_downproj_kvec",
+        "fidelity": {
+          "matched": 9,
+          "total": 200,
+          "verdict": "FAIL"
+        },
+        "decode": {
+          "baseline": 55.7,
+          "patched": 57.2,
+          "speedup": 1.0269
+        },
+        "prefill": {
+          "baseline": 170.7,
+          "patched": 175.1,
+          "change": 0.0258
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.24
+        }
+      }
+    }
+  ]
+}

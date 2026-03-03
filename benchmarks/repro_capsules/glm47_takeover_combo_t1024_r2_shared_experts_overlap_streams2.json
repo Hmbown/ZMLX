@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "date": "2026-02-10",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.4",
+    "git_commit": "eebfa6e",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_shared_experts_overlap_streams2": "ZMLX_MOE_STREAMS=2 ZMLX_MOE_SHARED_EXPERTS_OVERLAP=1 python -m zmlx.validate mlx-community/GLM-4.7-Flash-4bit --patterns swiglu_mlp moe_mlp --runs 2 --max-tokens 1024"
+  },
+  "shared_experts_overlap_streams2": {
+    "model": "mlx-community/GLM-4.7-Flash-4bit",
+    "variant": "shared_experts_overlap_streams2",
+    "max_tokens": 1024,
+    "gen_tokens": 1024,
+    "runs": 2,
+    "fidelity": {
+      "matched": 1024,
+      "total": 1024,
+      "verdict": "PASS"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        291.1,
+        179.3
+      ],
+      "decode_tok_s": [
+        79.3,
+        78.0
+      ],
+      "median_prefill": 235.2,
+      "median_decode": 78.6,
+      "peak_mem_gb": 16.94
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp",
+        "swiglu_mlp"
+      ],
+      "modules_patched": 93,
+      "prefill_tok_s": [
+        248.5,
+        159.0
+      ],
+      "decode_tok_s": [
+        54.5,
+        54.7
+      ],
+      "median_prefill": 203.7,
+      "median_decode": 54.6,
+      "peak_mem_gb": 16.95
+    },
+    "summary": {
+      "decode_speedup": 0.6947,
+      "prefill_change": -0.1339
+    },
+    "notes": "Experimental: overlap shared_experts(x) on a separate stream."
+  }
+}

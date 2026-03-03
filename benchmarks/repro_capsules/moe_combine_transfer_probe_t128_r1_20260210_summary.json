@@ -1,0 +1,110 @@
+{
+  "timestamp_utc": "20260210T221404Z",
+  "runs": 1,
+  "max_tokens": 128,
+  "output_dir": "benchmarks/repro_capsules",
+  "ledger": "benchmarks/matrix.jsonl",
+  "suites": [
+    {
+      "suite": "qwen3",
+      "return_code": 0,
+      "command": [
+        "python",
+        "benchmarks/run_moe_combine_transfer_probes.py",
+        "--runs",
+        "1",
+        "--max-tokens",
+        "128",
+        "--prefix",
+        "moe_combine_transfer_probe_t128_r1_20260210"
+      ],
+      "summary_path": "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_qwen3_summary.json",
+      "results": [
+        {
+          "variant": "qwen_combine_fp32",
+          "return_code": 0,
+          "capsule": "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_qwen3_qwen_combine_fp32.json",
+          "metrics": {
+            "fidelity_pass": false,
+            "matched_tokens": 93,
+            "total_tokens": 128,
+            "verdict": "FAIL",
+            "decode_speedup": 0.3585,
+            "prefill_change": -0.3681,
+            "baseline_peak_mem_gb": 17.24,
+            "patched_peak_mem_gb": 17.71,
+            "delta_peak_mem_gb": 0.4700000000000024
+          }
+        },
+        {
+          "variant": "qwen_combine_fp32_no_fma",
+          "return_code": 0,
+          "capsule": "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_qwen3_qwen_combine_fp32_no_fma.json",
+          "metrics": {
+            "fidelity_pass": false,
+            "matched_tokens": 9,
+            "total_tokens": 128,
+            "verdict": "FAIL",
+            "decode_speedup": 0.3586,
+            "prefill_change": -0.3684,
+            "baseline_peak_mem_gb": 17.24,
+            "patched_peak_mem_gb": 17.71,
+            "delta_peak_mem_gb": 0.4700000000000024
+          }
+        }
+      ],
+      "dry_run": false
+    },
+    {
+      "suite": "glm47",
+      "return_code": 0,
+      "command": [
+        "python",
+        "benchmarks/run_moe_combine_transfer_probes.py",
+        "--runs",
+        "1",
+        "--max-tokens",
+        "128",
+        "--prefix",
+        "moe_combine_transfer_probe_t128_r1_20260210"
+      ],
+      "summary_path": "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_glm47_summary.json",
+      "results": [
+        {
+          "variant": "glm_combine_fp32",
+          "return_code": 0,
+          "capsule": "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_glm47_glm_combine_fp32.json",
+          "metrics": {
+            "fidelity_pass": false,
+            "matched_tokens": 2,
+            "total_tokens": 128,
+            "verdict": "FAIL",
+            "decode_speedup": 1.0117,
+            "prefill_change": 0.0263,
+            "baseline_peak_mem_gb": 16.91,
+            "patched_peak_mem_gb": 16.91,
+            "delta_peak_mem_gb": 0.0
+          }
+        },
+        {
+          "variant": "glm_combine_fp32_no_fma",
+          "return_code": 0,
+          "capsule": "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_glm47_glm_combine_fp32_no_fma.json",
+          "metrics": {
+            "fidelity_pass": true,
+            "matched_tokens": 128,
+            "total_tokens": 128,
+            "verdict": "PASS",
+            "decode_speedup": 1.0531,
+            "prefill_change": 0.0555,
+            "baseline_peak_mem_gb": 16.91,
+            "patched_peak_mem_gb": 16.91,
+            "delta_peak_mem_gb": 0.0
+          }
+        }
+      ],
+      "dry_run": false
+    }
+  ],
+  "note": "Regenerated after fidelity parser fix (matched/total keys)."
+}

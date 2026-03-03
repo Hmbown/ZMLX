@@ -400,6 +400,7 @@ _QWEN_ROUTER_ARGPARTITION_LOGITS_TOPK_ENV = "ZMLX_QWEN_ROUTER_ARGPARTITION_LOGIT
 _QWEN_COMBINE_MODE_ENV = "ZMLX_QWEN_COMBINE_MODE"
 _LFM2_GATE_MODE_ENV = "ZMLX_LFM2_GATE_MODE"
 _LFM2_COMBINE_MODE_ENV = "ZMLX_LFM2_COMBINE_MODE"
+_MOE_SORT_EXPERTS_ENV = "ZMLX_MOE_SORT_EXPERTS"
 
 
 def _glm_combine_mode() -> str:
@@ -433,6 +434,21 @@ def _glm_combine_mode() -> str:
     }:
         return raw
     return "fp32_no_fma"
+
+
+def _moe_sort_experts(*, default_on: bool = False) -> bool:
+    """Return True if expert indices should be sorted before dispatch.
+
+    Sorting expert indices in ascending order improves DRAM access locality
+    when gather_qmm reads expert weight blocks sequentially.  The cost is
+    3 extra ops (argsort + 2x take_along_axis on the K dimension, K~8).
+    """
+    raw = os.environ.get(_MOE_SORT_EXPERTS_ENV, "").strip().lower()
+    if raw in {"1", "true", "yes"}:
+        return True
+    if raw in {"0", "false", "no"}:
+        return False
+    return default_on
 
 
 def _get_moe_stream_pool() -> list[mx.Stream] | None:
@@ -995,6 +1011,13 @@ class _MoEMLPPattern:
                 f"  [moe_mlp] LFM2 mode: gate={lfm2_gate}, combine={lfm2_combine}"
             )
 
+        # Sort expert indices ascending before dispatch for better DRAM locality.
+        # Benchmarked on Qwen3.5: 120 extra dispatches (3 ops × 40 layers) offset
+        # the DRAM locality benefit, yielding ~0.978x. Default off; opt-in only.
+        sort_experts = _moe_sort_experts(default_on=False)
+        if sort_experts and config.verbose:
+            print("  [moe_mlp] Expert index sorting enabled for DRAM locality")
+
         # Optional: overlap GLM/DeepSeek-style `shared_experts(x)` with routed
         # expert execution. This is experimental and may regress on some MLX
         # builds/hardware. Enable explicitly via:
@@ -1047,6 +1070,12 @@ class _MoEMLPPattern:
                     is_gpt_oss=is_gpt_oss,
                     qwen_next_defaults=is_qwen3_next,
                 )
+
+            # 1b. Sort expert indices ascending for sequential DRAM access.
+            if sort_experts:
+                sort_order = mx.argsort(indices, axis=-1)
+                indices = mx.take_along_axis(indices, sort_order, axis=-1)
+                gate_weights = mx.take_along_axis(gate_weights, sort_order, axis=-1)
 
             # 2. Expert Execution
             expert_outputs = None

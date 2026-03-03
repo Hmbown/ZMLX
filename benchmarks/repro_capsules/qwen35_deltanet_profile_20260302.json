@@ -1,0 +1,4619 @@
+{
+  "model": "/Volumes/VIXinSSD/models/Qwen3.5-35B-A3B-MLX-4bit",
+  "decode_tokens": 50,
+  "warmup_iters": 3,
+  "layer_counts": {
+    "deltanet": 30,
+    "attention": 10,
+    "moe": 40
+  },
+  "dims": {
+    "conv_dim": 8192,
+    "key_dim": 2048,
+    "value_dim": 4096,
+    "num_k_heads": 16,
+    "num_v_heads": 32,
+    "head_k_dim": 128,
+    "head_v_dim": 128,
+    "conv_kernel_size": 4
+  },
+  "layer_timings": {
+    "deltanet": {
+      "total_ms": 3197.227,
+      "calls": 1500,
+      "mean_ms": 2.1315,
+      "median_ms": 2.1082
+    },
+    "moe": {
+      "total_ms": 1478.265,
+      "calls": 2000,
+      "mean_ms": 0.7391,
+      "median_ms": 0.7336
+    },
+    "attention": {
+      "total_ms": 180.891,
+      "calls": 500,
+      "mean_ms": 0.3618,
+      "median_ms": 0.3534
+    }
+  },
+  "deltanet_breakdown": {
+    "deltanet_op_breakdown": [
+      {
+        "op": "in_proj_qkv",
+        "total_ms": 299.768,
+        "calls": 1500,
+        "mean_ms": 0.1998,
+        "pct_of_deltanet": 10.7
+      },
+      {
+        "op": "gated_delta_update",
+        "total_ms": 287.116,
+        "calls": 1500,
+        "mean_ms": 0.1914,
+        "pct_of_deltanet": 10.3
+      },
+      {
+        "op": "in_proj_z",
+        "total_ms": 262.342,
+        "calls": 1500,
+        "mean_ms": 0.1749,
+        "pct_of_deltanet": 9.4
+      },
+      {
+        "op": "out_proj",
+        "total_ms": 255.325,
+        "calls": 1500,
+        "mean_ms": 0.1702,
+        "pct_of_deltanet": 9.2
+      },
+      {
+        "op": "rms_norm_qk",
+        "total_ms": 230.99,
+        "calls": 1500,
+        "mean_ms": 0.154,
+        "pct_of_deltanet": 8.3
+      },
+      {
+        "op": "in_proj_a",
+        "total_ms": 223.583,
+        "calls": 1500,
+        "mean_ms": 0.1491,
+        "pct_of_deltanet": 8.0
+      },
+      {
+        "op": "in_proj_b",
+        "total_ms": 222.578,
+        "calls": 1500,
+        "mean_ms": 0.1484,
+        "pct_of_deltanet": 8.0
+      },
+      {
+        "op": "conv1d",
+        "total_ms": 220.0,
+        "calls": 1500,
+        "mean_ms": 0.1467,
+        "pct_of_deltanet": 7.9
+      },
+      {
+        "op": "gated_rmsnorm",
+        "total_ms": 216.723,
+        "calls": 1500,
+        "mean_ms": 0.1445,
+        "pct_of_deltanet": 7.8
+      },
+      {
+        "op": "conv_state_setup",
+        "total_ms": 213.453,
+        "calls": 1500,
+        "mean_ms": 0.1423,
+        "pct_of_deltanet": 7.7
+      },
+      {
+        "op": "silu",
+        "total_ms": 212.405,
+        "calls": 1500,
+        "mean_ms": 0.1416,
+        "pct_of_deltanet": 7.6
+      },
+      {
+        "op": "split_reshape",
+        "total_ms": 75.221,
+        "calls": 1500,
+        "mean_ms": 0.0501,
+        "pct_of_deltanet": 2.7
+      },
+      {
+        "op": "conv_cache_update",
+        "total_ms": 70.413,
+        "calls": 1500,
+        "mean_ms": 0.0469,
+        "pct_of_deltanet": 2.5
+      }
+    ],
+    "total_deltanet_ms": 2789.917
+  },
+  "all_ops": [
+    {
+      "name": "moe_L15/total",
+      "total_ms": 37.756,
+      "calls": 50,
+      "mean_ms": 0.7551,
+      "median_ms": 0.7471,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L35/total",
+      "total_ms": 37.586,
+      "calls": 50,
+      "mean_ms": 0.7517,
+      "median_ms": 0.7428,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L14/total",
+      "total_ms": 37.437,
+      "calls": 50,
+      "mean_ms": 0.7487,
+      "median_ms": 0.7341,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L18/total",
+      "total_ms": 37.399,
+      "calls": 50,
+      "mean_ms": 0.748,
+      "median_ms": 0.7406,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L7/total",
+      "total_ms": 37.358,
+      "calls": 50,
+      "mean_ms": 0.7472,
+      "median_ms": 0.7362,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L31/total",
+      "total_ms": 37.317,
+      "calls": 50,
+      "mean_ms": 0.7463,
+      "median_ms": 0.7386,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L27/total",
+      "total_ms": 37.253,
+      "calls": 50,
+      "mean_ms": 0.7451,
+      "median_ms": 0.7308,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L19/total",
+      "total_ms": 37.227,
+      "calls": 50,
+      "mean_ms": 0.7445,
+      "median_ms": 0.7448,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L39/total",
+      "total_ms": 37.177,
+      "calls": 50,
+      "mean_ms": 0.7435,
+      "median_ms": 0.738,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L13/total",
+      "total_ms": 37.156,
+      "calls": 50,
+      "mean_ms": 0.7431,
+      "median_ms": 0.7229,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L26/total",
+      "total_ms": 37.131,
+      "calls": 50,
+      "mean_ms": 0.7426,
+      "median_ms": 0.7414,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L24/total",
+      "total_ms": 37.116,
+      "calls": 50,
+      "mean_ms": 0.7423,
+      "median_ms": 0.7383,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L5/total",
+      "total_ms": 37.107,
+      "calls": 50,
+      "mean_ms": 0.7421,
+      "median_ms": 0.7358,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L6/total",
+      "total_ms": 37.072,
+      "calls": 50,
+      "mean_ms": 0.7414,
+      "median_ms": 0.736,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L11/total",
+      "total_ms": 37.049,
+      "calls": 50,
+      "mean_ms": 0.741,
+      "median_ms": 0.7393,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L10/total",
+      "total_ms": 36.993,
+      "calls": 50,
+      "mean_ms": 0.7399,
+      "median_ms": 0.7303,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L38/total",
+      "total_ms": 36.993,
+      "calls": 50,
+      "mean_ms": 0.7399,
+      "median_ms": 0.738,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L22/total",
+      "total_ms": 36.981,
+      "calls": 50,
+      "mean_ms": 0.7396,
+      "median_ms": 0.7335,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L3/total",
+      "total_ms": 36.974,
+      "calls": 50,
+      "mean_ms": 0.7395,
+      "median_ms": 0.7318,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L23/total",
+      "total_ms": 36.971,
+      "calls": 50,
+      "mean_ms": 0.7394,
+      "median_ms": 0.7327,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L1/total",
+      "total_ms": 36.945,
+      "calls": 50,
+      "mean_ms": 0.7389,
+      "median_ms": 0.7342,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L32/total",
+      "total_ms": 36.864,
+      "calls": 50,
+      "mean_ms": 0.7373,
+      "median_ms": 0.7324,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L8/total",
+      "total_ms": 36.839,
+      "calls": 50,
+      "mean_ms": 0.7368,
+      "median_ms": 0.7334,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L17/total",
+      "total_ms": 36.803,
+      "calls": 50,
+      "mean_ms": 0.7361,
+      "median_ms": 0.7349,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L0/total",
+      "total_ms": 36.8,
+      "calls": 50,
+      "mean_ms": 0.736,
+      "median_ms": 0.7309,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L4/total",
+      "total_ms": 36.799,
+      "calls": 50,
+      "mean_ms": 0.736,
+      "median_ms": 0.7284,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L33/total",
+      "total_ms": 36.796,
+      "calls": 50,
+      "mean_ms": 0.7359,
+      "median_ms": 0.7249,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L16/total",
+      "total_ms": 36.791,
+      "calls": 50,
+      "mean_ms": 0.7358,
+      "median_ms": 0.735,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L12/total",
+      "total_ms": 36.791,
+      "calls": 50,
+      "mean_ms": 0.7358,
+      "median_ms": 0.7399,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L25/total",
+      "total_ms": 36.783,
+      "calls": 50,
+      "mean_ms": 0.7357,
+      "median_ms": 0.7278,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L30/total",
+      "total_ms": 36.739,
+      "calls": 50,
+      "mean_ms": 0.7348,
+      "median_ms": 0.728,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L21/total",
+      "total_ms": 36.732,
+      "calls": 50,
+      "mean_ms": 0.7346,
+      "median_ms": 0.7303,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L36/total",
+      "total_ms": 36.691,
+      "calls": 50,
+      "mean_ms": 0.7338,
+      "median_ms": 0.7244,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L9/total",
+      "total_ms": 36.681,
+      "calls": 50,
+      "mean_ms": 0.7336,
+      "median_ms": 0.7298,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L37/total",
+      "total_ms": 36.664,
+      "calls": 50,
+      "mean_ms": 0.7333,
+      "median_ms": 0.7274,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L29/total",
+      "total_ms": 36.642,
+      "calls": 50,
+      "mean_ms": 0.7328,
+      "median_ms": 0.7374,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L20/total",
+      "total_ms": 36.596,
+      "calls": 50,
+      "mean_ms": 0.7319,
+      "median_ms": 0.7248,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L2/total",
+      "total_ms": 36.532,
+      "calls": 50,
+      "mean_ms": 0.7306,
+      "median_ms": 0.7291,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L34/total",
+      "total_ms": 36.413,
+      "calls": 50,
+      "mean_ms": 0.7283,
+      "median_ms": 0.7173,
+      "pct": 0.7
+    },
+    {
+      "name": "moe_L28/total",
+      "total_ms": 36.312,
+      "calls": 50,
+      "mean_ms": 0.7262,
+      "median_ms": 0.7259,
+      "pct": 0.7
+    },
+    {
+      "name": "attention_L15/total",
+      "total_ms": 18.626,
+      "calls": 50,
+      "mean_ms": 0.3725,
+      "median_ms": 0.354,
+      "pct": 0.4
+    },
+    {
+      "name": "attention_L39/total",
+      "total_ms": 18.358,
+      "calls": 50,
+      "mean_ms": 0.3672,
+      "median_ms": 0.3576,
+      "pct": 0.3
+    },
+    {
+      "name": "attention_L7/total",
+      "total_ms": 18.18,
+      "calls": 50,
+      "mean_ms": 0.3636,
+      "median_ms": 0.3503,
+      "pct": 0.3
+    },
+    {
+      "name": "attention_L35/total",
+      "total_ms": 18.176,
+      "calls": 50,
+      "mean_ms": 0.3635,
+      "median_ms": 0.3563,
+      "pct": 0.3
+    },
+    {
+      "name": "attention_L19/total",
+      "total_ms": 18.11,
+      "calls": 50,
+      "mean_ms": 0.3622,
+      "median_ms": 0.3542,
+      "pct": 0.3
+    },
+    {
+      "name": "attention_L11/total",
+      "total_ms": 18.027,
+      "calls": 50,
+      "mean_ms": 0.3605,
+      "median_ms": 0.3594,
+      "pct": 0.3
+    },
+    {
+      "name": "attention_L31/total",
+      "total_ms": 17.95,
+      "calls": 50,
+      "mean_ms": 0.359,
+      "median_ms": 0.3536,
+      "pct": 0.3
+    },
+    {
+      "name": "attention_L27/total",
+      "total_ms": 17.931,
+      "calls": 50,
+      "mean_ms": 0.3586,
+      "median_ms": 0.3503,
+      "pct": 0.3
+    },
+    {
+      "name": "attention_L23/total",
+      "total_ms": 17.789,
+      "calls": 50,
+      "mean_ms": 0.3558,
+      "median_ms": 0.3509,
+      "pct": 0.3
+    },
+    {
+      "name": "attention_L3/total",
+      "total_ms": 17.743,
+      "calls": 50,
+      "mean_ms": 0.3549,
+      "median_ms": 0.3495,
+      "pct": 0.3
+    },
+    {
+      "name": "deltanet_L13/gated_delta_update",
+      "total_ms": 10.749,
+      "calls": 50,
+      "mean_ms": 0.215,
+      "median_ms": 0.1884,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L8/in_proj_qkv",
+      "total_ms": 10.358,
+      "calls": 50,
+      "mean_ms": 0.2072,
+      "median_ms": 0.1998,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L16/in_proj_qkv",
+      "total_ms": 10.313,
+      "calls": 50,
+      "mean_ms": 0.2063,
+      "median_ms": 0.1979,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L32/in_proj_qkv",
+      "total_ms": 10.179,
+      "calls": 50,
+      "mean_ms": 0.2036,
+      "median_ms": 0.1987,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L18/in_proj_qkv",
+      "total_ms": 10.148,
+      "calls": 50,
+      "mean_ms": 0.203,
+      "median_ms": 0.1968,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L24/in_proj_qkv",
+      "total_ms": 10.135,
+      "calls": 50,
+      "mean_ms": 0.2027,
+      "median_ms": 0.1964,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L28/in_proj_qkv",
+      "total_ms": 10.133,
+      "calls": 50,
+      "mean_ms": 0.2027,
+      "median_ms": 0.198,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L1/in_proj_qkv",
+      "total_ms": 10.108,
+      "calls": 50,
+      "mean_ms": 0.2022,
+      "median_ms": 0.1954,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L12/in_proj_qkv",
+      "total_ms": 10.108,
+      "calls": 50,
+      "mean_ms": 0.2022,
+      "median_ms": 0.1975,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L33/in_proj_qkv",
+      "total_ms": 10.092,
+      "calls": 50,
+      "mean_ms": 0.2018,
+      "median_ms": 0.1991,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L38/in_proj_qkv",
+      "total_ms": 10.089,
+      "calls": 50,
+      "mean_ms": 0.2018,
+      "median_ms": 0.1946,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L6/in_proj_qkv",
+      "total_ms": 10.062,
+      "calls": 50,
+      "mean_ms": 0.2012,
+      "median_ms": 0.1983,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L20/in_proj_qkv",
+      "total_ms": 10.032,
+      "calls": 50,
+      "mean_ms": 0.2006,
+      "median_ms": 0.1973,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L5/in_proj_qkv",
+      "total_ms": 10.028,
+      "calls": 50,
+      "mean_ms": 0.2006,
+      "median_ms": 0.1939,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L30/in_proj_qkv",
+      "total_ms": 10.028,
+      "calls": 50,
+      "mean_ms": 0.2006,
+      "median_ms": 0.1996,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L26/in_proj_qkv",
+      "total_ms": 10.021,
+      "calls": 50,
+      "mean_ms": 0.2004,
+      "median_ms": 0.1984,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L14/in_proj_qkv",
+      "total_ms": 10.001,
+      "calls": 50,
+      "mean_ms": 0.2,
+      "median_ms": 0.1999,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L17/in_proj_qkv",
+      "total_ms": 9.973,
+      "calls": 50,
+      "mean_ms": 0.1995,
+      "median_ms": 0.1954,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L36/in_proj_qkv",
+      "total_ms": 9.966,
+      "calls": 50,
+      "mean_ms": 0.1993,
+      "median_ms": 0.1962,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L29/in_proj_qkv",
+      "total_ms": 9.962,
+      "calls": 50,
+      "mean_ms": 0.1992,
+      "median_ms": 0.1965,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L14/gated_delta_update",
+      "total_ms": 9.938,
+      "calls": 50,
+      "mean_ms": 0.1988,
+      "median_ms": 0.1838,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L9/in_proj_qkv",
+      "total_ms": 9.932,
+      "calls": 50,
+      "mean_ms": 0.1986,
+      "median_ms": 0.1952,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L22/in_proj_qkv",
+      "total_ms": 9.928,
+      "calls": 50,
+      "mean_ms": 0.1986,
+      "median_ms": 0.1943,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L21/in_proj_qkv",
+      "total_ms": 9.923,
+      "calls": 50,
+      "mean_ms": 0.1985,
+      "median_ms": 0.1955,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L25/in_proj_qkv",
+      "total_ms": 9.922,
+      "calls": 50,
+      "mean_ms": 0.1984,
+      "median_ms": 0.1962,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L2/in_proj_qkv",
+      "total_ms": 9.916,
+      "calls": 50,
+      "mean_ms": 0.1983,
+      "median_ms": 0.1956,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L34/in_proj_qkv",
+      "total_ms": 9.908,
+      "calls": 50,
+      "mean_ms": 0.1982,
+      "median_ms": 0.1948,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L30/gated_delta_update",
+      "total_ms": 9.901,
+      "calls": 50,
+      "mean_ms": 0.198,
+      "median_ms": 0.1909,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L37/in_proj_qkv",
+      "total_ms": 9.865,
+      "calls": 50,
+      "mean_ms": 0.1973,
+      "median_ms": 0.1957,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L4/in_proj_qkv",
+      "total_ms": 9.848,
+      "calls": 50,
+      "mean_ms": 0.197,
+      "median_ms": 0.193,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L13/in_proj_qkv",
+      "total_ms": 9.813,
+      "calls": 50,
+      "mean_ms": 0.1963,
+      "median_ms": 0.1965,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L10/in_proj_qkv",
+      "total_ms": 9.774,
+      "calls": 50,
+      "mean_ms": 0.1955,
+      "median_ms": 0.1937,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L16/gated_delta_update",
+      "total_ms": 9.75,
+      "calls": 50,
+      "mean_ms": 0.195,
+      "median_ms": 0.1837,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L37/gated_delta_update",
+      "total_ms": 9.737,
+      "calls": 50,
+      "mean_ms": 0.1947,
+      "median_ms": 0.1897,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L38/gated_delta_update",
+      "total_ms": 9.689,
+      "calls": 50,
+      "mean_ms": 0.1938,
+      "median_ms": 0.1834,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L12/gated_delta_update",
+      "total_ms": 9.644,
+      "calls": 50,
+      "mean_ms": 0.1929,
+      "median_ms": 0.1895,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L20/gated_delta_update",
+      "total_ms": 9.624,
+      "calls": 50,
+      "mean_ms": 0.1925,
+      "median_ms": 0.1859,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L4/gated_delta_update",
+      "total_ms": 9.581,
+      "calls": 50,
+      "mean_ms": 0.1916,
+      "median_ms": 0.1844,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L29/gated_delta_update",
+      "total_ms": 9.567,
+      "calls": 50,
+      "mean_ms": 0.1913,
+      "median_ms": 0.1885,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L25/gated_delta_update",
+      "total_ms": 9.558,
+      "calls": 50,
+      "mean_ms": 0.1912,
+      "median_ms": 0.1878,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L1/gated_delta_update",
+      "total_ms": 9.544,
+      "calls": 50,
+      "mean_ms": 0.1909,
+      "median_ms": 0.1905,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L6/gated_delta_update",
+      "total_ms": 9.507,
+      "calls": 50,
+      "mean_ms": 0.1901,
+      "median_ms": 0.1855,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L5/gated_delta_update",
+      "total_ms": 9.504,
+      "calls": 50,
+      "mean_ms": 0.1901,
+      "median_ms": 0.1834,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L26/gated_delta_update",
+      "total_ms": 9.496,
+      "calls": 50,
+      "mean_ms": 0.1899,
+      "median_ms": 0.185,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L34/gated_delta_update",
+      "total_ms": 9.49,
+      "calls": 50,
+      "mean_ms": 0.1898,
+      "median_ms": 0.1873,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L0/gated_delta_update",
+      "total_ms": 9.482,
+      "calls": 50,
+      "mean_ms": 0.1896,
+      "median_ms": 0.1874,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L21/gated_delta_update",
+      "total_ms": 9.475,
+      "calls": 50,
+      "mean_ms": 0.1895,
+      "median_ms": 0.1858,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L36/gated_delta_update",
+      "total_ms": 9.473,
+      "calls": 50,
+      "mean_ms": 0.1895,
+      "median_ms": 0.1865,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L28/gated_delta_update",
+      "total_ms": 9.462,
+      "calls": 50,
+      "mean_ms": 0.1892,
+      "median_ms": 0.1875,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L2/gated_delta_update",
+      "total_ms": 9.462,
+      "calls": 50,
+      "mean_ms": 0.1892,
+      "median_ms": 0.1853,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L32/gated_delta_update",
+      "total_ms": 9.461,
+      "calls": 50,
+      "mean_ms": 0.1892,
+      "median_ms": 0.1881,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L18/gated_delta_update",
+      "total_ms": 9.449,
+      "calls": 50,
+      "mean_ms": 0.189,
+      "median_ms": 0.1847,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L24/gated_delta_update",
+      "total_ms": 9.427,
+      "calls": 50,
+      "mean_ms": 0.1885,
+      "median_ms": 0.1873,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L10/gated_delta_update",
+      "total_ms": 9.406,
+      "calls": 50,
+      "mean_ms": 0.1881,
+      "median_ms": 0.184,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L8/gated_delta_update",
+      "total_ms": 9.404,
+      "calls": 50,
+      "mean_ms": 0.1881,
+      "median_ms": 0.1847,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L17/gated_delta_update",
+      "total_ms": 9.365,
+      "calls": 50,
+      "mean_ms": 0.1873,
+      "median_ms": 0.1865,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L9/gated_delta_update",
+      "total_ms": 9.339,
+      "calls": 50,
+      "mean_ms": 0.1868,
+      "median_ms": 0.1815,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L22/gated_delta_update",
+      "total_ms": 9.321,
+      "calls": 50,
+      "mean_ms": 0.1864,
+      "median_ms": 0.1845,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L33/gated_delta_update",
+      "total_ms": 9.311,
+      "calls": 50,
+      "mean_ms": 0.1862,
+      "median_ms": 0.1853,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L0/in_proj_qkv",
+      "total_ms": 9.203,
+      "calls": 50,
+      "mean_ms": 0.1841,
+      "median_ms": 0.1736,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L36/in_proj_z",
+      "total_ms": 9.079,
+      "calls": 50,
+      "mean_ms": 0.1816,
+      "median_ms": 0.174,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L4/out_proj",
+      "total_ms": 9.071,
+      "calls": 50,
+      "mean_ms": 0.1814,
+      "median_ms": 0.1666,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L6/in_proj_z",
+      "total_ms": 9.016,
+      "calls": 50,
+      "mean_ms": 0.1803,
+      "median_ms": 0.1737,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L14/out_proj",
+      "total_ms": 8.951,
+      "calls": 50,
+      "mean_ms": 0.179,
+      "median_ms": 0.1681,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L20/in_proj_z",
+      "total_ms": 8.916,
+      "calls": 50,
+      "mean_ms": 0.1783,
+      "median_ms": 0.1745,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L2/in_proj_z",
+      "total_ms": 8.907,
+      "calls": 50,
+      "mean_ms": 0.1781,
+      "median_ms": 0.1715,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L1/in_proj_z",
+      "total_ms": 8.892,
+      "calls": 50,
+      "mean_ms": 0.1778,
+      "median_ms": 0.1767,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L34/in_proj_z",
+      "total_ms": 8.878,
+      "calls": 50,
+      "mean_ms": 0.1776,
+      "median_ms": 0.1721,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L33/in_proj_z",
+      "total_ms": 8.845,
+      "calls": 50,
+      "mean_ms": 0.1769,
+      "median_ms": 0.1754,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L1/out_proj",
+      "total_ms": 8.843,
+      "calls": 50,
+      "mean_ms": 0.1769,
+      "median_ms": 0.1691,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L28/in_proj_z",
+      "total_ms": 8.833,
+      "calls": 50,
+      "mean_ms": 0.1767,
+      "median_ms": 0.1733,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L10/in_proj_z",
+      "total_ms": 8.825,
+      "calls": 50,
+      "mean_ms": 0.1765,
+      "median_ms": 0.17,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L32/in_proj_z",
+      "total_ms": 8.782,
+      "calls": 50,
+      "mean_ms": 0.1756,
+      "median_ms": 0.173,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L13/in_proj_z",
+      "total_ms": 8.781,
+      "calls": 50,
+      "mean_ms": 0.1756,
+      "median_ms": 0.1715,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L37/in_proj_z",
+      "total_ms": 8.766,
+      "calls": 50,
+      "mean_ms": 0.1753,
+      "median_ms": 0.1709,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L8/in_proj_z",
+      "total_ms": 8.761,
+      "calls": 50,
+      "mean_ms": 0.1752,
+      "median_ms": 0.1713,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L4/in_proj_z",
+      "total_ms": 8.746,
+      "calls": 50,
+      "mean_ms": 0.1749,
+      "median_ms": 0.1712,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L38/in_proj_z",
+      "total_ms": 8.745,
+      "calls": 50,
+      "mean_ms": 0.1749,
+      "median_ms": 0.1703,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L12/in_proj_z",
+      "total_ms": 8.742,
+      "calls": 50,
+      "mean_ms": 0.1748,
+      "median_ms": 0.1712,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L24/in_proj_z",
+      "total_ms": 8.738,
+      "calls": 50,
+      "mean_ms": 0.1748,
+      "median_ms": 0.1722,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L30/in_proj_z",
+      "total_ms": 8.738,
+      "calls": 50,
+      "mean_ms": 0.1748,
+      "median_ms": 0.1707,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L14/in_proj_z",
+      "total_ms": 8.733,
+      "calls": 50,
+      "mean_ms": 0.1747,
+      "median_ms": 0.1713,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L16/in_proj_z",
+      "total_ms": 8.733,
+      "calls": 50,
+      "mean_ms": 0.1747,
+      "median_ms": 0.1731,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L26/in_proj_z",
+      "total_ms": 8.725,
+      "calls": 50,
+      "mean_ms": 0.1745,
+      "median_ms": 0.1736,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L30/out_proj",
+      "total_ms": 8.702,
+      "calls": 50,
+      "mean_ms": 0.174,
+      "median_ms": 0.1661,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L9/in_proj_z",
+      "total_ms": 8.701,
+      "calls": 50,
+      "mean_ms": 0.174,
+      "median_ms": 0.1726,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L13/out_proj",
+      "total_ms": 8.699,
+      "calls": 50,
+      "mean_ms": 0.174,
+      "median_ms": 0.167,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L18/in_proj_z",
+      "total_ms": 8.671,
+      "calls": 50,
+      "mean_ms": 0.1734,
+      "median_ms": 0.1694,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L5/in_proj_z",
+      "total_ms": 8.667,
+      "calls": 50,
+      "mean_ms": 0.1733,
+      "median_ms": 0.17,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L29/in_proj_z",
+      "total_ms": 8.647,
+      "calls": 50,
+      "mean_ms": 0.1729,
+      "median_ms": 0.1732,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L25/in_proj_z",
+      "total_ms": 8.638,
+      "calls": 50,
+      "mean_ms": 0.1728,
+      "median_ms": 0.1724,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L22/in_proj_z",
+      "total_ms": 8.598,
+      "calls": 50,
+      "mean_ms": 0.172,
+      "median_ms": 0.1693,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L21/in_proj_z",
+      "total_ms": 8.589,
+      "calls": 50,
+      "mean_ms": 0.1718,
+      "median_ms": 0.1692,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L17/out_proj",
+      "total_ms": 8.572,
+      "calls": 50,
+      "mean_ms": 0.1714,
+      "median_ms": 0.1656,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L17/in_proj_z",
+      "total_ms": 8.57,
+      "calls": 50,
+      "mean_ms": 0.1714,
+      "median_ms": 0.1703,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L24/out_proj",
+      "total_ms": 8.559,
+      "calls": 50,
+      "mean_ms": 0.1712,
+      "median_ms": 0.1654,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L32/out_proj",
+      "total_ms": 8.553,
+      "calls": 50,
+      "mean_ms": 0.1711,
+      "median_ms": 0.1653,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L8/out_proj",
+      "total_ms": 8.548,
+      "calls": 50,
+      "mean_ms": 0.171,
+      "median_ms": 0.1676,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L37/out_proj",
+      "total_ms": 8.52,
+      "calls": 50,
+      "mean_ms": 0.1704,
+      "median_ms": 0.1682,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L20/out_proj",
+      "total_ms": 8.52,
+      "calls": 50,
+      "mean_ms": 0.1704,
+      "median_ms": 0.1649,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L33/out_proj",
+      "total_ms": 8.498,
+      "calls": 50,
+      "mean_ms": 0.17,
+      "median_ms": 0.1705,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L10/out_proj",
+      "total_ms": 8.489,
+      "calls": 50,
+      "mean_ms": 0.1698,
+      "median_ms": 0.1688,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L26/out_proj",
+      "total_ms": 8.48,
+      "calls": 50,
+      "mean_ms": 0.1696,
+      "median_ms": 0.167,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L5/out_proj",
+      "total_ms": 8.479,
+      "calls": 50,
+      "mean_ms": 0.1696,
+      "median_ms": 0.1674,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L21/out_proj",
+      "total_ms": 8.474,
+      "calls": 50,
+      "mean_ms": 0.1695,
+      "median_ms": 0.1644,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L16/out_proj",
+      "total_ms": 8.47,
+      "calls": 50,
+      "mean_ms": 0.1694,
+      "median_ms": 0.1668,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L29/out_proj",
+      "total_ms": 8.446,
+      "calls": 50,
+      "mean_ms": 0.1689,
+      "median_ms": 0.1698,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L2/out_proj",
+      "total_ms": 8.439,
+      "calls": 50,
+      "mean_ms": 0.1688,
+      "median_ms": 0.1691,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L0/out_proj",
+      "total_ms": 8.429,
+      "calls": 50,
+      "mean_ms": 0.1686,
+      "median_ms": 0.1671,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L12/out_proj",
+      "total_ms": 8.428,
+      "calls": 50,
+      "mean_ms": 0.1686,
+      "median_ms": 0.1696,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L6/out_proj",
+      "total_ms": 8.421,
+      "calls": 50,
+      "mean_ms": 0.1684,
+      "median_ms": 0.1669,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L25/out_proj",
+      "total_ms": 8.418,
+      "calls": 50,
+      "mean_ms": 0.1684,
+      "median_ms": 0.1672,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L18/out_proj",
+      "total_ms": 8.388,
+      "calls": 50,
+      "mean_ms": 0.1678,
+      "median_ms": 0.1683,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L34/out_proj",
+      "total_ms": 8.373,
+      "calls": 50,
+      "mean_ms": 0.1675,
+      "median_ms": 0.1678,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L38/out_proj",
+      "total_ms": 8.361,
+      "calls": 50,
+      "mean_ms": 0.1672,
+      "median_ms": 0.1658,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L9/out_proj",
+      "total_ms": 8.352,
+      "calls": 50,
+      "mean_ms": 0.167,
+      "median_ms": 0.1625,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L22/out_proj",
+      "total_ms": 8.301,
+      "calls": 50,
+      "mean_ms": 0.166,
+      "median_ms": 0.1667,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L28/out_proj",
+      "total_ms": 8.288,
+      "calls": 50,
+      "mean_ms": 0.1658,
+      "median_ms": 0.1643,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L36/out_proj",
+      "total_ms": 8.253,
+      "calls": 50,
+      "mean_ms": 0.1651,
+      "median_ms": 0.1662,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L0/in_proj_z",
+      "total_ms": 8.08,
+      "calls": 50,
+      "mean_ms": 0.1616,
+      "median_ms": 0.1565,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L29/rms_norm_qk",
+      "total_ms": 7.966,
+      "calls": 50,
+      "mean_ms": 0.1593,
+      "median_ms": 0.1541,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L38/rms_norm_qk",
+      "total_ms": 7.963,
+      "calls": 50,
+      "mean_ms": 0.1593,
+      "median_ms": 0.153,
+      "pct": 0.2
+    },
+    {
+      "name": "layer_L0/input_layernorm",
+      "total_ms": 7.954,
+      "calls": 50,
+      "mean_ms": 0.1591,
+      "median_ms": 0.1555,
+      "pct": 0.2
+    },
+    {
+      "name": "deltanet_L13/rms_norm_qk",
+      "total_ms": 7.937,
+      "calls": 50,
+      "mean_ms": 0.1587,
+      "median_ms": 0.1515,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L2/rms_norm_qk",
+      "total_ms": 7.909,
+      "calls": 50,
+      "mean_ms": 0.1582,
+      "median_ms": 0.1492,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L1/rms_norm_qk",
+      "total_ms": 7.883,
+      "calls": 50,
+      "mean_ms": 0.1577,
+      "median_ms": 0.1519,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L30/rms_norm_qk",
+      "total_ms": 7.85,
+      "calls": 50,
+      "mean_ms": 0.157,
+      "median_ms": 0.1545,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L13/conv1d",
+      "total_ms": 7.84,
+      "calls": 50,
+      "mean_ms": 0.1568,
+      "median_ms": 0.1413,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L20/rms_norm_qk",
+      "total_ms": 7.807,
+      "calls": 50,
+      "mean_ms": 0.1561,
+      "median_ms": 0.1503,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L0/rms_norm_qk",
+      "total_ms": 7.806,
+      "calls": 50,
+      "mean_ms": 0.1561,
+      "median_ms": 0.1525,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L17/rms_norm_qk",
+      "total_ms": 7.792,
+      "calls": 50,
+      "mean_ms": 0.1558,
+      "median_ms": 0.1492,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L16/rms_norm_qk",
+      "total_ms": 7.79,
+      "calls": 50,
+      "mean_ms": 0.1558,
+      "median_ms": 0.1497,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L18/in_proj_b",
+      "total_ms": 7.764,
+      "calls": 50,
+      "mean_ms": 0.1553,
+      "median_ms": 0.1483,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L36/rms_norm_qk",
+      "total_ms": 7.75,
+      "calls": 50,
+      "mean_ms": 0.155,
+      "median_ms": 0.1534,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L13/gated_rmsnorm",
+      "total_ms": 7.744,
+      "calls": 50,
+      "mean_ms": 0.1549,
+      "median_ms": 0.1452,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L33/rms_norm_qk",
+      "total_ms": 7.731,
+      "calls": 50,
+      "mean_ms": 0.1546,
+      "median_ms": 0.1547,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L38/in_proj_a",
+      "total_ms": 7.727,
+      "calls": 50,
+      "mean_ms": 0.1545,
+      "median_ms": 0.1478,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L9/rms_norm_qk",
+      "total_ms": 7.722,
+      "calls": 50,
+      "mean_ms": 0.1544,
+      "median_ms": 0.1481,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L28/rms_norm_qk",
+      "total_ms": 7.712,
+      "calls": 50,
+      "mean_ms": 0.1542,
+      "median_ms": 0.1501,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L38/conv1d",
+      "total_ms": 7.701,
+      "calls": 50,
+      "mean_ms": 0.154,
+      "median_ms": 0.1411,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L18/rms_norm_qk",
+      "total_ms": 7.698,
+      "calls": 50,
+      "mean_ms": 0.154,
+      "median_ms": 0.15,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L12/rms_norm_qk",
+      "total_ms": 7.696,
+      "calls": 50,
+      "mean_ms": 0.1539,
+      "median_ms": 0.1508,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L1/in_proj_b",
+      "total_ms": 7.67,
+      "calls": 50,
+      "mean_ms": 0.1534,
+      "median_ms": 0.15,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L10/rms_norm_qk",
+      "total_ms": 7.67,
+      "calls": 50,
+      "mean_ms": 0.1534,
+      "median_ms": 0.1497,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L24/in_proj_a",
+      "total_ms": 7.664,
+      "calls": 50,
+      "mean_ms": 0.1533,
+      "median_ms": 0.1464,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L34/rms_norm_qk",
+      "total_ms": 7.664,
+      "calls": 50,
+      "mean_ms": 0.1533,
+      "median_ms": 0.1479,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L13/in_proj_b",
+      "total_ms": 7.661,
+      "calls": 50,
+      "mean_ms": 0.1532,
+      "median_ms": 0.1497,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L37/rms_norm_qk",
+      "total_ms": 7.66,
+      "calls": 50,
+      "mean_ms": 0.1532,
+      "median_ms": 0.1515,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L34/in_proj_a",
+      "total_ms": 7.653,
+      "calls": 50,
+      "mean_ms": 0.1531,
+      "median_ms": 0.1449,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L8/input_layernorm",
+      "total_ms": 7.648,
+      "calls": 50,
+      "mean_ms": 0.153,
+      "median_ms": 0.1421,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L36/in_proj_a",
+      "total_ms": 7.648,
+      "calls": 50,
+      "mean_ms": 0.153,
+      "median_ms": 0.1469,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L2/in_proj_a",
+      "total_ms": 7.645,
+      "calls": 50,
+      "mean_ms": 0.1529,
+      "median_ms": 0.1483,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L36/input_layernorm",
+      "total_ms": 7.631,
+      "calls": 50,
+      "mean_ms": 0.1526,
+      "median_ms": 0.1438,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L24/rms_norm_qk",
+      "total_ms": 7.625,
+      "calls": 50,
+      "mean_ms": 0.1525,
+      "median_ms": 0.1463,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L21/in_proj_a",
+      "total_ms": 7.624,
+      "calls": 50,
+      "mean_ms": 0.1525,
+      "median_ms": 0.1445,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L1/in_proj_a",
+      "total_ms": 7.615,
+      "calls": 50,
+      "mean_ms": 0.1523,
+      "median_ms": 0.1481,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L4/gated_rmsnorm",
+      "total_ms": 7.613,
+      "calls": 50,
+      "mean_ms": 0.1523,
+      "median_ms": 0.1419,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L33/in_proj_a",
+      "total_ms": 7.61,
+      "calls": 50,
+      "mean_ms": 0.1522,
+      "median_ms": 0.1481,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L30/in_proj_a",
+      "total_ms": 7.608,
+      "calls": 50,
+      "mean_ms": 0.1522,
+      "median_ms": 0.1484,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L16/in_proj_b",
+      "total_ms": 7.591,
+      "calls": 50,
+      "mean_ms": 0.1518,
+      "median_ms": 0.146,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L32/rms_norm_qk",
+      "total_ms": 7.589,
+      "calls": 50,
+      "mean_ms": 0.1518,
+      "median_ms": 0.1504,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L20/in_proj_b",
+      "total_ms": 7.581,
+      "calls": 50,
+      "mean_ms": 0.1516,
+      "median_ms": 0.1457,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L16/in_proj_a",
+      "total_ms": 7.581,
+      "calls": 50,
+      "mean_ms": 0.1516,
+      "median_ms": 0.1459,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L5/rms_norm_qk",
+      "total_ms": 7.58,
+      "calls": 50,
+      "mean_ms": 0.1516,
+      "median_ms": 0.1452,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L25/rms_norm_qk",
+      "total_ms": 7.578,
+      "calls": 50,
+      "mean_ms": 0.1516,
+      "median_ms": 0.1527,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L22/rms_norm_qk",
+      "total_ms": 7.574,
+      "calls": 50,
+      "mean_ms": 0.1515,
+      "median_ms": 0.1516,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L8/conv1d",
+      "total_ms": 7.568,
+      "calls": 50,
+      "mean_ms": 0.1514,
+      "median_ms": 0.1397,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L36/in_proj_b",
+      "total_ms": 7.563,
+      "calls": 50,
+      "mean_ms": 0.1513,
+      "median_ms": 0.1452,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L21/rms_norm_qk",
+      "total_ms": 7.555,
+      "calls": 50,
+      "mean_ms": 0.1511,
+      "median_ms": 0.1481,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L9/conv1d",
+      "total_ms": 7.552,
+      "calls": 50,
+      "mean_ms": 0.151,
+      "median_ms": 0.1441,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L18/in_proj_a",
+      "total_ms": 7.542,
+      "calls": 50,
+      "mean_ms": 0.1508,
+      "median_ms": 0.1434,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L4/rms_norm_qk",
+      "total_ms": 7.542,
+      "calls": 50,
+      "mean_ms": 0.1508,
+      "median_ms": 0.146,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L13/in_proj_a",
+      "total_ms": 7.541,
+      "calls": 50,
+      "mean_ms": 0.1508,
+      "median_ms": 0.1461,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L12/input_layernorm",
+      "total_ms": 7.533,
+      "calls": 50,
+      "mean_ms": 0.1507,
+      "median_ms": 0.1429,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L6/rms_norm_qk",
+      "total_ms": 7.516,
+      "calls": 50,
+      "mean_ms": 0.1503,
+      "median_ms": 0.1483,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L33/in_proj_b",
+      "total_ms": 7.511,
+      "calls": 50,
+      "mean_ms": 0.1502,
+      "median_ms": 0.1463,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L14/input_layernorm",
+      "total_ms": 7.507,
+      "calls": 50,
+      "mean_ms": 0.1501,
+      "median_ms": 0.1433,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L14/rms_norm_qk",
+      "total_ms": 7.497,
+      "calls": 50,
+      "mean_ms": 0.1499,
+      "median_ms": 0.1491,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L28/in_proj_a",
+      "total_ms": 7.496,
+      "calls": 50,
+      "mean_ms": 0.1499,
+      "median_ms": 0.1469,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L8/rms_norm_qk",
+      "total_ms": 7.492,
+      "calls": 50,
+      "mean_ms": 0.1498,
+      "median_ms": 0.1434,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L25/gated_rmsnorm",
+      "total_ms": 7.487,
+      "calls": 50,
+      "mean_ms": 0.1497,
+      "median_ms": 0.1453,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L14/in_proj_a",
+      "total_ms": 7.485,
+      "calls": 50,
+      "mean_ms": 0.1497,
+      "median_ms": 0.1459,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L30/in_proj_b",
+      "total_ms": 7.485,
+      "calls": 50,
+      "mean_ms": 0.1497,
+      "median_ms": 0.1445,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L34/conv1d",
+      "total_ms": 7.484,
+      "calls": 50,
+      "mean_ms": 0.1497,
+      "median_ms": 0.1455,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L13/silu",
+      "total_ms": 7.478,
+      "calls": 50,
+      "mean_ms": 0.1496,
+      "median_ms": 0.1411,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L2/in_proj_b",
+      "total_ms": 7.474,
+      "calls": 50,
+      "mean_ms": 0.1495,
+      "median_ms": 0.1474,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L0/gated_rmsnorm",
+      "total_ms": 7.472,
+      "calls": 50,
+      "mean_ms": 0.1494,
+      "median_ms": 0.1468,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L14/residual_add_1",
+      "total_ms": 7.467,
+      "calls": 50,
+      "mean_ms": 0.1493,
+      "median_ms": 0.1392,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L8/conv_state_setup",
+      "total_ms": 7.463,
+      "calls": 50,
+      "mean_ms": 0.1493,
+      "median_ms": 0.1414,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L12/conv1d",
+      "total_ms": 7.454,
+      "calls": 50,
+      "mean_ms": 0.1491,
+      "median_ms": 0.146,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L8/in_proj_a",
+      "total_ms": 7.452,
+      "calls": 50,
+      "mean_ms": 0.149,
+      "median_ms": 0.1442,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L37/in_proj_b",
+      "total_ms": 7.447,
+      "calls": 50,
+      "mean_ms": 0.1489,
+      "median_ms": 0.1459,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L17/input_layernorm",
+      "total_ms": 7.442,
+      "calls": 50,
+      "mean_ms": 0.1488,
+      "median_ms": 0.143,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L29/in_proj_a",
+      "total_ms": 7.437,
+      "calls": 50,
+      "mean_ms": 0.1487,
+      "median_ms": 0.1471,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L26/rms_norm_qk",
+      "total_ms": 7.436,
+      "calls": 50,
+      "mean_ms": 0.1487,
+      "median_ms": 0.1469,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L32/in_proj_b",
+      "total_ms": 7.434,
+      "calls": 50,
+      "mean_ms": 0.1487,
+      "median_ms": 0.147,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L14/in_proj_b",
+      "total_ms": 7.432,
+      "calls": 50,
+      "mean_ms": 0.1486,
+      "median_ms": 0.1478,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L17/gated_rmsnorm",
+      "total_ms": 7.43,
+      "calls": 50,
+      "mean_ms": 0.1486,
+      "median_ms": 0.1409,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L5/conv1d",
+      "total_ms": 7.43,
+      "calls": 50,
+      "mean_ms": 0.1486,
+      "median_ms": 0.1434,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L4/conv1d",
+      "total_ms": 7.417,
+      "calls": 50,
+      "mean_ms": 0.1483,
+      "median_ms": 0.1387,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L37/input_layernorm",
+      "total_ms": 7.415,
+      "calls": 50,
+      "mean_ms": 0.1483,
+      "median_ms": 0.1469,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L12/in_proj_b",
+      "total_ms": 7.413,
+      "calls": 50,
+      "mean_ms": 0.1483,
+      "median_ms": 0.1475,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L28/conv1d",
+      "total_ms": 7.409,
+      "calls": 50,
+      "mean_ms": 0.1482,
+      "median_ms": 0.1438,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L29/in_proj_b",
+      "total_ms": 7.407,
+      "calls": 50,
+      "mean_ms": 0.1481,
+      "median_ms": 0.1475,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L25/residual_add_2",
+      "total_ms": 7.402,
+      "calls": 50,
+      "mean_ms": 0.148,
+      "median_ms": 0.1393,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L10/in_proj_b",
+      "total_ms": 7.402,
+      "calls": 50,
+      "mean_ms": 0.148,
+      "median_ms": 0.1431,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L14/post_attn_layernorm",
+      "total_ms": 7.402,
+      "calls": 50,
+      "mean_ms": 0.148,
+      "median_ms": 0.1417,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L26/in_proj_b",
+      "total_ms": 7.401,
+      "calls": 50,
+      "mean_ms": 0.148,
+      "median_ms": 0.1471,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L18/conv1d",
+      "total_ms": 7.399,
+      "calls": 50,
+      "mean_ms": 0.148,
+      "median_ms": 0.1455,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L34/in_proj_b",
+      "total_ms": 7.396,
+      "calls": 50,
+      "mean_ms": 0.1479,
+      "median_ms": 0.144,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L24/in_proj_b",
+      "total_ms": 7.396,
+      "calls": 50,
+      "mean_ms": 0.1479,
+      "median_ms": 0.1452,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L26/in_proj_a",
+      "total_ms": 7.393,
+      "calls": 50,
+      "mean_ms": 0.1479,
+      "median_ms": 0.1456,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L33/residual_add_2",
+      "total_ms": 7.392,
+      "calls": 50,
+      "mean_ms": 0.1478,
+      "median_ms": 0.1399,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L37/gated_rmsnorm",
+      "total_ms": 7.389,
+      "calls": 50,
+      "mean_ms": 0.1478,
+      "median_ms": 0.1447,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L28/in_proj_b",
+      "total_ms": 7.388,
+      "calls": 50,
+      "mean_ms": 0.1478,
+      "median_ms": 0.146,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L17/in_proj_b",
+      "total_ms": 7.387,
+      "calls": 50,
+      "mean_ms": 0.1477,
+      "median_ms": 0.1439,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L14/residual_add_2",
+      "total_ms": 7.385,
+      "calls": 50,
+      "mean_ms": 0.1477,
+      "median_ms": 0.1375,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L12/in_proj_a",
+      "total_ms": 7.381,
+      "calls": 50,
+      "mean_ms": 0.1476,
+      "median_ms": 0.1456,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L0/conv1d",
+      "total_ms": 7.381,
+      "calls": 50,
+      "mean_ms": 0.1476,
+      "median_ms": 0.1417,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L33/post_attn_layernorm",
+      "total_ms": 7.379,
+      "calls": 50,
+      "mean_ms": 0.1476,
+      "median_ms": 0.1385,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L8/in_proj_b",
+      "total_ms": 7.378,
+      "calls": 50,
+      "mean_ms": 0.1476,
+      "median_ms": 0.1457,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L20/silu",
+      "total_ms": 7.371,
+      "calls": 50,
+      "mean_ms": 0.1474,
+      "median_ms": 0.139,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L32/in_proj_a",
+      "total_ms": 7.371,
+      "calls": 50,
+      "mean_ms": 0.1474,
+      "median_ms": 0.1444,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L2/conv1d",
+      "total_ms": 7.368,
+      "calls": 50,
+      "mean_ms": 0.1474,
+      "median_ms": 0.1433,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L5/in_proj_a",
+      "total_ms": 7.367,
+      "calls": 50,
+      "mean_ms": 0.1473,
+      "median_ms": 0.1453,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L1/post_attn_layernorm",
+      "total_ms": 7.361,
+      "calls": 50,
+      "mean_ms": 0.1472,
+      "median_ms": 0.1423,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L5/in_proj_b",
+      "total_ms": 7.355,
+      "calls": 50,
+      "mean_ms": 0.1471,
+      "median_ms": 0.1464,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L1/gated_rmsnorm",
+      "total_ms": 7.351,
+      "calls": 50,
+      "mean_ms": 0.147,
+      "median_ms": 0.1453,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L12/gated_rmsnorm",
+      "total_ms": 7.347,
+      "calls": 50,
+      "mean_ms": 0.1469,
+      "median_ms": 0.1433,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L30/conv1d",
+      "total_ms": 7.346,
+      "calls": 50,
+      "mean_ms": 0.1469,
+      "median_ms": 0.1464,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L14/conv1d",
+      "total_ms": 7.345,
+      "calls": 50,
+      "mean_ms": 0.1469,
+      "median_ms": 0.1461,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L22/in_proj_a",
+      "total_ms": 7.345,
+      "calls": 50,
+      "mean_ms": 0.1469,
+      "median_ms": 0.1448,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L0/in_proj_b",
+      "total_ms": 7.342,
+      "calls": 50,
+      "mean_ms": 0.1468,
+      "median_ms": 0.1437,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L17/in_proj_a",
+      "total_ms": 7.339,
+      "calls": 50,
+      "mean_ms": 0.1468,
+      "median_ms": 0.1454,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L34/conv_state_setup",
+      "total_ms": 7.339,
+      "calls": 50,
+      "mean_ms": 0.1468,
+      "median_ms": 0.1407,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L6/conv1d",
+      "total_ms": 7.338,
+      "calls": 50,
+      "mean_ms": 0.1468,
+      "median_ms": 0.1437,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L2/conv_state_setup",
+      "total_ms": 7.331,
+      "calls": 50,
+      "mean_ms": 0.1466,
+      "median_ms": 0.1407,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L25/in_proj_a",
+      "total_ms": 7.326,
+      "calls": 50,
+      "mean_ms": 0.1465,
+      "median_ms": 0.1429,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L20/conv1d",
+      "total_ms": 7.326,
+      "calls": 50,
+      "mean_ms": 0.1465,
+      "median_ms": 0.1427,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L6/post_attn_layernorm",
+      "total_ms": 7.321,
+      "calls": 50,
+      "mean_ms": 0.1464,
+      "median_ms": 0.1412,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L37/conv1d",
+      "total_ms": 7.321,
+      "calls": 50,
+      "mean_ms": 0.1464,
+      "median_ms": 0.1452,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L33/conv_state_setup",
+      "total_ms": 7.319,
+      "calls": 50,
+      "mean_ms": 0.1464,
+      "median_ms": 0.1415,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L1/residual_add_1",
+      "total_ms": 7.316,
+      "calls": 50,
+      "mean_ms": 0.1463,
+      "median_ms": 0.1423,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L20/in_proj_a",
+      "total_ms": 7.313,
+      "calls": 50,
+      "mean_ms": 0.1463,
+      "median_ms": 0.1455,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L22/in_proj_b",
+      "total_ms": 7.311,
+      "calls": 50,
+      "mean_ms": 0.1462,
+      "median_ms": 0.1467,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L1/input_layernorm",
+      "total_ms": 7.308,
+      "calls": 50,
+      "mean_ms": 0.1462,
+      "median_ms": 0.1416,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L6/in_proj_b",
+      "total_ms": 7.304,
+      "calls": 50,
+      "mean_ms": 0.1461,
+      "median_ms": 0.1455,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L9/in_proj_b",
+      "total_ms": 7.3,
+      "calls": 50,
+      "mean_ms": 0.146,
+      "median_ms": 0.1418,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L22/conv1d",
+      "total_ms": 7.297,
+      "calls": 50,
+      "mean_ms": 0.1459,
+      "median_ms": 0.144,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L20/input_layernorm",
+      "total_ms": 7.289,
+      "calls": 50,
+      "mean_ms": 0.1458,
+      "median_ms": 0.142,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L37/in_proj_a",
+      "total_ms": 7.286,
+      "calls": 50,
+      "mean_ms": 0.1457,
+      "median_ms": 0.1478,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L25/in_proj_b",
+      "total_ms": 7.282,
+      "calls": 50,
+      "mean_ms": 0.1456,
+      "median_ms": 0.1469,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L33/conv1d",
+      "total_ms": 7.282,
+      "calls": 50,
+      "mean_ms": 0.1456,
+      "median_ms": 0.1415,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L14/silu",
+      "total_ms": 7.278,
+      "calls": 50,
+      "mean_ms": 0.1456,
+      "median_ms": 0.1414,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L9/in_proj_a",
+      "total_ms": 7.277,
+      "calls": 50,
+      "mean_ms": 0.1455,
+      "median_ms": 0.1411,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L4/in_proj_a",
+      "total_ms": 7.276,
+      "calls": 50,
+      "mean_ms": 0.1455,
+      "median_ms": 0.1437,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L1/conv1d",
+      "total_ms": 7.273,
+      "calls": 50,
+      "mean_ms": 0.1455,
+      "median_ms": 0.1445,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L6/in_proj_a",
+      "total_ms": 7.27,
+      "calls": 50,
+      "mean_ms": 0.1454,
+      "median_ms": 0.144,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L13/conv_state_setup",
+      "total_ms": 7.27,
+      "calls": 50,
+      "mean_ms": 0.1454,
+      "median_ms": 0.14,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L21/silu",
+      "total_ms": 7.268,
+      "calls": 50,
+      "mean_ms": 0.1454,
+      "median_ms": 0.1384,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L13/residual_add_2",
+      "total_ms": 7.261,
+      "calls": 50,
+      "mean_ms": 0.1452,
+      "median_ms": 0.1376,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L25/conv1d",
+      "total_ms": 7.26,
+      "calls": 50,
+      "mean_ms": 0.1452,
+      "median_ms": 0.1396,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L36/gated_rmsnorm",
+      "total_ms": 7.26,
+      "calls": 50,
+      "mean_ms": 0.1452,
+      "median_ms": 0.1405,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L25/input_layernorm",
+      "total_ms": 7.258,
+      "calls": 50,
+      "mean_ms": 0.1452,
+      "median_ms": 0.138,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L26/conv1d",
+      "total_ms": 7.258,
+      "calls": 50,
+      "mean_ms": 0.1452,
+      "median_ms": 0.143,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L36/conv1d",
+      "total_ms": 7.258,
+      "calls": 50,
+      "mean_ms": 0.1452,
+      "median_ms": 0.1436,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L32/conv_state_setup",
+      "total_ms": 7.258,
+      "calls": 50,
+      "mean_ms": 0.1452,
+      "median_ms": 0.1409,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L16/silu",
+      "total_ms": 7.257,
+      "calls": 50,
+      "mean_ms": 0.1451,
+      "median_ms": 0.1411,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L6/silu",
+      "total_ms": 7.255,
+      "calls": 50,
+      "mean_ms": 0.1451,
+      "median_ms": 0.1384,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L18/conv_state_setup",
+      "total_ms": 7.254,
+      "calls": 50,
+      "mean_ms": 0.1451,
+      "median_ms": 0.1411,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L4/residual_add_1",
+      "total_ms": 7.254,
+      "calls": 50,
+      "mean_ms": 0.1451,
+      "median_ms": 0.1378,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L33/input_layernorm",
+      "total_ms": 7.253,
+      "calls": 50,
+      "mean_ms": 0.1451,
+      "median_ms": 0.1393,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L33/gated_rmsnorm",
+      "total_ms": 7.251,
+      "calls": 50,
+      "mean_ms": 0.145,
+      "median_ms": 0.1395,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L0/silu",
+      "total_ms": 7.245,
+      "calls": 50,
+      "mean_ms": 0.1449,
+      "median_ms": 0.1418,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L1/silu",
+      "total_ms": 7.243,
+      "calls": 50,
+      "mean_ms": 0.1449,
+      "median_ms": 0.1405,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L12/silu",
+      "total_ms": 7.243,
+      "calls": 50,
+      "mean_ms": 0.1449,
+      "median_ms": 0.1425,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L30/conv_state_setup",
+      "total_ms": 7.237,
+      "calls": 50,
+      "mean_ms": 0.1447,
+      "median_ms": 0.1426,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L28/input_layernorm",
+      "total_ms": 7.235,
+      "calls": 50,
+      "mean_ms": 0.1447,
+      "median_ms": 0.1397,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L12/residual_add_2",
+      "total_ms": 7.234,
+      "calls": 50,
+      "mean_ms": 0.1447,
+      "median_ms": 0.1422,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L37/conv_state_setup",
+      "total_ms": 7.233,
+      "calls": 50,
+      "mean_ms": 0.1447,
+      "median_ms": 0.1422,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L38/gated_rmsnorm",
+      "total_ms": 7.232,
+      "calls": 50,
+      "mean_ms": 0.1446,
+      "median_ms": 0.1433,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L37/residual_add_2",
+      "total_ms": 7.232,
+      "calls": 50,
+      "mean_ms": 0.1446,
+      "median_ms": 0.1378,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L0/residual_add_2",
+      "total_ms": 7.228,
+      "calls": 50,
+      "mean_ms": 0.1446,
+      "median_ms": 0.141,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L22/gated_rmsnorm",
+      "total_ms": 7.224,
+      "calls": 50,
+      "mean_ms": 0.1445,
+      "median_ms": 0.1426,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L38/in_proj_b",
+      "total_ms": 7.223,
+      "calls": 50,
+      "mean_ms": 0.1445,
+      "median_ms": 0.1445,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L18/post_attn_layernorm",
+      "total_ms": 7.221,
+      "calls": 50,
+      "mean_ms": 0.1444,
+      "median_ms": 0.1381,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L26/post_attn_layernorm",
+      "total_ms": 7.22,
+      "calls": 50,
+      "mean_ms": 0.1444,
+      "median_ms": 0.1384,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L16/input_layernorm",
+      "total_ms": 7.22,
+      "calls": 50,
+      "mean_ms": 0.1444,
+      "median_ms": 0.1411,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L13/input_layernorm",
+      "total_ms": 7.216,
+      "calls": 50,
+      "mean_ms": 0.1443,
+      "median_ms": 0.1423,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L18/gated_rmsnorm",
+      "total_ms": 7.213,
+      "calls": 50,
+      "mean_ms": 0.1443,
+      "median_ms": 0.1417,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L8/gated_rmsnorm",
+      "total_ms": 7.212,
+      "calls": 50,
+      "mean_ms": 0.1442,
+      "median_ms": 0.1413,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L5/residual_add_2",
+      "total_ms": 7.211,
+      "calls": 50,
+      "mean_ms": 0.1442,
+      "median_ms": 0.1424,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L26/gated_rmsnorm",
+      "total_ms": 7.209,
+      "calls": 50,
+      "mean_ms": 0.1442,
+      "median_ms": 0.1412,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L10/in_proj_a",
+      "total_ms": 7.208,
+      "calls": 50,
+      "mean_ms": 0.1442,
+      "median_ms": 0.1427,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L26/input_layernorm",
+      "total_ms": 7.205,
+      "calls": 50,
+      "mean_ms": 0.1441,
+      "median_ms": 0.1451,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L16/conv1d",
+      "total_ms": 7.205,
+      "calls": 50,
+      "mean_ms": 0.1441,
+      "median_ms": 0.1427,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L16/gated_rmsnorm",
+      "total_ms": 7.203,
+      "calls": 50,
+      "mean_ms": 0.1441,
+      "median_ms": 0.1396,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L17/residual_add_1",
+      "total_ms": 7.202,
+      "calls": 50,
+      "mean_ms": 0.144,
+      "median_ms": 0.1361,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L9/post_attn_layernorm",
+      "total_ms": 7.197,
+      "calls": 50,
+      "mean_ms": 0.1439,
+      "median_ms": 0.1392,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L30/residual_add_1",
+      "total_ms": 7.195,
+      "calls": 50,
+      "mean_ms": 0.1439,
+      "median_ms": 0.1369,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L10/gated_rmsnorm",
+      "total_ms": 7.194,
+      "calls": 50,
+      "mean_ms": 0.1439,
+      "median_ms": 0.1404,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L38/post_attn_layernorm",
+      "total_ms": 7.189,
+      "calls": 50,
+      "mean_ms": 0.1438,
+      "median_ms": 0.1415,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L36/conv_state_setup",
+      "total_ms": 7.186,
+      "calls": 50,
+      "mean_ms": 0.1437,
+      "median_ms": 0.1404,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L38/silu",
+      "total_ms": 7.182,
+      "calls": 50,
+      "mean_ms": 0.1436,
+      "median_ms": 0.1393,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L21/in_proj_b",
+      "total_ms": 7.175,
+      "calls": 50,
+      "mean_ms": 0.1435,
+      "median_ms": 0.1432,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L32/residual_add_2",
+      "total_ms": 7.173,
+      "calls": 50,
+      "mean_ms": 0.1435,
+      "median_ms": 0.1377,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L17/post_attn_layernorm",
+      "total_ms": 7.171,
+      "calls": 50,
+      "mean_ms": 0.1434,
+      "median_ms": 0.1388,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L5/silu",
+      "total_ms": 7.17,
+      "calls": 50,
+      "mean_ms": 0.1434,
+      "median_ms": 0.135,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L32/gated_rmsnorm",
+      "total_ms": 7.169,
+      "calls": 50,
+      "mean_ms": 0.1434,
+      "median_ms": 0.1408,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L0/residual_add_1",
+      "total_ms": 7.168,
+      "calls": 50,
+      "mean_ms": 0.1434,
+      "median_ms": 0.1436,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L2/input_layernorm",
+      "total_ms": 7.167,
+      "calls": 50,
+      "mean_ms": 0.1433,
+      "median_ms": 0.1405,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L29/conv1d",
+      "total_ms": 7.163,
+      "calls": 50,
+      "mean_ms": 0.1433,
+      "median_ms": 0.1403,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L33/silu",
+      "total_ms": 7.16,
+      "calls": 50,
+      "mean_ms": 0.1432,
+      "median_ms": 0.1363,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L24/conv_state_setup",
+      "total_ms": 7.151,
+      "calls": 50,
+      "mean_ms": 0.143,
+      "median_ms": 0.1377,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L12/conv_state_setup",
+      "total_ms": 7.147,
+      "calls": 50,
+      "mean_ms": 0.1429,
+      "median_ms": 0.1436,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L30/silu",
+      "total_ms": 7.146,
+      "calls": 50,
+      "mean_ms": 0.1429,
+      "median_ms": 0.1419,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L5/gated_rmsnorm",
+      "total_ms": 7.145,
+      "calls": 50,
+      "mean_ms": 0.1429,
+      "median_ms": 0.1439,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L36/residual_add_2",
+      "total_ms": 7.142,
+      "calls": 50,
+      "mean_ms": 0.1428,
+      "median_ms": 0.1398,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L10/silu",
+      "total_ms": 7.141,
+      "calls": 50,
+      "mean_ms": 0.1428,
+      "median_ms": 0.1401,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L10/conv1d",
+      "total_ms": 7.139,
+      "calls": 50,
+      "mean_ms": 0.1428,
+      "median_ms": 0.1421,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L17/conv1d",
+      "total_ms": 7.138,
+      "calls": 50,
+      "mean_ms": 0.1428,
+      "median_ms": 0.1409,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L4/residual_add_2",
+      "total_ms": 7.137,
+      "calls": 50,
+      "mean_ms": 0.1427,
+      "median_ms": 0.1383,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L34/residual_add_2",
+      "total_ms": 7.134,
+      "calls": 50,
+      "mean_ms": 0.1427,
+      "median_ms": 0.1372,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L4/post_attn_layernorm",
+      "total_ms": 7.133,
+      "calls": 50,
+      "mean_ms": 0.1427,
+      "median_ms": 0.1389,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L12/post_attn_layernorm",
+      "total_ms": 7.126,
+      "calls": 50,
+      "mean_ms": 0.1425,
+      "median_ms": 0.141,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L10/post_attn_layernorm",
+      "total_ms": 7.126,
+      "calls": 50,
+      "mean_ms": 0.1425,
+      "median_ms": 0.1385,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L32/conv1d",
+      "total_ms": 7.123,
+      "calls": 50,
+      "mean_ms": 0.1425,
+      "median_ms": 0.1412,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L30/gated_rmsnorm",
+      "total_ms": 7.121,
+      "calls": 50,
+      "mean_ms": 0.1424,
+      "median_ms": 0.1429,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L16/post_attn_layernorm",
+      "total_ms": 7.12,
+      "calls": 50,
+      "mean_ms": 0.1424,
+      "median_ms": 0.1394,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L38/residual_add_1",
+      "total_ms": 7.119,
+      "calls": 50,
+      "mean_ms": 0.1424,
+      "median_ms": 0.1377,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L13/post_attn_layernorm",
+      "total_ms": 7.115,
+      "calls": 50,
+      "mean_ms": 0.1423,
+      "median_ms": 0.1392,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L24/input_layernorm",
+      "total_ms": 7.115,
+      "calls": 50,
+      "mean_ms": 0.1423,
+      "median_ms": 0.1404,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L2/silu",
+      "total_ms": 7.114,
+      "calls": 50,
+      "mean_ms": 0.1423,
+      "median_ms": 0.1374,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L5/conv_state_setup",
+      "total_ms": 7.113,
+      "calls": 50,
+      "mean_ms": 0.1423,
+      "median_ms": 0.1386,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L29/gated_rmsnorm",
+      "total_ms": 7.111,
+      "calls": 50,
+      "mean_ms": 0.1422,
+      "median_ms": 0.1439,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L28/gated_rmsnorm",
+      "total_ms": 7.111,
+      "calls": 50,
+      "mean_ms": 0.1422,
+      "median_ms": 0.1404,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L24/residual_add_2",
+      "total_ms": 7.109,
+      "calls": 50,
+      "mean_ms": 0.1422,
+      "median_ms": 0.1383,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L4/in_proj_b",
+      "total_ms": 7.105,
+      "calls": 50,
+      "mean_ms": 0.1421,
+      "median_ms": 0.1466,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L0/in_proj_a",
+      "total_ms": 7.103,
+      "calls": 50,
+      "mean_ms": 0.1421,
+      "median_ms": 0.1428,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L6/input_layernorm",
+      "total_ms": 7.102,
+      "calls": 50,
+      "mean_ms": 0.142,
+      "median_ms": 0.1394,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L1/conv_state_setup",
+      "total_ms": 7.101,
+      "calls": 50,
+      "mean_ms": 0.142,
+      "median_ms": 0.1425,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L30/input_layernorm",
+      "total_ms": 7.098,
+      "calls": 50,
+      "mean_ms": 0.142,
+      "median_ms": 0.1416,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L2/gated_rmsnorm",
+      "total_ms": 7.095,
+      "calls": 50,
+      "mean_ms": 0.1419,
+      "median_ms": 0.1439,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L25/post_attn_layernorm",
+      "total_ms": 7.094,
+      "calls": 50,
+      "mean_ms": 0.1419,
+      "median_ms": 0.1411,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L20/residual_add_2",
+      "total_ms": 7.094,
+      "calls": 50,
+      "mean_ms": 0.1419,
+      "median_ms": 0.1373,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L37/post_attn_layernorm",
+      "total_ms": 7.092,
+      "calls": 50,
+      "mean_ms": 0.1418,
+      "median_ms": 0.1414,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L1/residual_add_2",
+      "total_ms": 7.092,
+      "calls": 50,
+      "mean_ms": 0.1418,
+      "median_ms": 0.1417,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L9/residual_add_2",
+      "total_ms": 7.086,
+      "calls": 50,
+      "mean_ms": 0.1417,
+      "median_ms": 0.1365,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L34/input_layernorm",
+      "total_ms": 7.085,
+      "calls": 50,
+      "mean_ms": 0.1417,
+      "median_ms": 0.1404,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L9/conv_state_setup",
+      "total_ms": 7.084,
+      "calls": 50,
+      "mean_ms": 0.1417,
+      "median_ms": 0.1417,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L17/conv_state_setup",
+      "total_ms": 7.077,
+      "calls": 50,
+      "mean_ms": 0.1415,
+      "median_ms": 0.137,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L14/gated_rmsnorm",
+      "total_ms": 7.071,
+      "calls": 50,
+      "mean_ms": 0.1414,
+      "median_ms": 0.1392,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L38/input_layernorm",
+      "total_ms": 7.071,
+      "calls": 50,
+      "mean_ms": 0.1414,
+      "median_ms": 0.1403,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L22/conv_state_setup",
+      "total_ms": 7.071,
+      "calls": 50,
+      "mean_ms": 0.1414,
+      "median_ms": 0.1392,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L13/residual_add_1",
+      "total_ms": 7.067,
+      "calls": 50,
+      "mean_ms": 0.1413,
+      "median_ms": 0.1417,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L16/conv_state_setup",
+      "total_ms": 7.065,
+      "calls": 50,
+      "mean_ms": 0.1413,
+      "median_ms": 0.1401,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L20/gated_rmsnorm",
+      "total_ms": 7.063,
+      "calls": 50,
+      "mean_ms": 0.1413,
+      "median_ms": 0.1386,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L17/residual_add_2",
+      "total_ms": 7.063,
+      "calls": 50,
+      "mean_ms": 0.1413,
+      "median_ms": 0.1374,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L5/post_attn_layernorm",
+      "total_ms": 7.061,
+      "calls": 50,
+      "mean_ms": 0.1412,
+      "median_ms": 0.1376,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L32/input_layernorm",
+      "total_ms": 7.06,
+      "calls": 50,
+      "mean_ms": 0.1412,
+      "median_ms": 0.1401,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L36/residual_add_1",
+      "total_ms": 7.06,
+      "calls": 50,
+      "mean_ms": 0.1412,
+      "median_ms": 0.138,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L6/residual_add_1",
+      "total_ms": 7.055,
+      "calls": 50,
+      "mean_ms": 0.1411,
+      "median_ms": 0.1405,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L26/conv_state_setup",
+      "total_ms": 7.055,
+      "calls": 50,
+      "mean_ms": 0.1411,
+      "median_ms": 0.139,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L10/conv_state_setup",
+      "total_ms": 7.051,
+      "calls": 50,
+      "mean_ms": 0.141,
+      "median_ms": 0.1371,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L34/gated_rmsnorm",
+      "total_ms": 7.051,
+      "calls": 50,
+      "mean_ms": 0.141,
+      "median_ms": 0.1421,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L29/conv_state_setup",
+      "total_ms": 7.05,
+      "calls": 50,
+      "mean_ms": 0.141,
+      "median_ms": 0.1439,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L29/input_layernorm",
+      "total_ms": 7.037,
+      "calls": 50,
+      "mean_ms": 0.1407,
+      "median_ms": 0.1398,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L0/post_attn_layernorm",
+      "total_ms": 7.036,
+      "calls": 50,
+      "mean_ms": 0.1407,
+      "median_ms": 0.1407,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L24/gated_rmsnorm",
+      "total_ms": 7.034,
+      "calls": 50,
+      "mean_ms": 0.1407,
+      "median_ms": 0.1385,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L28/residual_add_2",
+      "total_ms": 7.033,
+      "calls": 50,
+      "mean_ms": 0.1407,
+      "median_ms": 0.1374,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L0/conv_state_setup",
+      "total_ms": 7.031,
+      "calls": 50,
+      "mean_ms": 0.1406,
+      "median_ms": 0.1406,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L10/residual_add_2",
+      "total_ms": 7.031,
+      "calls": 50,
+      "mean_ms": 0.1406,
+      "median_ms": 0.1382,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L30/post_attn_layernorm",
+      "total_ms": 7.029,
+      "calls": 50,
+      "mean_ms": 0.1406,
+      "median_ms": 0.1396,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L5/input_layernorm",
+      "total_ms": 7.028,
+      "calls": 50,
+      "mean_ms": 0.1406,
+      "median_ms": 0.1378,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L12/residual_add_1",
+      "total_ms": 7.026,
+      "calls": 50,
+      "mean_ms": 0.1405,
+      "median_ms": 0.1396,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L26/residual_add_1",
+      "total_ms": 7.022,
+      "calls": 50,
+      "mean_ms": 0.1404,
+      "median_ms": 0.1391,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L25/conv_state_setup",
+      "total_ms": 7.019,
+      "calls": 50,
+      "mean_ms": 0.1404,
+      "median_ms": 0.135,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L22/silu",
+      "total_ms": 7.018,
+      "calls": 50,
+      "mean_ms": 0.1404,
+      "median_ms": 0.1382,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L21/input_layernorm",
+      "total_ms": 7.016,
+      "calls": 50,
+      "mean_ms": 0.1403,
+      "median_ms": 0.1375,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L18/silu",
+      "total_ms": 7.015,
+      "calls": 50,
+      "mean_ms": 0.1403,
+      "median_ms": 0.136,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L32/post_attn_layernorm",
+      "total_ms": 7.014,
+      "calls": 50,
+      "mean_ms": 0.1403,
+      "median_ms": 0.1382,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L21/residual_add_2",
+      "total_ms": 7.014,
+      "calls": 50,
+      "mean_ms": 0.1403,
+      "median_ms": 0.1374,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L38/residual_add_2",
+      "total_ms": 7.012,
+      "calls": 50,
+      "mean_ms": 0.1402,
+      "median_ms": 0.1382,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L28/conv_state_setup",
+      "total_ms": 7.011,
+      "calls": 50,
+      "mean_ms": 0.1402,
+      "median_ms": 0.1386,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L5/residual_add_1",
+      "total_ms": 7.005,
+      "calls": 50,
+      "mean_ms": 0.1401,
+      "median_ms": 0.1385,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L36/post_attn_layernorm",
+      "total_ms": 7.005,
+      "calls": 50,
+      "mean_ms": 0.1401,
+      "median_ms": 0.1395,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L22/input_layernorm",
+      "total_ms": 7.005,
+      "calls": 50,
+      "mean_ms": 0.1401,
+      "median_ms": 0.1361,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L14/conv_state_setup",
+      "total_ms": 7.002,
+      "calls": 50,
+      "mean_ms": 0.14,
+      "median_ms": 0.1419,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L26/residual_add_2",
+      "total_ms": 7.001,
+      "calls": 50,
+      "mean_ms": 0.14,
+      "median_ms": 0.1383,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L21/conv1d",
+      "total_ms": 6.999,
+      "calls": 50,
+      "mean_ms": 0.14,
+      "median_ms": 0.1387,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L21/gated_rmsnorm",
+      "total_ms": 6.995,
+      "calls": 50,
+      "mean_ms": 0.1399,
+      "median_ms": 0.1399,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L28/silu",
+      "total_ms": 6.989,
+      "calls": 50,
+      "mean_ms": 0.1398,
+      "median_ms": 0.1369,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L6/gated_rmsnorm",
+      "total_ms": 6.985,
+      "calls": 50,
+      "mean_ms": 0.1397,
+      "median_ms": 0.1383,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L18/input_layernorm",
+      "total_ms": 6.984,
+      "calls": 50,
+      "mean_ms": 0.1397,
+      "median_ms": 0.1406,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L22/post_attn_layernorm",
+      "total_ms": 6.983,
+      "calls": 50,
+      "mean_ms": 0.1397,
+      "median_ms": 0.1383,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L2/post_attn_layernorm",
+      "total_ms": 6.972,
+      "calls": 50,
+      "mean_ms": 0.1394,
+      "median_ms": 0.1373,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L29/post_attn_layernorm",
+      "total_ms": 6.97,
+      "calls": 50,
+      "mean_ms": 0.1394,
+      "median_ms": 0.1405,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L10/input_layernorm",
+      "total_ms": 6.97,
+      "calls": 50,
+      "mean_ms": 0.1394,
+      "median_ms": 0.1375,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L9/silu",
+      "total_ms": 6.968,
+      "calls": 50,
+      "mean_ms": 0.1394,
+      "median_ms": 0.1372,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L9/input_layernorm",
+      "total_ms": 6.967,
+      "calls": 50,
+      "mean_ms": 0.1393,
+      "median_ms": 0.1412,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L24/residual_add_1",
+      "total_ms": 6.966,
+      "calls": 50,
+      "mean_ms": 0.1393,
+      "median_ms": 0.1378,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L29/silu",
+      "total_ms": 6.964,
+      "calls": 50,
+      "mean_ms": 0.1393,
+      "median_ms": 0.1409,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L20/residual_add_1",
+      "total_ms": 6.963,
+      "calls": 50,
+      "mean_ms": 0.1393,
+      "median_ms": 0.1376,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L2/residual_add_2",
+      "total_ms": 6.958,
+      "calls": 50,
+      "mean_ms": 0.1392,
+      "median_ms": 0.1359,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L25/silu",
+      "total_ms": 6.953,
+      "calls": 50,
+      "mean_ms": 0.1391,
+      "median_ms": 0.1365,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L28/post_attn_layernorm",
+      "total_ms": 6.951,
+      "calls": 50,
+      "mean_ms": 0.139,
+      "median_ms": 0.1378,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L18/residual_add_1",
+      "total_ms": 6.947,
+      "calls": 50,
+      "mean_ms": 0.1389,
+      "median_ms": 0.1353,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L36/silu",
+      "total_ms": 6.946,
+      "calls": 50,
+      "mean_ms": 0.1389,
+      "median_ms": 0.139,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L9/gated_rmsnorm",
+      "total_ms": 6.941,
+      "calls": 50,
+      "mean_ms": 0.1388,
+      "median_ms": 0.1381,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L37/residual_add_1",
+      "total_ms": 6.934,
+      "calls": 50,
+      "mean_ms": 0.1387,
+      "median_ms": 0.137,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L33/residual_add_1",
+      "total_ms": 6.933,
+      "calls": 50,
+      "mean_ms": 0.1387,
+      "median_ms": 0.1367,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L29/residual_add_1",
+      "total_ms": 6.929,
+      "calls": 50,
+      "mean_ms": 0.1386,
+      "median_ms": 0.1382,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L38/conv_state_setup",
+      "total_ms": 6.927,
+      "calls": 50,
+      "mean_ms": 0.1385,
+      "median_ms": 0.1363,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L24/conv1d",
+      "total_ms": 6.926,
+      "calls": 50,
+      "mean_ms": 0.1385,
+      "median_ms": 0.136,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L20/conv_state_setup",
+      "total_ms": 6.922,
+      "calls": 50,
+      "mean_ms": 0.1384,
+      "median_ms": 0.1424,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L29/residual_add_2",
+      "total_ms": 6.921,
+      "calls": 50,
+      "mean_ms": 0.1384,
+      "median_ms": 0.1403,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L34/post_attn_layernorm",
+      "total_ms": 6.921,
+      "calls": 50,
+      "mean_ms": 0.1384,
+      "median_ms": 0.1383,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L34/silu",
+      "total_ms": 6.92,
+      "calls": 50,
+      "mean_ms": 0.1384,
+      "median_ms": 0.1386,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L8/post_attn_layernorm",
+      "total_ms": 6.92,
+      "calls": 50,
+      "mean_ms": 0.1384,
+      "median_ms": 0.138,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L6/conv_state_setup",
+      "total_ms": 6.915,
+      "calls": 50,
+      "mean_ms": 0.1383,
+      "median_ms": 0.1388,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L4/conv_state_setup",
+      "total_ms": 6.909,
+      "calls": 50,
+      "mean_ms": 0.1382,
+      "median_ms": 0.1362,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L30/residual_add_2",
+      "total_ms": 6.908,
+      "calls": 50,
+      "mean_ms": 0.1382,
+      "median_ms": 0.137,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L24/post_attn_layernorm",
+      "total_ms": 6.904,
+      "calls": 50,
+      "mean_ms": 0.1381,
+      "median_ms": 0.1377,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L10/residual_add_1",
+      "total_ms": 6.904,
+      "calls": 50,
+      "mean_ms": 0.1381,
+      "median_ms": 0.1359,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L6/residual_add_2",
+      "total_ms": 6.902,
+      "calls": 50,
+      "mean_ms": 0.138,
+      "median_ms": 0.1356,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L37/silu",
+      "total_ms": 6.897,
+      "calls": 50,
+      "mean_ms": 0.1379,
+      "median_ms": 0.1406,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L26/silu",
+      "total_ms": 6.894,
+      "calls": 50,
+      "mean_ms": 0.1379,
+      "median_ms": 0.1363,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L22/residual_add_2",
+      "total_ms": 6.893,
+      "calls": 50,
+      "mean_ms": 0.1379,
+      "median_ms": 0.1373,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L4/input_layernorm",
+      "total_ms": 6.889,
+      "calls": 50,
+      "mean_ms": 0.1378,
+      "median_ms": 0.1377,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L17/silu",
+      "total_ms": 6.888,
+      "calls": 50,
+      "mean_ms": 0.1378,
+      "median_ms": 0.1346,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L18/residual_add_2",
+      "total_ms": 6.88,
+      "calls": 50,
+      "mean_ms": 0.1376,
+      "median_ms": 0.135,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L32/silu",
+      "total_ms": 6.878,
+      "calls": 50,
+      "mean_ms": 0.1376,
+      "median_ms": 0.1394,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L4/silu",
+      "total_ms": 6.877,
+      "calls": 50,
+      "mean_ms": 0.1375,
+      "median_ms": 0.1337,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L34/residual_add_1",
+      "total_ms": 6.867,
+      "calls": 50,
+      "mean_ms": 0.1373,
+      "median_ms": 0.1387,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L16/residual_add_2",
+      "total_ms": 6.862,
+      "calls": 50,
+      "mean_ms": 0.1372,
+      "median_ms": 0.1364,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L21/conv_state_setup",
+      "total_ms": 6.862,
+      "calls": 50,
+      "mean_ms": 0.1372,
+      "median_ms": 0.1359,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L8/silu",
+      "total_ms": 6.861,
+      "calls": 50,
+      "mean_ms": 0.1372,
+      "median_ms": 0.1352,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L16/residual_add_1",
+      "total_ms": 6.858,
+      "calls": 50,
+      "mean_ms": 0.1372,
+      "median_ms": 0.1333,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L2/residual_add_1",
+      "total_ms": 6.85,
+      "calls": 50,
+      "mean_ms": 0.137,
+      "median_ms": 0.1357,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L20/post_attn_layernorm",
+      "total_ms": 6.843,
+      "calls": 50,
+      "mean_ms": 0.1369,
+      "median_ms": 0.1373,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L25/residual_add_1",
+      "total_ms": 6.836,
+      "calls": 50,
+      "mean_ms": 0.1367,
+      "median_ms": 0.1377,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L21/post_attn_layernorm",
+      "total_ms": 6.824,
+      "calls": 50,
+      "mean_ms": 0.1365,
+      "median_ms": 0.1385,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L32/residual_add_1",
+      "total_ms": 6.818,
+      "calls": 50,
+      "mean_ms": 0.1364,
+      "median_ms": 0.1356,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L28/residual_add_1",
+      "total_ms": 6.811,
+      "calls": 50,
+      "mean_ms": 0.1362,
+      "median_ms": 0.1378,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L22/residual_add_1",
+      "total_ms": 6.81,
+      "calls": 50,
+      "mean_ms": 0.1362,
+      "median_ms": 0.1374,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L8/residual_add_2",
+      "total_ms": 6.801,
+      "calls": 50,
+      "mean_ms": 0.136,
+      "median_ms": 0.1376,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L8/residual_add_1",
+      "total_ms": 6.798,
+      "calls": 50,
+      "mean_ms": 0.136,
+      "median_ms": 0.136,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L24/silu",
+      "total_ms": 6.786,
+      "calls": 50,
+      "mean_ms": 0.1357,
+      "median_ms": 0.1323,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L9/residual_add_1",
+      "total_ms": 6.767,
+      "calls": 50,
+      "mean_ms": 0.1353,
+      "median_ms": 0.1321,
+      "pct": 0.1
+    },
+    {
+      "name": "layer_L21/residual_add_1",
+      "total_ms": 6.735,
+      "calls": 50,
+      "mean_ms": 0.1347,
+      "median_ms": 0.1336,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L13/split_reshape",
+      "total_ms": 3.091,
+      "calls": 50,
+      "mean_ms": 0.0618,
+      "median_ms": 0.048,
+      "pct": 0.1
+    },
+    {
+      "name": "deltanet_L13/conv_cache_update",
+      "total_ms": 2.632,
+      "calls": 50,
+      "mean_ms": 0.0526,
+      "median_ms": 0.0444,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L9/split_reshape",
+      "total_ms": 2.624,
+      "calls": 50,
+      "mean_ms": 0.0525,
+      "median_ms": 0.0507,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L12/split_reshape",
+      "total_ms": 2.605,
+      "calls": 50,
+      "mean_ms": 0.0521,
+      "median_ms": 0.0498,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L8/split_reshape",
+      "total_ms": 2.591,
+      "calls": 50,
+      "mean_ms": 0.0518,
+      "median_ms": 0.0485,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L16/split_reshape",
+      "total_ms": 2.589,
+      "calls": 50,
+      "mean_ms": 0.0518,
+      "median_ms": 0.0487,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L34/conv_cache_update",
+      "total_ms": 2.576,
+      "calls": 50,
+      "mean_ms": 0.0515,
+      "median_ms": 0.0449,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L4/split_reshape",
+      "total_ms": 2.573,
+      "calls": 50,
+      "mean_ms": 0.0515,
+      "median_ms": 0.049,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L30/split_reshape",
+      "total_ms": 2.562,
+      "calls": 50,
+      "mean_ms": 0.0512,
+      "median_ms": 0.0493,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L25/split_reshape",
+      "total_ms": 2.531,
+      "calls": 50,
+      "mean_ms": 0.0506,
+      "median_ms": 0.0501,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L38/conv_cache_update",
+      "total_ms": 2.528,
+      "calls": 50,
+      "mean_ms": 0.0506,
+      "median_ms": 0.0428,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L6/split_reshape",
+      "total_ms": 2.521,
+      "calls": 50,
+      "mean_ms": 0.0504,
+      "median_ms": 0.0464,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L36/conv_cache_update",
+      "total_ms": 2.519,
+      "calls": 50,
+      "mean_ms": 0.0504,
+      "median_ms": 0.0453,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L32/split_reshape",
+      "total_ms": 2.517,
+      "calls": 50,
+      "mean_ms": 0.0503,
+      "median_ms": 0.0479,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L26/split_reshape",
+      "total_ms": 2.51,
+      "calls": 50,
+      "mean_ms": 0.0502,
+      "median_ms": 0.0479,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L8/conv_cache_update",
+      "total_ms": 2.504,
+      "calls": 50,
+      "mean_ms": 0.0501,
+      "median_ms": 0.0463,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L14/split_reshape",
+      "total_ms": 2.503,
+      "calls": 50,
+      "mean_ms": 0.0501,
+      "median_ms": 0.0475,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L24/conv_cache_update",
+      "total_ms": 2.494,
+      "calls": 50,
+      "mean_ms": 0.0499,
+      "median_ms": 0.0425,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L1/split_reshape",
+      "total_ms": 2.493,
+      "calls": 50,
+      "mean_ms": 0.0499,
+      "median_ms": 0.0492,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L5/split_reshape",
+      "total_ms": 2.485,
+      "calls": 50,
+      "mean_ms": 0.0497,
+      "median_ms": 0.0483,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L0/split_reshape",
+      "total_ms": 2.482,
+      "calls": 50,
+      "mean_ms": 0.0496,
+      "median_ms": 0.0482,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L20/split_reshape",
+      "total_ms": 2.481,
+      "calls": 50,
+      "mean_ms": 0.0496,
+      "median_ms": 0.047,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L17/split_reshape",
+      "total_ms": 2.478,
+      "calls": 50,
+      "mean_ms": 0.0496,
+      "median_ms": 0.0483,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L28/split_reshape",
+      "total_ms": 2.474,
+      "calls": 50,
+      "mean_ms": 0.0495,
+      "median_ms": 0.0506,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L33/split_reshape",
+      "total_ms": 2.473,
+      "calls": 50,
+      "mean_ms": 0.0495,
+      "median_ms": 0.0484,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L18/conv_cache_update",
+      "total_ms": 2.462,
+      "calls": 50,
+      "mean_ms": 0.0492,
+      "median_ms": 0.0438,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L34/split_reshape",
+      "total_ms": 2.46,
+      "calls": 50,
+      "mean_ms": 0.0492,
+      "median_ms": 0.0486,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L10/split_reshape",
+      "total_ms": 2.459,
+      "calls": 50,
+      "mean_ms": 0.0492,
+      "median_ms": 0.0479,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L29/split_reshape",
+      "total_ms": 2.457,
+      "calls": 50,
+      "mean_ms": 0.0491,
+      "median_ms": 0.0481,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L38/split_reshape",
+      "total_ms": 2.446,
+      "calls": 50,
+      "mean_ms": 0.0489,
+      "median_ms": 0.0465,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L21/split_reshape",
+      "total_ms": 2.445,
+      "calls": 50,
+      "mean_ms": 0.0489,
+      "median_ms": 0.0475,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L37/split_reshape",
+      "total_ms": 2.444,
+      "calls": 50,
+      "mean_ms": 0.0489,
+      "median_ms": 0.0471,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L2/split_reshape",
+      "total_ms": 2.441,
+      "calls": 50,
+      "mean_ms": 0.0488,
+      "median_ms": 0.0493,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L2/conv_cache_update",
+      "total_ms": 2.434,
+      "calls": 50,
+      "mean_ms": 0.0487,
+      "median_ms": 0.0445,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L36/split_reshape",
+      "total_ms": 2.409,
+      "calls": 50,
+      "mean_ms": 0.0482,
+      "median_ms": 0.048,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L18/split_reshape",
+      "total_ms": 2.398,
+      "calls": 50,
+      "mean_ms": 0.048,
+      "median_ms": 0.047,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L14/conv_cache_update",
+      "total_ms": 2.384,
+      "calls": 50,
+      "mean_ms": 0.0477,
+      "median_ms": 0.0436,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L28/conv_cache_update",
+      "total_ms": 2.375,
+      "calls": 50,
+      "mean_ms": 0.0475,
+      "median_ms": 0.0453,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L25/conv_cache_update",
+      "total_ms": 2.36,
+      "calls": 50,
+      "mean_ms": 0.0472,
+      "median_ms": 0.0454,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L0/conv_cache_update",
+      "total_ms": 2.344,
+      "calls": 50,
+      "mean_ms": 0.0469,
+      "median_ms": 0.0451,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L22/split_reshape",
+      "total_ms": 2.344,
+      "calls": 50,
+      "mean_ms": 0.0469,
+      "median_ms": 0.0465,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L12/conv_cache_update",
+      "total_ms": 2.338,
+      "calls": 50,
+      "mean_ms": 0.0468,
+      "median_ms": 0.0457,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L5/conv_cache_update",
+      "total_ms": 2.338,
+      "calls": 50,
+      "mean_ms": 0.0468,
+      "median_ms": 0.0457,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L24/split_reshape",
+      "total_ms": 2.335,
+      "calls": 50,
+      "mean_ms": 0.0467,
+      "median_ms": 0.0459,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L20/conv_cache_update",
+      "total_ms": 2.315,
+      "calls": 50,
+      "mean_ms": 0.0463,
+      "median_ms": 0.044,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L33/conv_cache_update",
+      "total_ms": 2.314,
+      "calls": 50,
+      "mean_ms": 0.0463,
+      "median_ms": 0.0465,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L10/conv_cache_update",
+      "total_ms": 2.307,
+      "calls": 50,
+      "mean_ms": 0.0461,
+      "median_ms": 0.0467,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L17/conv_cache_update",
+      "total_ms": 2.296,
+      "calls": 50,
+      "mean_ms": 0.0459,
+      "median_ms": 0.043,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L26/conv_cache_update",
+      "total_ms": 2.288,
+      "calls": 50,
+      "mean_ms": 0.0458,
+      "median_ms": 0.0462,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L1/conv_cache_update",
+      "total_ms": 2.283,
+      "calls": 50,
+      "mean_ms": 0.0457,
+      "median_ms": 0.0454,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L6/conv_cache_update",
+      "total_ms": 2.282,
+      "calls": 50,
+      "mean_ms": 0.0456,
+      "median_ms": 0.0439,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L30/conv_cache_update",
+      "total_ms": 2.266,
+      "calls": 50,
+      "mean_ms": 0.0453,
+      "median_ms": 0.0454,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L16/conv_cache_update",
+      "total_ms": 2.257,
+      "calls": 50,
+      "mean_ms": 0.0451,
+      "median_ms": 0.0446,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L21/conv_cache_update",
+      "total_ms": 2.254,
+      "calls": 50,
+      "mean_ms": 0.0451,
+      "median_ms": 0.045,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L32/conv_cache_update",
+      "total_ms": 2.244,
+      "calls": 50,
+      "mean_ms": 0.0449,
+      "median_ms": 0.0449,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L37/conv_cache_update",
+      "total_ms": 2.221,
+      "calls": 50,
+      "mean_ms": 0.0444,
+      "median_ms": 0.0437,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L29/conv_cache_update",
+      "total_ms": 2.209,
+      "calls": 50,
+      "mean_ms": 0.0442,
+      "median_ms": 0.0441,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L9/conv_cache_update",
+      "total_ms": 2.207,
+      "calls": 50,
+      "mean_ms": 0.0441,
+      "median_ms": 0.0425,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L4/conv_cache_update",
+      "total_ms": 2.2,
+      "calls": 50,
+      "mean_ms": 0.044,
+      "median_ms": 0.0431,
+      "pct": 0.0
+    },
+    {
+      "name": "deltanet_L22/conv_cache_update",
+      "total_ms": 2.182,
+      "calls": 50,
+      "mean_ms": 0.0436,
+      "median_ms": 0.0444,
+      "pct": 0.0
+    }
+  ],
+  "generated_text_preview": "\n\n<think>\n\n</think>\n\n**TCP (Transmission Control Protocol)** and **UDP (User Datagram Protocol)** are the two primary transport layer protocols used in the Internet Protocol (IP) suite. While both fac"
+}

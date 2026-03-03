@@ -1,0 +1,98 @@
+{
+  "suite": "qwen3",
+  "timestamp_utc": "20260210T221404Z",
+  "script": "bench_qwen3_a3b_experiments.py",
+  "runs": 1,
+  "max_tokens": 128,
+  "variants": [
+    "qwen_combine_fp32",
+    "qwen_combine_fp32_no_fma"
+  ],
+  "env_overrides": {},
+  "results": [
+    {
+      "variant": "qwen_combine_fp32",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_qwen3_qwen_combine_fp32.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "1",
+        "--max-tokens",
+        "128",
+        "--json-out",
+        "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_qwen3_qwen_combine_fp32.json",
+        "--variants",
+        "qwen_combine_fp32",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_combine_fp32",
+        "fidelity": {
+          "matched": 93,
+          "total": 128,
+          "verdict": "FAIL"
+        },
+        "decode": {
+          "baseline": 119.1,
+          "patched": 42.7,
+          "speedup": 0.3585
+        },
+        "prefill": {
+          "baseline": 326.0,
+          "patched": 206.0,
+          "change": -0.3681
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.71
+        }
+      }
+    },
+    {
+      "variant": "qwen_combine_fp32_no_fma",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_qwen3_qwen_combine_fp32_no_fma.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "1",
+        "--max-tokens",
+        "128",
+        "--json-out",
+        "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_qwen3_qwen_combine_fp32_no_fma.json",
+        "--variants",
+        "qwen_combine_fp32_no_fma",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_combine_fp32_no_fma",
+        "fidelity": {
+          "matched": 9,
+          "total": 128,
+          "verdict": "FAIL"
+        },
+        "decode": {
+          "baseline": 118.8,
+          "patched": 42.6,
+          "speedup": 0.3586
+        },
+        "prefill": {
+          "baseline": 325.2,
+          "patched": 205.4,
+          "change": -0.3684
+        },
+        "memory_gb": {
+          "baseline": 17.24,
+          "patched": 17.71
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "date": "2026-02-10",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.4",
+    "git_commit": "eebfa6e",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_qwen_combine_fp32_no_fma": "ZMLX_QWEN_COMBINE_MODE=fp32_no_fma python -m zmlx.validate mlx-community/Qwen3-30B-A3B-4bit --runs 1 --max-tokens 128 --patterns moe_mlp"
+  },
+  "qwen_combine_fp32_no_fma": {
+    "model": "mlx-community/Qwen3-30B-A3B-4bit",
+    "variant": "qwen_combine_fp32_no_fma",
+    "max_tokens": 128,
+    "gen_tokens": 128,
+    "runs": 1,
+    "fidelity": {
+      "matched": 93,
+      "total": 128,
+      "verdict": "FAIL"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        323.1
+      ],
+      "decode_tok_s": [
+        116.2
+      ],
+      "median_prefill": 323.1,
+      "median_decode": 116.2,
+      "peak_mem_gb": 17.24
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp"
+      ],
+      "modules_patched": 48,
+      "prefill_tok_s": [
+        203.8
+      ],
+      "decode_tok_s": [
+        42.0
+      ],
+      "median_prefill": 203.8,
+      "median_decode": 42.0,
+      "peak_mem_gb": 17.71
+    },
+    "summary": {
+      "decode_speedup": 0.3614,
+      "prefill_change": -0.3692
+    },
+    "notes": "Experimental: Qwen combine via ZMLX fp32 no-FMA kernel (ZMLX_QWEN_COMBINE_MODE=fp32_no_fma)"
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "suite": "glm47",
+  "timestamp_utc": "20260210T221545Z",
+  "script": "bench_glm47_flash_experiments.py",
+  "runs": 1,
+  "max_tokens": 128,
+  "variants": [
+    "glm_combine_fp32",
+    "glm_combine_fp32_no_fma"
+  ],
+  "env_overrides": {},
+  "results": [
+    {
+      "variant": "glm_combine_fp32",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_glm47_glm_combine_fp32.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "1",
+        "--max-tokens",
+        "128",
+        "--json-out",
+        "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_glm47_glm_combine_fp32.json",
+        "--variants",
+        "glm_combine_fp32",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "glm_combine_fp32",
+        "fidelity": {
+          "matched": 2,
+          "total": 128,
+          "verdict": "FAIL"
+        },
+        "decode": {
+          "baseline": 85.8,
+          "patched": 86.8,
+          "speedup": 1.0117
+        },
+        "prefill": {
+          "baseline": 297.0,
+          "patched": 304.8,
+          "change": 0.0263
+        },
+        "memory_gb": {
+          "baseline": 16.91,
+          "patched": 16.91
+        }
+      }
+    },
+    {
+      "variant": "glm_combine_fp32_no_fma",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_glm47_glm_combine_fp32_no_fma.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "1",
+        "--max-tokens",
+        "128",
+        "--json-out",
+        "benchmarks/repro_capsules/moe_combine_transfer_probe_t128_r1_20260210_glm47_glm_combine_fp32_no_fma.json",
+        "--variants",
+        "glm_combine_fp32_no_fma",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "glm_combine_fp32_no_fma",
+        "fidelity": {
+          "matched": 128,
+          "total": 128,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 84.7,
+          "patched": 89.2,
+          "speedup": 1.0531
+        },
+        "prefill": {
+          "baseline": 290.1,
+          "patched": 306.2,
+          "change": 0.0555
+        },
+        "memory_gb": {
+          "baseline": 16.91,
+          "patched": 16.91
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "meta": {
+    "date": "2026-02-13",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.5",
+    "git_commit": "3824ede",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_qwen_fused_router_topk": "ZMLX_QWEN_FUSED_ROUTER_TOPK=1 python -m zmlx.validate mlx-community/Qwen3-30B-A3B-4bit --runs 2 --max-tokens 1024 --patterns moe_mlp"
+  },
+  "qwen_fused_router_topk": {
+    "model": "mlx-community/Qwen3-30B-A3B-4bit",
+    "variant": "qwen_fused_router_topk",
+    "max_tokens": 1024,
+    "gen_tokens": 1024,
+    "runs": 2,
+    "fidelity": {
+      "matched": 175,
+      "total": 1024,
+      "verdict": "FAIL"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        178.1,
+        159.4
+      ],
+      "decode_tok_s": [
+        55.2,
+        55.1
+      ],
+      "median_prefill": 168.8,
+      "median_decode": 55.2,
+      "peak_mem_gb": 17.33
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp"
+      ],
+      "modules_patched": 48,
+      "prefill_tok_s": [
+        118.0,
+        121.5
+      ],
+      "decode_tok_s": [
+        25.8,
+        25.9
+      ],
+      "median_prefill": 119.7,
+      "median_decode": 25.9,
+      "peak_mem_gb": 17.92
+    },
+    "summary": {
+      "decode_speedup": 0.4692,
+      "prefill_change": -0.2909
+    },
+    "notes": "Experimental: Qwen fused router top-k softmax (ZMLX_QWEN_FUSED_ROUTER_TOPK=1)"
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "meta": {
+    "timestamp_utc": "2026-02-11T16:32:50.503339+00:00",
+    "python": "3.14",
+    "platform": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "git_commit": "3824ede",
+    "warmup": 6,
+    "repeats": 50
+  },
+  "summary": {
+    "cases": 5,
+    "median_specialized_over_base": 1.012044,
+    "wins_specialized": 2,
+    "max_abs_diff": 0.0
+  },
+  "rows": [
+    {
+      "B": 1,
+      "K": 8,
+      "D": 1024,
+      "base_median_us": 114.499,
+      "specialized_median_us": 114.084,
+      "specialized_over_base": 0.996367,
+      "max_abs_diff": 0.0
+    },
+    {
+      "B": 1,
+      "K": 8,
+      "D": 2048,
+      "base_median_us": 115.291,
+      "specialized_median_us": 115.042,
+      "specialized_over_base": 0.997836,
+      "max_abs_diff": 0.0
+    },
+    {
+      "B": 1,
+      "K": 8,
+      "D": 4096,
+      "base_median_us": 116.604,
+      "specialized_median_us": 125.688,
+      "specialized_over_base": 1.0779,
+      "max_abs_diff": 0.0
+    },
+    {
+      "B": 2,
+      "K": 8,
+      "D": 2048,
+      "base_median_us": 114.167,
+      "specialized_median_us": 115.542,
+      "specialized_over_base": 1.012044,
+      "max_abs_diff": 0.0
+    },
+    {
+      "B": 4,
+      "K": 8,
+      "D": 4096,
+      "base_median_us": 99.291,
+      "specialized_median_us": 109.354,
+      "specialized_over_base": 1.101343,
+      "max_abs_diff": 0.0
+    }
+  ]
+}

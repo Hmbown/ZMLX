@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "date": "2026-02-10",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.4",
+    "git_commit": "eebfa6e",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_glm_combine_fp32_no_fma_glm47_rope": "ZMLX_GLM_COMBINE_MODE=fp32_no_fma python -m zmlx.validate mlx-community/GLM-4.7-Flash-4bit-mxfp4 --patterns swiglu_mlp moe_mlp glm47_rope --runs 3 --max-tokens 200"
+  },
+  "glm_combine_fp32_no_fma_glm47_rope": {
+    "model": "mlx-community/GLM-4.7-Flash-4bit-mxfp4",
+    "variant": "glm_combine_fp32_no_fma_glm47_rope",
+    "max_tokens": 200,
+    "gen_tokens": 200,
+    "runs": 3,
+    "fidelity": {
+      "matched": 200,
+      "total": 200,
+      "verdict": "PASS"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        301.1,
+        279.9,
+        278.8
+      ],
+      "decode_tok_s": [
+        81.5,
+        81.7,
+        82.2
+      ],
+      "median_prefill": 279.9,
+      "median_decode": 81.7,
+      "peak_mem_gb": 15.98
+    },
+    "patched": {
+      "patterns": [
+        "glm47_rope",
+        "moe_mlp",
+        "swiglu_mlp"
+      ],
+      "modules_patched": 140,
+      "prefill_tok_s": [
+        301.4,
+        268.9,
+        273.5
+      ],
+      "decode_tok_s": [
+        73.7,
+        74.2,
+        74.4
+      ],
+      "median_prefill": 273.5,
+      "median_decode": 74.2,
+      "peak_mem_gb": 15.98
+    },
+    "summary": {
+      "decode_speedup": 0.9082,
+      "prefill_change": -0.0229
+    },
+    "notes": "Experimental additive combo: fp32-no-fma combine + glm47_rope decode path."
+  }
+}

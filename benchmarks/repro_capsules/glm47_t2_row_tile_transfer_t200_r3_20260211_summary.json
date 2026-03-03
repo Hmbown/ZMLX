@@ -1,0 +1,141 @@
+{
+  "suite": "glm47",
+  "timestamp_utc": "20260211T160844Z",
+  "script": "bench_glm47_flash_experiments.py",
+  "runs": 3,
+  "max_tokens": 200,
+  "variants": [
+    "control_swiglu_moe",
+    "glm_combine_fp32_no_fma",
+    "glm_combine_fp32_no_fma_row_tile"
+  ],
+  "env_overrides": {},
+  "results": [
+    {
+      "variant": "control_swiglu_moe",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t200_r3_20260211_control_swiglu_moe.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "3",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t200_r3_20260211_control_swiglu_moe.json",
+        "--variants",
+        "control_swiglu_moe",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "control_swiglu_moe",
+        "fidelity": {
+          "matched": 200,
+          "total": 200,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 83.8,
+          "patched": 80.4,
+          "speedup": 0.9594
+        },
+        "prefill": {
+          "baseline": 283.8,
+          "patched": 282.5,
+          "change": -0.0046
+        },
+        "memory_gb": {
+          "baseline": 15.98,
+          "patched": 15.98
+        }
+      }
+    },
+    {
+      "variant": "glm_combine_fp32_no_fma",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t200_r3_20260211_glm_combine_fp32_no_fma.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "3",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t200_r3_20260211_glm_combine_fp32_no_fma.json",
+        "--variants",
+        "glm_combine_fp32_no_fma",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "glm_combine_fp32_no_fma",
+        "fidelity": {
+          "matched": 200,
+          "total": 200,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 83.7,
+          "patched": 80.2,
+          "speedup": 0.9582
+        },
+        "prefill": {
+          "baseline": 285.7,
+          "patched": 281.6,
+          "change": -0.0144
+        },
+        "memory_gb": {
+          "baseline": 15.98,
+          "patched": 15.98
+        }
+      }
+    },
+    {
+      "variant": "glm_combine_fp32_no_fma_row_tile",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t200_r3_20260211_glm_combine_fp32_no_fma_row_tile.json",
+      "command": [
+        "python",
+        "benchmarks/bench_glm47_flash_experiments.py",
+        "--runs",
+        "3",
+        "--max-tokens",
+        "200",
+        "--json-out",
+        "benchmarks/repro_capsules/glm47_t2_row_tile_transfer_t200_r3_20260211_glm_combine_fp32_no_fma_row_tile.json",
+        "--variants",
+        "glm_combine_fp32_no_fma_row_tile",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "glm_combine_fp32_no_fma_row_tile",
+        "fidelity": {
+          "matched": 200,
+          "total": 200,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 80.9,
+          "patched": 75.1,
+          "speedup": 0.9283
+        },
+        "prefill": {
+          "baseline": 285.5,
+          "patched": 263.0,
+          "change": -0.0788
+        },
+        "memory_gb": {
+          "baseline": 15.98,
+          "patched": 15.98
+        }
+      }
+    }
+  ]
+}

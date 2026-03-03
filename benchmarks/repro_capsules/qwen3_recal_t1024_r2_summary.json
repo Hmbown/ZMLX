@@ -1,0 +1,98 @@
+{
+  "suite": "qwen3",
+  "timestamp_utc": "20260210T205538Z",
+  "script": "bench_qwen3_a3b_experiments.py",
+  "runs": 2,
+  "max_tokens": 1024,
+  "variants": [
+    "control_patterns_moe_mlp",
+    "qwen_combine_exact"
+  ],
+  "env_overrides": {},
+  "results": [
+    {
+      "variant": "control_patterns_moe_mlp",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_recal_t1024_r2_control_patterns_moe_mlp.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_recal_t1024_r2_control_patterns_moe_mlp.json",
+        "--variants",
+        "control_patterns_moe_mlp",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "control_patterns_moe_mlp",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 111.6,
+          "patched": 111.2,
+          "speedup": 0.9964
+        },
+        "prefill": {
+          "baseline": 330.3,
+          "patched": 334.4,
+          "change": 0.0124
+        },
+        "memory_gb": {
+          "baseline": 17.33,
+          "patched": 17.33
+        }
+      }
+    },
+    {
+      "variant": "qwen_combine_exact",
+      "return_code": 0,
+      "capsule": "benchmarks/repro_capsules/qwen3_recal_t1024_r2_qwen_combine_exact.json",
+      "command": [
+        "python",
+        "benchmarks/bench_qwen3_a3b_experiments.py",
+        "--runs",
+        "2",
+        "--max-tokens",
+        "1024",
+        "--json-out",
+        "benchmarks/repro_capsules/qwen3_recal_t1024_r2_qwen_combine_exact.json",
+        "--variants",
+        "qwen_combine_exact",
+        "--ledger",
+        "benchmarks/matrix.jsonl"
+      ],
+      "env": {},
+      "metrics": {
+        "variant": "qwen_combine_exact",
+        "fidelity": {
+          "matched": 1024,
+          "total": 1024,
+          "verdict": "PASS"
+        },
+        "decode": {
+          "baseline": 111.9,
+          "patched": 110.6,
+          "speedup": 0.9884
+        },
+        "prefill": {
+          "baseline": 328.9,
+          "patched": 331.6,
+          "change": 0.0082
+        },
+        "memory_gb": {
+          "baseline": 17.33,
+          "patched": 17.33
+        }
+      }
+    }
+  ]
+}

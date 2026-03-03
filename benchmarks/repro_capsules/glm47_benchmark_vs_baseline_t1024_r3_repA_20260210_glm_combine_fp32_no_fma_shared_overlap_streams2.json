@@ -1,0 +1,66 @@
+{
+  "meta": {
+    "date": "2026-02-10",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.4",
+    "git_commit": "eebfa6e",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_glm_combine_fp32_no_fma_shared_overlap_streams2": "ZMLX_GLM_COMBINE_MODE=fp32_no_fma ZMLX_MOE_STREAMS=2 ZMLX_MOE_SHARED_EXPERTS_OVERLAP=1 python -m zmlx.validate mlx-community/GLM-4.7-Flash-4bit-mxfp4 --patterns swiglu_mlp moe_mlp --runs 3 --max-tokens 1024"
+  },
+  "glm_combine_fp32_no_fma_shared_overlap_streams2": {
+    "model": "mlx-community/GLM-4.7-Flash-4bit-mxfp4",
+    "variant": "glm_combine_fp32_no_fma_shared_overlap_streams2",
+    "max_tokens": 1024,
+    "gen_tokens": 1024,
+    "runs": 3,
+    "fidelity": {
+      "matched": 1024,
+      "total": 1024,
+      "verdict": "PASS"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        303.8,
+        180.5,
+        182.6
+      ],
+      "decode_tok_s": [
+        80.2,
+        80.6,
+        80.9
+      ],
+      "median_prefill": 182.6,
+      "median_decode": 80.6,
+      "peak_mem_gb": 16.0
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp",
+        "swiglu_mlp"
+      ],
+      "modules_patched": 93,
+      "prefill_tok_s": [
+        276.5,
+        161.7,
+        164.3
+      ],
+      "decode_tok_s": [
+        57.1,
+        57.1,
+        57.1
+      ],
+      "median_prefill": 164.3,
+      "median_decode": 57.1,
+      "peak_mem_gb": 16.0
+    },
+    "summary": {
+      "decode_speedup": 0.7084,
+      "prefill_change": -0.1002
+    },
+    "notes": "Experimental additive combo: fp32-no-fma combine + shared_experts overlap streams=2."
+  }
+}

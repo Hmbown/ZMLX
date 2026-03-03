@@ -109,7 +109,7 @@ def _apply_family_excludes(
 #: Fused activation patterns only. Default for inference: these replace multi-op
 #: activation sequences (split → silu → mul) with a single fused Metal kernel.
 #: On stock MLX, MoE gating+combine can regress; use smart_patch to validate.
-FUSED_ACTIVATIONS: list[str] = ["swiglu_mlp", "geglu_mlp", "moe_mlp"]
+FUSED_ACTIVATIONS: list[str] = ["swiglu_mlp", "geglu_mlp", "moe_mlp", "deltanet"]
 
 #: All 7 patterns.  **WARNING**: can regress on inference. Norm and softmax
 #: kernels are often slower than MLX's built-in ``mx.fast.rms_norm`` /
@@ -119,6 +119,7 @@ ALL_PATTERNS: list[str] = [
     "swiglu_mlp",
     "geglu_mlp",
     "moe_mlp",
+    "deltanet",
     "rmsnorm",
     "layernorm",
     "softmax",
@@ -369,7 +370,7 @@ def unpatch(model: nn.Module) -> nn.Module:
 # includes them.
 # NOTE: residual_norm excluded — slower than baseline (0.94-0.99x) on every
 # model tested and breaks fidelity on Qwen/GPT-OSS.  Only use explicitly.
-_REVERTIBLE_PATTERNS = {"swiglu_mlp", "geglu_mlp", "softmax", "moe_mlp"}
+_REVERTIBLE_PATTERNS = {"swiglu_mlp", "geglu_mlp", "softmax", "moe_mlp", "deltanet"}
 
 
 def _time_forward(

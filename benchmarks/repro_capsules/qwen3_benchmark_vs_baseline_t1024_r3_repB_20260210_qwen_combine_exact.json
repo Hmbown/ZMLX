@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "date": "2026-02-10",
+    "device": "Apple M4 Max",
+    "memory_gb": 36,
+    "macos": "26.1",
+    "mlx_version": "0.30.7.dev20260207+8fe1d092",
+    "zmlx_version": "0.8.4",
+    "git_commit": "eebfa6e",
+    "python": "3.14",
+    "has_gather_qmm_swiglu": true,
+    "command_qwen_combine_exact": "ZMLX_QWEN_COMBINE_MODE=exact python -m zmlx.validate mlx-community/Qwen3-30B-A3B-4bit --runs 3 --max-tokens 1024 --patterns moe_mlp"
+  },
+  "qwen_combine_exact": {
+    "model": "mlx-community/Qwen3-30B-A3B-4bit",
+    "variant": "qwen_combine_exact",
+    "max_tokens": 1024,
+    "gen_tokens": 1024,
+    "runs": 3,
+    "fidelity": {
+      "matched": 1024,
+      "total": 1024,
+      "verdict": "PASS"
+    },
+    "baseline": {
+      "prefill_tok_s": [
+        321.3,
+        333.6,
+        333.6
+      ],
+      "decode_tok_s": [
+        113.0,
+        113.0,
+        113.1
+      ],
+      "median_prefill": 333.6,
+      "median_decode": 113.0,
+      "peak_mem_gb": 17.33
+    },
+    "patched": {
+      "patterns": [
+        "moe_mlp"
+      ],
+      "modules_patched": 48,
+      "prefill_tok_s": [
+        335.1,
+        328.6,
+        330.5
+      ],
+      "decode_tok_s": [
+        110.6,
+        109.4,
+        109.5
+      ],
+      "median_prefill": 330.5,
+      "median_decode": 109.5,
+      "peak_mem_gb": 17.33
+    },
+    "summary": {
+      "decode_speedup": 0.969,
+      "prefill_change": -0.0093
+    },
+    "notes": "Experimental: Qwen combine via ZMLX exact-dtype kernel (ZMLX_QWEN_COMBINE_MODE=exact)"
+  }
+}
