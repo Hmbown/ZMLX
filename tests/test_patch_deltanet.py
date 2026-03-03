@@ -15,19 +15,19 @@ mx = import_mx()
 if mx is None:
     pytest.skip("MLX not available", allow_module_level=True)
 
-import mlx.nn as nn
-import numpy as np
+import mlx.nn as nn  # noqa: E402
+import numpy as np  # noqa: E402
 
 try:
-    from mlx_lm.models.qwen3_5 import GatedDeltaNet, TextModelArgs
-    from mlx_lm.models.cache import ArraysCache
+    from mlx_lm.models.cache import ArraysCache  # noqa: E402
+    from mlx_lm.models.qwen3_5 import GatedDeltaNet, TextModelArgs  # noqa: E402
 
     HAS_QWEN35 = True
 except ImportError:
     HAS_QWEN35 = False
 
-from zmlx.patch import patch, unpatch
-from zmlx.patch._registry import get_pattern
+from zmlx.patch import patch, unpatch  # noqa: E402
+from zmlx.patch._registry import get_pattern  # noqa: E402
 
 
 def _make_tiny_config():

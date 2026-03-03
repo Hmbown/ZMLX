@@ -20,7 +20,6 @@ import mlx.core as mx
 from ..metal import kernel as metal_kernel
 from ..msl import DEFAULT_HEADER
 
-
 # ---------------------------------------------------------------------------
 # Fused Conv1d + SiLU decode kernel (SHA-1417)
 # ---------------------------------------------------------------------------

@@ -14,10 +14,10 @@ mx = import_mx()
 if mx is None:
     pytest.skip("MLX not available", allow_module_level=True)
 
-import mlx.nn as nn
-import numpy as np
+import mlx.nn as nn  # noqa: E402
+import numpy as np  # noqa: E402
 
-from zmlx.kernels.deltanet import (
+from zmlx.kernels.deltanet import (  # noqa: E402
     fused_conv1d_silu,
     fused_input_proj,
     gated_rmsnorm_silu,

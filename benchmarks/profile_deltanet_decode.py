@@ -166,6 +166,7 @@ def profiled_deltanet_forward(mod, inputs, mask, cache, layer_idx, collector):
                 mx.split(conv_out, [mod.key_dim, 2 * mod.key_dim], -1),
                 [mod.num_k_heads, mod.num_k_heads, mod.num_v_heads],
                 [mod.head_k_dim, mod.head_k_dim, mod.head_v_dim],
+                strict=True,
             )
         ]
     q, k, v = _timed(collector, f"{tag}/split_reshape", _split_reshape)
@@ -224,7 +225,7 @@ def profiled_model_forward(model, inputs, cache, collector):
     fa_mask = create_attention_mask(hidden_states, cache[fa_idx] if cache else None)
     ssm_mask = create_ssm_mask(hidden_states, cache[ssm_idx] if cache else None)
 
-    for i, (layer, c) in enumerate(zip(inner.layers, cache)):
+    for i, (layer, c) in enumerate(zip(inner.layers, cache, strict=True)):
         is_linear = getattr(layer, "is_linear", False)
         cur_mask = ssm_mask if is_linear else fa_mask
 
@@ -240,7 +241,7 @@ def profiled_model_forward(model, inputs, cache, collector):
 
             # Residual add
             h = _timed(collector, f"layer_L{i}/residual_add_1",
-                        lambda: hidden_states + r)
+                        lambda hs=hidden_states, rv=r: hs + rv)
 
             # Post-attention layernorm
             normed2 = _timed(collector, f"layer_L{i}/post_attn_layernorm",
@@ -259,7 +260,7 @@ def profiled_model_forward(model, inputs, cache, collector):
             # Residual add
             hidden_states = _timed(
                 collector, f"layer_L{i}/residual_add_2",
-                lambda: h + mlp_out
+                lambda hv=h, mv=mlp_out: hv + mv
             )
 
         else:
@@ -379,7 +380,7 @@ def main():
     args = parser.parse_args()
 
     print(f"\n{'='*70}")
-    print(f"  DeltaNet Decode Profiler (SHA-1411)")
+    print("  DeltaNet Decode Profiler (SHA-1411)")
     print(f"  Model: {args.model_path}")
     print(f"  Tokens: {args.decode_tokens} (+ {args.warmup} warmup)")
     print(f"{'='*70}\n")
@@ -389,13 +390,13 @@ def main():
     model, tokenizer = mlx_lm.load(args.model_path)[:2]
 
     layers = model.layers
-    dn_count = sum(1 for l in layers if getattr(l, "is_linear", False))
-    attn_count = sum(1 for l in layers if not getattr(l, "is_linear", True))
-    moe_count = sum(1 for l in layers if hasattr(l.mlp, "switch_mlp"))
+    dn_count = sum(1 for ly in layers if getattr(ly, "is_linear", False))
+    attn_count = sum(1 for ly in layers if not getattr(ly, "is_linear", True))
+    moe_count = sum(1 for ly in layers if hasattr(ly.mlp, "switch_mlp"))
     print(f"  Layers: {dn_count} DeltaNet, {attn_count} Attention, {moe_count} MoE")
 
     # Check GatedDeltaNet variant
-    dn_layer = next(l for l in layers if getattr(l, "is_linear", False))
+    dn_layer = next(ly for ly in layers if getattr(ly, "is_linear", False))
     dn_mod = dn_layer.linear_attn
     has_separate_projs = hasattr(dn_mod, "in_proj_qkv")
     print(f"  GatedDeltaNet variant: {'separate projs (qwen3_5)' if has_separate_projs else 'combined (qwen3_next)'}")
@@ -426,7 +427,7 @@ def main():
     agg = aggregate_deltanet_ops(report)
 
     print(f"\n{'='*70}")
-    print(f"  PROFILING RESULTS")
+    print("  PROFILING RESULTS")
     print(f"{'='*70}\n")
 
     # 1. Layer type comparison
@@ -453,7 +454,7 @@ def main():
               f"{op['mean_ms']:10.4f} {op['pct_of_deltanet']:7.1f}%")
 
     # 3. Fusion target ranking
-    print(f"\n== Fusion Target Ranking ==\n")
+    print("\n== Fusion Target Ranking ==\n")
     fusible = [
         ("conv1d + silu", ["conv1d", "silu"]),
         ("gated_rmsnorm (norm+silu gate)", ["gated_rmsnorm"]),
@@ -477,7 +478,7 @@ def main():
               f"~{est_savings_ms:.1f} ms saveable")
 
     # 4. Gated delta kernel assessment
-    print(f"\n== Gated Delta Kernel Assessment ==\n")
+    print("\n== Gated Delta Kernel Assessment ==\n")
     gd = op_lookup.get("gated_delta_update", {})
     if gd:
         gd_pct = gd.get("pct_of_deltanet", 0)
@@ -485,14 +486,14 @@ def main():
               f"({gd_pct:.1f}% of DeltaNet time)")
         print(f"  Mean per call: {gd.get('mean_ms', 0):.4f} ms")
         if gd_pct > 30:
-            print(f"  -> DOMINANT: Worth optimizing the kernel itself (SHA-1415)")
+            print("  -> DOMINANT: Worth optimizing the kernel itself (SHA-1415)")
         elif gd_pct > 15:
-            print(f"  -> SIGNIFICANT: Kernel optimization may help")
+            print("  -> SIGNIFICANT: Kernel optimization may help")
         else:
-            print(f"  -> MINOR: Focus on other fusions first")
+            print("  -> MINOR: Focus on other fusions first")
 
     # 5. Overall opportunity
-    print(f"\n== Overall Opportunity ==\n")
+    print("\n== Overall Opportunity ==\n")
     dn_pct = 100 * lt.get("deltanet", {}).get("total_ms", 0) / total_layer_ms
     moe_pct = 100 * lt.get("moe", {}).get("total_ms", 0) / total_layer_ms
     attn_pct = 100 * lt.get("attention", {}).get("total_ms", 0) / total_layer_ms
@@ -503,7 +504,7 @@ def main():
     if dn_pct > 0:
         savings_pct = dn_pct * 0.30
         overall_speedup = 100 / (100 - savings_pct)
-        print(f"\n  If we save ~30% of DeltaNet time via fusions:")
+        print("\n  If we save ~30% of DeltaNet time via fusions:")
         print(f"    {savings_pct:.1f}% of total time saved -> "
               f"{overall_speedup:.1%} overall speedup")
 
@@ -512,7 +513,7 @@ def main():
     per_token_ms = total_decode_ms / n_decode
     est_tps = 1000 / per_token_ms if per_token_ms > 0 else 0
     print(f"\n  Per-token decode (profiled): {per_token_ms:.1f} ms ({est_tps:.1f} tok/s)")
-    print(f"  Note: profiling overhead inflates this by ~2-5x vs unprofiled")
+    print("  Note: profiling overhead inflates this by ~2-5x vs unprofiled")
 
     # Save JSON
     full_report = {

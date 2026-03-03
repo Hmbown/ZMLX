@@ -145,6 +145,7 @@ class _DeltaNetPattern:
                     ),
                     [self_mod.num_k_heads, self_mod.num_k_heads, self_mod.num_v_heads],
                     [self_mod.head_k_dim, self_mod.head_k_dim, self_mod.head_v_dim],
+                    strict=True,
                 )
             ]
 
