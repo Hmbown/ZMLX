@@ -9,6 +9,15 @@ Decode-only fusions (S=1):
   - fused_conv1d_silu: replaces conv1d + silu with 1 Metal kernel
   - fused_input_proj: replaces 4 matmuls with 1 (dense weights only)
 
+Fused post-conv (default-on since v0.11):
+  - fused_postconv_gated_delta_decode: fused post-conv gated-delta decode kernel
+    that fuses qkv split, Q/K norm, g/beta computation, and state update.
+    Disable with ZMLX_DELTANET_FUSED_POSTCONV=0.
+  - ZMLX_DELTANET_FUSED_POSTCONV_STATE_FP32=1: opt-in FP32 state buffering
+    for numerical stability on very long decodes.
+  - ZMLX_DELTANET_FUSED_POSTCONV_RESYNC_INTERVAL=<int>: fall back to exact
+    path every N tokens to reset numerical drift.
+
 Note: gated_rmsnorm_silu is available but NOT used by default because its
 threadgroup reduction ordering differs from mx.fast.rms_norm, causing ~2e-3
 max diff in bfloat16 that accumulates across 30 layers and breaks fidelity.
@@ -19,6 +28,8 @@ Prefill (S>1) falls through to the original forward pass unchanged.
 
 from __future__ import annotations
 
+import os
+from functools import partial
 from typing import Any
 
 import mlx.core as mx
@@ -27,9 +38,33 @@ import mlx.nn as nn
 from ...kernels.deltanet import (
     fused_conv1d_silu,
     fused_input_proj,
+    fused_postconv_gated_delta_decode,
 )
 from .._registry import register
 from .._types import PatchConfig
+
+
+@partial(mx.compile, shapeless=True)
+def _compiled_pre_recurrence(
+    q: mx.array,
+    k: mx.array,
+    a: mx.array,
+    b: mx.array,
+    A_log: mx.array,
+    dt_bias: mx.array,
+    q_scale: float,
+    k_scale: float,
+) -> tuple:
+    """Compile QK norm + compute_g + sigmoid(b) into one fused dispatch.
+
+    Saves 2 dispatches/layer vs calling compute_g and sigmoid separately.
+    Uses identical ops to upstream — same results, fewer dispatches.
+    """
+    q = q_scale * mx.fast.rms_norm(q, None, 1e-6)
+    k = k_scale * mx.fast.rms_norm(k, None, 1e-6)
+    beta = mx.sigmoid(b)
+    g = mx.exp(-mx.exp(A_log.astype(mx.float32)) * nn.softplus(a + dt_bias)).astype(A_log.dtype)
+    return q, k, beta, g
 
 
 class _DeltaNetPattern:
@@ -65,14 +100,40 @@ class _DeltaNetPattern:
 
     def apply(self, module: Any, config: PatchConfig) -> Any:
         original_call = (
-            module.__call__.__func__
-            if hasattr(module.__call__, "__func__")
-            else module.__call__
+            module.__call__.__func__ if hasattr(module.__call__, "__func__") else module.__call__
         )
 
-        # Lazily import gated_delta_update at patch time — mlx_lm must be
+        # Lazily import gated_delta_kernel at patch time — mlx_lm must be
         # present if the module matched, so this is safe.
-        from mlx_lm.models.gated_delta import gated_delta_update
+        from mlx_lm.models.gated_delta import gated_delta_kernel, gated_delta_update
+
+        _use_fused_postconv = os.environ.get(
+            "ZMLX_DELTANET_FUSED_POSTCONV", "1"
+        ).strip().lower() not in {"0", "false", "no", "off"}
+
+        def _parse_positive_int_env(name: str) -> int:
+            raw = os.environ.get(name, "").strip()
+            if not raw:
+                return 0
+            try:
+                value = int(raw)
+            except ValueError as exc:
+                raise ValueError(f"{name} must be an integer; got {raw!r}") from exc
+            if value < 0:
+                raise ValueError(f"{name} must be non-negative; got {value}")
+            return value
+
+        _fused_postconv_resync_interval = _parse_positive_int_env(
+            "ZMLX_DELTANET_FUSED_POSTCONV_RESYNC_INTERVAL"
+        )
+
+        # Pre-compute scaling factors to match reference path exactly
+        _inv_scale = module.head_k_dim**-0.5
+        _q_scale = float(_inv_scale**2)
+        _k_scale = float(_inv_scale)
+
+        # Track decode steps per cache for resync
+        module._zmlx_deltanet_decode_steps = {}
 
         def patched_call(
             self_mod: Any,
@@ -93,9 +154,8 @@ class _DeltaNetPattern:
             # --- 1. Input projections ---
             # fused_input_proj works with dense weights only; quantized models
             # fall back to separate calls.
-            use_fused_proj = (
-                not isinstance(self_mod.in_proj_qkv, nn.QuantizedLinear)
-                and hasattr(self_mod.in_proj_qkv, "weight")
+            use_fused_proj = not isinstance(self_mod.in_proj_qkv, nn.QuantizedLinear) and hasattr(
+                self_mod.in_proj_qkv, "weight"
             )
 
             if use_fused_proj:
@@ -128,44 +188,120 @@ class _DeltaNetPattern:
             conv_input = mx.concatenate([conv_state, qkv], axis=1)
 
             # --- 3. Fused conv1d + SiLU ---
-            conv_out, new_conv_state = fused_conv1d_silu(
-                conv_input, self_mod.conv1d.weight
-            )
+            conv_out, new_conv_state = fused_conv1d_silu(conv_input, self_mod.conv1d.weight)
             if cache is not None:
                 cache[0] = new_conv_state
 
-            # --- 4. Split q, k, v ---
-            q, k, v = [
-                t.reshape(B, S, h, d)
-                for t, h, d in zip(
-                    mx.split(
-                        conv_out,
-                        [self_mod.key_dim, 2 * self_mod.key_dim],
-                        -1,
-                    ),
-                    [self_mod.num_k_heads, self_mod.num_k_heads, self_mod.num_v_heads],
-                    [self_mod.head_k_dim, self_mod.head_k_dim, self_mod.head_v_dim],
-                    strict=True,
-                )
-            ]
-
-            # --- 5. QK norm + gated delta update (existing Metal kernel) ---
+            # --- 4. QK norm + gated delta update ---
             state = cache[1] if cache else None
-            inv_scale = k.shape[-1] ** -0.5
-            q = (inv_scale**2) * mx.fast.rms_norm(q, None, 1e-6)
-            k = inv_scale * mx.fast.rms_norm(k, None, 1e-6)
+            if state is None:
+                _Hv = self_mod.num_v_heads
+                _Dv = self_mod.head_v_dim
+                _Dk = self_mod.head_k_dim
+                state = mx.zeros((B, _Hv, _Dv, _Dk), dtype=inputs.dtype)
 
-            out, state = gated_delta_update(
-                q, k, v, a, b,
-                self_mod.A_log,
-                self_mod.dt_bias,
-                state,
-                mask,
-                use_kernel=True,
+            # Track decode step for resync
+            cache_key = id(cache) if cache is not None else None
+            decode_step = 0
+            if cache_key is not None:
+                if cache[0] is None and cache[1] is None:
+                    self_mod._zmlx_deltanet_decode_steps.pop(cache_key, None)
+                decode_step = self_mod._zmlx_deltanet_decode_steps.get(cache_key, 0)
+
+            # Decide whether to use fused postconv or exact path
+            use_exact_postconv_resync = (
+                _use_fused_postconv
+                and _fused_postconv_resync_interval > 0
+                and (decode_step + 1) % _fused_postconv_resync_interval == 0
             )
+            use_postconv_fused = _use_fused_postconv and not use_exact_postconv_resync
+
+            if use_postconv_fused:
+                out, state = fused_postconv_gated_delta_decode(
+                    conv_out,
+                    a,
+                    b,
+                    self_mod.A_log,
+                    self_mod.dt_bias,
+                    num_k_heads=self_mod.num_k_heads,
+                    num_v_heads=self_mod.num_v_heads,
+                    head_k_dim=self_mod.head_k_dim,
+                    head_v_dim=self_mod.head_v_dim,
+                    state=state,
+                    mask=mask,
+                )
+            else:
+                # Split q, k, v for the exact path
+                q, k, v = [
+                    t.reshape(B, S, h, d)
+                    for t, h, d in zip(
+                        mx.split(
+                            conv_out,
+                            [self_mod.key_dim, 2 * self_mod.key_dim],
+                            -1,
+                        ),
+                        [self_mod.num_k_heads, self_mod.num_k_heads, self_mod.num_v_heads],
+                        [self_mod.head_k_dim, self_mod.head_k_dim, self_mod.head_v_dim],
+                        strict=True,
+                    )
+                ]
+
+            if use_exact_postconv_resync:
+                q, k, beta, g = _compiled_pre_recurrence(
+                    q,
+                    k,
+                    a,
+                    b,
+                    self_mod.A_log,
+                    self_mod.dt_bias,
+                    _q_scale,
+                    _k_scale,
+                )
+                out, state = gated_delta_kernel(
+                    q,
+                    k,
+                    v,
+                    g,
+                    beta,
+                    state,
+                    mask,
+                )
+            elif not _use_fused_postconv:
+                # Standard path: QK norm + gated_delta_update
+                q, k, v = [
+                    t.reshape(B, S, h, d)
+                    for t, h, d in zip(
+                        mx.split(
+                            conv_out,
+                            [self_mod.key_dim, 2 * self_mod.key_dim],
+                            -1,
+                        ),
+                        [self_mod.num_k_heads, self_mod.num_k_heads, self_mod.num_v_heads],
+                        [self_mod.head_k_dim, self_mod.head_k_dim, self_mod.head_v_dim],
+                        strict=True,
+                    )
+                ]
+                inv_scale = k.shape[-1] ** -0.5
+                q = (inv_scale**2) * mx.fast.rms_norm(q, None, 1e-6)
+                k = inv_scale * mx.fast.rms_norm(k, None, 1e-6)
+
+                out, state = gated_delta_update(
+                    q,
+                    k,
+                    v,
+                    a,
+                    b,
+                    self_mod.A_log,
+                    self_mod.dt_bias,
+                    state,
+                    mask,
+                    use_kernel=True,
+                )
 
             if cache is not None:
                 cache[1] = state
+                if cache_key is not None:
+                    self_mod._zmlx_deltanet_decode_steps[cache_key] = decode_step + 1
 
             # --- 6. Gated RMSNorm + SiLU (use original for fidelity) ---
             # gated_rmsnorm_silu has different reduction ordering vs
